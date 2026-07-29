@@ -12,6 +12,14 @@ const {
 } = require("../controllers/authController");
 const auth = require("../middleware/auth");
 
+console.log({
+  register,
+  login,
+  forgotPassword,
+  requestPasswordReset,
+  resetPassword,
+  logout,
+});
 // @route   POST /api/auth/register
 // @desc    Register user
 // @access  Public
@@ -29,7 +37,7 @@ router.post("/forgot-password", forgotPassword);
 // @route   POST /api/auth/request-password-reset
 // @desc    Request password reset with token
 // @access  Public
-router.post("/request-password-reset", requestPasswordReset);
+///router.post("/request-password-reset", requestPasswordReset);
 
 // @route   POST /api/auth/reset-password
 // @desc    Reset password with token

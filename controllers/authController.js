@@ -2,24 +2,31 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const generateToken = require("../utils/generateToken");
 
-const register = async () => {
+const register = async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
-    const alreadyExist = await findOne({ email });
+
+    const alreadyExist = await User.findOne({ email });
+    console.log("User =>", User);
+    console.log("Type =>", typeof User);
+    console.log("Keys =>", Object.keys(User));
+
     if (alreadyExist) {
       return res.status(400).json({
         success: false,
-        message: "User Already Exist",
+        message: "User Already Exists",
       });
     }
 
-    const hashPassword = await bcrypt.hash(password, 10);
-    const user = new User.create({
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
       name,
       email,
       phone,
       password: hashedPassword,
     });
+
     res.status(201).json({
       success: true,
       message: "Registration Successful",
@@ -29,12 +36,12 @@ const register = async () => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: err.message,
+      message: error.message,
     });
   }
 };
 
-const login = async () => {
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
