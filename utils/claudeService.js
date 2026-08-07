@@ -8,7 +8,7 @@ const AIAnalysis = require('../models/AIAnalysis');
 // Validate critical env vars at startup so problems are visible immediately
 // ---------------------------------------------------------------------------
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-const CLAUDE_MODEL   = process.env.CLAUDE_MODEL;
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL;
 
 if (!CLAUDE_API_KEY) {
   console.error('[claudeService] ⚠️  CLAUDE_API_KEY is NOT set in environment variables!');
@@ -54,16 +54,16 @@ const ANALYSIS_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      score:               { type: 'number' },
-      score_band:          { type: 'string' },
-      active_loans:        { type: 'number' },
-      overdue_status:      { type: 'string' },
-      enquiries_6m:        { type: 'number' },
-      enquiries_rating:    { type: 'string' },
-      foir_percent:        { type: 'number' },
-      foir_rating:         { type: 'string' },
+      score: { type: 'number' },
+      score_band: { type: 'string' },
+      active_loans: { type: 'number' },
+      overdue_status: { type: 'string' },
+      enquiries_6m: { type: 'number' },
+      enquiries_rating: { type: 'string' },
+      foir_percent: { type: 'number' },
+      foir_rating: { type: 'string' },
       max_eligible_amount: { type: 'number' },
-      recommendation:      { type: 'string' },
+      recommendation: { type: 'string' },
     },
     required: [
       'score', 'score_band', 'active_loans', 'overdue_status',
@@ -102,7 +102,7 @@ async function processAnalysisInBackground(analysisId) {
     }
 
     const base64Data = fileBuffer.toString('base64');
-    const mediaType  = mime.lookup(analysis.filePath) || 'application/pdf';
+    const mediaType = mime.lookup(analysis.filePath) || 'application/pdf';
     const fileSizeKB = (fileBuffer.length / 1024).toFixed(1);
 
     console.log(`[claudeService:${analysisId}] File ready`);
@@ -119,22 +119,22 @@ async function processAnalysisInBackground(analysisId) {
     let response;
     try {
       response = await anthropic.messages.create({
-        model:      CLAUDE_MODEL,
+        model: CLAUDE_MODEL,
         max_tokens: 4000,
-        system:     CREDIT_ANALYSIS_PROMPT,
+        system: CREDIT_ANALYSIS_PROMPT,
         messages: [
           {
             role: 'user',
             content: [
               {
-                type:   'document',
+                type: 'document',
                 source: { type: 'base64', media_type: mediaType, data: base64Data },
               },
               { type: 'text', text: 'Analyze this credit report and return the structured result.' },
             ],
           },
         ],
-        tools:       [ANALYSIS_TOOL],
+        tools: [ANALYSIS_TOOL],
         tool_choice: { type: 'tool', name: 'submit_credit_analysis' },
       });
     } catch (apiErr) {
@@ -181,20 +181,20 @@ async function processAnalysisInBackground(analysisId) {
 
     // ---- 5. Persist completed result ----------------------------------
     await AIAnalysis.findByIdAndUpdate(analysisId, {
-      status:           'completed',
+      status: 'completed',
       rawModelResponse: response,
-      debugError:       null,
+      debugError: null,
       result: {
-        score:             result.score,
-        scoreBand:         result.score_band,
-        activeLoans:       result.active_loans,
-        overdueStatus:     result.overdue_status,
-        enquiries6m:       result.enquiries_6m,
-        enquiriesRating:   result.enquiries_rating,
-        foirPercent:       result.foir_percent,
-        foirRating:        result.foir_rating,
+        score: result.score,
+        scoreBand: result.score_band,
+        activeLoans: result.active_loans,
+        overdueStatus: result.overdue_status,
+        enquiries6m: result.enquiries_6m,
+        enquiriesRating: result.enquiries_rating,
+        foirPercent: result.foir_percent,
+        foirRating: result.foir_rating,
         maxEligibleAmount: result.max_eligible_amount,
-        recommendation:    result.recommendation,
+        recommendation: result.recommendation,
       },
     });
     console.log(`[claudeService:${analysisId}] Status -> completed`);
@@ -223,12 +223,12 @@ async function processAnalysisInBackground(analysisId) {
       `Type: ${(err.constructor && err.constructor.name) || typeof err}`,
       `Message: ${err.message}`,
       err.status ? `HTTP status: ${err.status}` : null,
-      err.error  ? `API body: ${JSON.stringify(err.error)}` : null,
+      err.error ? `API body: ${JSON.stringify(err.error)}` : null,
       `Stack: ${err.stack}`,
     ].filter(Boolean).join('\n');
 
     await AIAnalysis.findByIdAndUpdate(analysisId, {
-      status:       'failed',
+      status: 'failed',
       errorMessage: 'Analysis could not be completed. Please try again or contact support.',
       debugError,
     });
@@ -268,19 +268,19 @@ async function generateFullHtmlReport(analysisId) {
   }
 
   const base64Data = fileBuffer.toString('base64');
-  const mediaType  = mime.lookup(analysis.filePath) || 'application/pdf';
+  const mediaType = mime.lookup(analysis.filePath) || 'application/pdf';
   console.log(`[htmlReport:${analysisId}] File: ${analysis.filePath} | ${(fileBuffer.length / 1024).toFixed(1)} KB | ${mediaType}`);
 
   // 2. Call Claude — free-text, no tool forcing
   console.log(`[htmlReport:${analysisId}] Calling Claude API (free-text HTML mode)...`);
   console.log(`[htmlReport:${analysisId}]   model      : ${CLAUDE_MODEL}`);
-  console.log(`[htmlReport:${analysisId}]   max_tokens : 16000`);
+  console.log(`[htmlReport:${analysisId}]   max_tokens : 25000`);
 
   let response;
   try {
-    response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model:      CLAUDE_MODEL,
-      max_tokens: 16000,
+      max_tokens: 25000,
       system:     CREDIT_ANALYSIS_PROMPT,
       messages: [
         {
@@ -299,12 +299,14 @@ async function generateFullHtmlReport(analysisId) {
       ],
       // NO tools / tool_choice — let the system prompt drive free-text HTML output
     });
+    
+    response = await stream.finalMessage();
   } catch (apiErr) {
     console.error(`[htmlReport:${analysisId}] Claude API call FAILED`);
     console.error(`[htmlReport:${analysisId}]   Error type    :`, apiErr.constructor?.name);
     console.error(`[htmlReport:${analysisId}]   Error message :`, apiErr.message);
     if (apiErr.status !== undefined) console.error(`[htmlReport:${analysisId}]   HTTP status   :`, apiErr.status);
-    if (apiErr.error  !== undefined) console.error(`[htmlReport:${analysisId}]   API error body:`, JSON.stringify(apiErr.error, null, 2));
+    if (apiErr.error !== undefined) console.error(`[htmlReport:${analysisId}]   API error body:`, JSON.stringify(apiErr.error, null, 2));
     throw apiErr;
   }
 
@@ -321,9 +323,20 @@ async function generateFullHtmlReport(analysisId) {
     throw new Error('Claude did not return a text block — expected free-text HTML output');
   }
 
-  const rawHtml = (textBlock.text || '').trim();
+  let rawHtml = (textBlock.text || '').trim();
   console.log(`[htmlReport:${analysisId}] Raw HTML length: ${rawHtml.length} chars`);
   console.log(`[htmlReport:${analysisId}] First 300 chars of response:\n${rawHtml.slice(0, 300)}`);
+
+  // Strip markdown formatting if Claude wrapped the HTML in code fences
+  if (rawHtml.toLowerCase().startsWith('```html')) {
+    rawHtml = rawHtml.substring(7);
+  } else if (rawHtml.startsWith('```')) {
+    rawHtml = rawHtml.substring(3);
+  }
+  if (rawHtml.endsWith('```')) {
+    rawHtml = rawHtml.substring(0, rawHtml.length - 3);
+  }
+  rawHtml = rawHtml.trim();
 
   // 4. Validate — must start with <!DOCTYPE html>
   if (!rawHtml.toLowerCase().startsWith('<!doctype html>')) {
@@ -337,7 +350,7 @@ async function generateFullHtmlReport(analysisId) {
 
   // 5. Persist to DB
   await AIAnalysis.findByIdAndUpdate(analysisId, {
-    htmlReport:     rawHtml,
+    htmlReport: rawHtml,
     htmlGenerating: false,
   });
   console.log(`[htmlReport:${analysisId}] HTML report stored in DB (${rawHtml.length} chars)`);

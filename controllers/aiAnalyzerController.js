@@ -96,11 +96,10 @@ exports.downloadPdf = async (req, res) => {
     // ── Path A: HTML already generated — reuse it (no second Claude call) ──
     if (analysis.htmlReport) {
       console.log(`[downloadPdf:${id}] htmlReport already stored (${analysis.htmlReport.length} chars) — reusing`);
-      const pdfBuffer = await generatePdfFromHtml(analysis.htmlReport);
       return res.set({
-        'Content-Type':        'application/pdf',
-        'Content-Disposition': `attachment; filename="credit-analysis-${id}.pdf"`,
-      }).send(pdfBuffer);
+        'Content-Type':        'text/html',
+        'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
+      }).send(analysis.htmlReport);
     }
 
     // ── Path B: Generation already in-flight (concurrent request) ──
@@ -130,13 +129,11 @@ exports.downloadPdf = async (req, res) => {
       });
     }
 
-    console.log(`[downloadPdf:${id}] HTML generation complete (${htmlString.length} chars) — rendering to PDF`);
-    const pdfBuffer = await generatePdfFromHtml(htmlString);
-
+    console.log(`[downloadPdf:${id}] HTML generation complete (${htmlString.length} chars) — serving HTML directly`);
     return res.set({
-      'Content-Type':        'application/pdf',
-      'Content-Disposition': `attachment; filename="credit-analysis-${id}.pdf"`,
-    }).send(pdfBuffer);
+      'Content-Type':        'text/html',
+      'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
+    }).send(htmlString);
 
   } catch (err) {
     console.error(`[downloadPdf] Unhandled error for ${id}:`, err);
