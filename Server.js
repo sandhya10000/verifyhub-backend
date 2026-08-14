@@ -1,5 +1,7 @@
-const express = require("express");
 const dotenv = require("dotenv");
+dotenv.config(); // MUST be first — env vars must be available before any other module reads them
+
+const express = require("express");
 const cors = require("cors");
 dotenv.config();
 
@@ -16,6 +18,8 @@ console.log("=================================");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const creditRoutes = require("./routes/credit");
+
+const aiAnalyzerRoutes = require("./routes/aiAnalyzerRoutes");
 
 // Connect Database
 connectDB();
@@ -36,6 +40,8 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/auth/credit", creditRoutes);
+
+app.use("/api/ai-analyzer", aiAnalyzerRoutes);
 
 // Start Server
 const PORT = process.env.PORT || 5000;
