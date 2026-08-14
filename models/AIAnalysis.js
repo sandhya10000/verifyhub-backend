@@ -35,6 +35,14 @@ const AIAnalysisSchema = new mongoose.Schema(
     // Full 8-section HTML report — generated lazily on first Download/Save action
     htmlReport:      { type: String,  default: null },
     htmlGenerating:  { type: Boolean, default: false },
+
+    // Chunked-pipeline fields — only set for PDFs over 100 pages
+    isChunked:       { type: Boolean, default: false },   // true when the chunked path was used
+    chunkCount:      { type: Number,  default: null  },   // total number of chunks for this file
+    chunksCompleted: { type: Number,  default: 0     },   // chunks successfully extracted so far
+    // Full merged account list from all chunks — stored so generateFullHtmlReport()
+    // can produce the rich HTML without re-sending the PDF a second time.
+    mergedData: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 );
