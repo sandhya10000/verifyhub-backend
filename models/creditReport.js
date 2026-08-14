@@ -2,12 +2,9 @@ const mongoose = require("mongoose");
 
 const creditReportSchema = new mongoose.Schema(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-
+    // =========================
+    // CUSTOMER DETAILS
+    // =========================
     name: {
       type: String,
       required: true,
@@ -27,40 +24,81 @@ const creditReportSchema = new mongoose.Schema(
       trim: true,
     },
 
+    gender: {
+      type: String,
+      enum: ["Male", "Female", "Other"],
+    },
+
+    // =========================
+    // REPORT DETAILS
+    // =========================
+    reportType: {
+      type: String,
+      default: "CIBIL",
+      trim: true,
+    },
+
     consent: {
       type: String,
       enum: ["Y", "N"],
       default: "Y",
     },
 
-    score: {
-      type: Number,
-      min: 0,
-      max: 999,
-    },
-
     bureau: {
       type: String,
       enum: ["CIBIL", "CRIF", "EXPERIAN", "EQUIFAX"],
       default: "CIBIL",
+      uppercase: true,
     },
 
+    // =========================
+    // CREDIT SCORE
+    // =========================
+    score: {
+      type: Number,
+      min: 0,
+      max: 999,
+      default: null,
+    },
+
+    rating: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // =========================
+    // REPORT STATUS
+    // =========================
     status: {
       type: String,
       enum: ["Pending", "Success", "Failed"],
       default: "Pending",
     },
 
+    // =========================
+    // REPORT URL
+    // =========================
     reportUrl: {
       type: String,
+      default: null,
     },
 
+    // =========================
+    // COMPLETE API RESPONSE
+    // =========================
     reportData: {
       type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
 
+    // =========================
+    // REMARKS
+    // =========================
     remarks: {
       type: String,
+      default: "",
+      trim: true,
     },
   },
   {
