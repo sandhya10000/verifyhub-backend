@@ -819,6 +819,60 @@ const getExperianReport = async (req, res) => {
     return sendError(res, errorInfo.message, errorInfo.statusCode);
   }
 };
+const fetchCibilReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log("[CIBIL] Get Report ID:", id);
+
+    // Find report by MongoDB _id
+    const creditReport = await CreditReport.findById(id);
+
+    // Report not found
+    if (!creditReport) {
+      return res.status(404).json({
+        success: false,
+        message: "CIBIL report not found",
+      });
+    }
+
+    // Make sure requested report is CIBIL
+    if (creditReport.bureau?.toUpperCase() !== "CIBIL") {
+      return res.status(400).json({
+        success: false,
+        message: "This report is not a CIBIL report",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "CIBIL report retrieved successfully",
+      creditReport: {
+        id: creditReport._id,
+        name: creditReport.name,
+        firstName: creditReport.firstName,
+        lastName: creditReport.lastName,
+        mobile: creditReport.mobile,
+        pan: creditReport.pan,
+        gender: creditReport.gender,
+        reportType: creditReport.reportType,
+        score: creditReport.riskScore,
+        bureau: creditReport.bureau,
+        reportUrl: creditReport.reportUrl,
+        localPath: creditReport.localPath || null,
+        createdAt: creditReport.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("[CIBIL] Get Report Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve CIBIL report",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
 
 // ==================== EXPORT ====================
 module.exports = {
@@ -826,4 +880,5 @@ module.exports = {
   getCrifReport,
   getEquifaxReport,
   getExperianReport,
+  fetchCibilReport,
 };
