@@ -25,6 +25,22 @@ exports.uploadReport = async (req, res) => {
           message: 'This PDF is password-protected. Please remove the password and re-upload.',
         });
       }
+
+      // -- Page-count gate: Anthropic caps at 100 pages per call, but
+      // the chunked pipeline now handles files up to 2000 pages.
+      // Only reject truly absurd files that would take 20+ Claude calls.
+      const pageCount = await getPdfPageCount(req.file.path);
+      console.log(`[uploadReport] PDF page count: ${pageCount}`);
+      if (pageCount !== null && pageCount > 2000) {
+        fs.unlinkSync(req.file.path);
+        console.warn(`[uploadReport] Rejected: PDF has ${pageCount} pages (limit 2000)`);
+        return res.status(400).json({
+          success: false,
+          message:
+            `This report is too large to analyze (${pageCount} pages; maximum supported: 2000 pages). ` +
+            'Please upload a shorter version of the report, or contact support.',
+        });
+      }
     }
 
     const analysis = await AIAnalysis.create({
@@ -60,6 +76,9 @@ exports.getAnalysis = async (req, res) => {
       analysisId: analysis._id,
       status: analysis.status,
       errorMessage: analysis.errorMessage,
+      isChunked: analysis.isChunked,
+      chunkCount: analysis.chunkCount,
+      chunksCompleted: analysis.chunksCompleted,
       result: analysis.status === 'completed' ? analysis.result : null,
     };
 
@@ -96,11 +115,10 @@ exports.downloadPdf = async (req, res) => {
     // ── Path A: HTML already generated — reuse it (no second Claude call) ──
     if (analysis.htmlReport) {
       console.log(`[downloadPdf:${id}] htmlReport already stored (${analysis.htmlReport.length} chars) — reusing`);
-      const pdfBuffer = await generatePdfFromHtml(analysis.htmlReport);
       return res.set({
-        'Content-Type':        'application/pdf',
-        'Content-Disposition': `attachment; filename="credit-analysis-${id}.pdf"`,
-      }).send(pdfBuffer);
+        'Content-Type':        'text/html',
+        'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
+      }).send(analysis.htmlReport);
     }
 
     // ── Path B: Generation already in-flight (concurrent request) ──
@@ -130,13 +148,11 @@ exports.downloadPdf = async (req, res) => {
       });
     }
 
-    console.log(`[downloadPdf:${id}] HTML generation complete (${htmlString.length} chars) — rendering to PDF`);
-    const pdfBuffer = await generatePdfFromHtml(htmlString);
-
+    console.log(`[downloadPdf:${id}] HTML generation complete (${htmlString.length} chars) — serving HTML directly`);
     return res.set({
-      'Content-Type':        'application/pdf',
-      'Content-Disposition': `attachment; filename="credit-analysis-${id}.pdf"`,
-    }).send(pdfBuffer);
+      'Content-Type':        'text/html',
+      'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
+    }).send(htmlString);
 
   } catch (err) {
     console.error(`[downloadPdf] Unhandled error for ${id}:`, err);
@@ -164,5 +180,21 @@ async function isPdfEncrypted(filePath) {
     return false;
   } catch (err) {
     return true;
+  }
+}
+
+// Returns the page count of a PDF, or null if it cannot be determined.
+// Uses pdf-lib (already a project dependency) — lightweight, no full parsing.
+async function getPdfPageCount(filePath) {
+  try {
+    const bytes = fs.readFileSync(filePath);
+    // { ignoreEncryption: true } so we don't throw on encrypted files here
+    // (the encryption check already runs before this is called).
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    return doc.getPageCount();
+  } catch (err) {
+    // If we can't parse the file at all, let the rest of the pipeline handle it.
+    console.warn('[getPdfPageCount] Could not determine page count:', err.message);
+    return null;
   }
 }
