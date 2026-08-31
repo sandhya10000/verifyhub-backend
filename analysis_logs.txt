@@ -1,0 +1,97 @@
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.524Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"credit_report_6a589527cf3d4ca6aebbc9b5_1784190247337.pdf","sizeBytes":366764}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.526Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6a9470785191df3efceb25fd"}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.533Z] STEP="Trigger Background Processing" elapsed_step=7ms elapsed_total=9ms
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.564Z] STEP="File Parsing Start" elapsed_step=31ms elapsed_total=40ms
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.845Z] STEP="File Parsing Complete" elapsed_step=281ms elapsed_total=321ms details={"mediaType":"application/pdf","fileSizeKB":"358.2","pageCount":4}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:36.849Z] STEP="Analysis API Call Start" elapsed_step=4ms elapsed_total=325ms details={"model":"claude-sonnet-5"}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:39.648Z] STEP="Frontend Polling Status" elapsed_step=2799ms elapsed_total=3124ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:42.647Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=6123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:45.680Z] STEP="Frontend Polling Status" elapsed_step=3033ms elapsed_total=9156ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:48.651Z] STEP="Frontend Polling Status" elapsed_step=2971ms elapsed_total=12127ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:51.639Z] STEP="Frontend Polling Status" elapsed_step=2988ms elapsed_total=15115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:54.647Z] STEP="Frontend Polling Status" elapsed_step=3008ms elapsed_total=18123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:03:57.652Z] STEP="Frontend Polling Status" elapsed_step=3005ms elapsed_total=21128ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:00.636Z] STEP="Frontend Polling Status" elapsed_step=2984ms elapsed_total=24112ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:03.647Z] STEP="Frontend Polling Status" elapsed_step=3011ms elapsed_total=27123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:06.647Z] STEP="Frontend Polling Status" elapsed_step=3000ms elapsed_total=30123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:09.642Z] STEP="Frontend Polling Status" elapsed_step=2995ms elapsed_total=33118ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:12.647Z] STEP="Frontend Polling Status" elapsed_step=3005ms elapsed_total=36123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:15.648Z] STEP="Frontend Polling Status" elapsed_step=3001ms elapsed_total=39124ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:18.641Z] STEP="Frontend Polling Status" elapsed_step=2993ms elapsed_total=42117ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:21.640Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=45116ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:24.643Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=48119ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:27.644Z] STEP="Frontend Polling Status" elapsed_step=3001ms elapsed_total=51120ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:30.647Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=54123ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:33.637Z] STEP="Frontend Polling Status" elapsed_step=2990ms elapsed_total=57113ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:34.915Z] STEP="Analysis API Call Complete" elapsed_step=1278ms elapsed_total=58391ms details={"usage":{"input_tokens":17303,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8204,"output_tokens_details":{"thinking_tokens":0},"service_tier":"standard","inference_geo":"global"}}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:34.923Z] STEP="HTML Template Render Start" elapsed_step=8ms elapsed_total=58399ms
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:34.935Z] STEP="Result Persistence Start" elapsed_step=12ms elapsed_total=58411ms
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:34.966Z] STEP="Result Persistence Complete" elapsed_step=31ms elapsed_total=58442ms details={"htmlStored":false}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:36.645Z] STEP="Frontend Polling Status" elapsed_step=1679ms elapsed_total=60121ms details={"status":"completed","htmlStatus":"failed"}
+[ANALYSIS 6a9470785191df3efceb25fd] [2026-08-30T18:04:45.318Z] STEP="User Download Click Received" elapsed_step=8673ms elapsed_total=68794ms
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.181Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"credit_report_6a589527cf3d4ca6aebbc9b5_1784190247337.pdf","sizeBytes":366764}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.189Z] STEP="DB Record Created" elapsed_step=8ms elapsed_total=8ms details={"analysisId":"6a9471e871d1fd2cca6cd6ae"}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.197Z] STEP="Trigger Background Processing" elapsed_step=8ms elapsed_total=16ms
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.220Z] STEP="File Parsing Start" elapsed_step=23ms elapsed_total=39ms
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.535Z] STEP="File Parsing Complete" elapsed_step=315ms elapsed_total=354ms details={"mediaType":"application/pdf","fileSizeKB":"358.2","pageCount":4}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:44.545Z] STEP="Analysis API Call Start" elapsed_step=10ms elapsed_total=364ms details={"model":"claude-sonnet-5"}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:47.300Z] STEP="Frontend Polling Status" elapsed_step=2755ms elapsed_total=3119ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:50.297Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=6116ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:53.294Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=9113ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:56.291Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=12110ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:09:59.303Z] STEP="Frontend Polling Status" elapsed_step=3012ms elapsed_total=15122ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:02.300Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=18119ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:05.292Z] STEP="Frontend Polling Status" elapsed_step=2992ms elapsed_total=21111ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:08.288Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=24107ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:11.297Z] STEP="Frontend Polling Status" elapsed_step=3009ms elapsed_total=27116ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:14.296Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=30115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:17.299Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=33118ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:20.290Z] STEP="Frontend Polling Status" elapsed_step=2991ms elapsed_total=36109ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:23.302Z] STEP="Frontend Polling Status" elapsed_step=3012ms elapsed_total=39121ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:26.292Z] STEP="Frontend Polling Status" elapsed_step=2990ms elapsed_total=42111ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:29.305Z] STEP="Frontend Polling Status" elapsed_step=3013ms elapsed_total=45124ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:32.292Z] STEP="Frontend Polling Status" elapsed_step=2987ms elapsed_total=48111ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:35.288Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=51107ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:38.299Z] STEP="Frontend Polling Status" elapsed_step=3011ms elapsed_total=54118ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:41.322Z] STEP="Frontend Polling Status" elapsed_step=3023ms elapsed_total=57141ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:44.297Z] STEP="Frontend Polling Status" elapsed_step=2975ms elapsed_total=60116ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:45.906Z] STEP="Analysis API Call Complete" elapsed_step=1609ms elapsed_total=61725ms details={"usage":{"input_tokens":17303,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8906,"output_tokens_details":{"thinking_tokens":0},"service_tier":"standard","inference_geo":"global"}}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:45.922Z] STEP="HTML Template Render Start" elapsed_step=16ms elapsed_total=61741ms
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:45.943Z] STEP="Result Persistence Start" elapsed_step=21ms elapsed_total=61762ms
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:45.969Z] STEP="Result Persistence Complete" elapsed_step=26ms elapsed_total=61788ms details={"htmlStored":false}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:47.315Z] STEP="Frontend Polling Status" elapsed_step=1346ms elapsed_total=63134ms details={"status":"completed","htmlStatus":"failed"}
+[ANALYSIS 6a9471e871d1fd2cca6cd6ae] [2026-08-30T18:10:55.399Z] STEP="User Download Click Received" elapsed_step=8084ms elapsed_total=71218ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:14.856Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"credit_report_6a589527cf3d4ca6aebbc9b5_1784190247337.pdf","sizeBytes":366764}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:14.859Z] STEP="DB Record Created" elapsed_step=3ms elapsed_total=3ms details={"analysisId":"6a947332bfaf8440feb47f9f"}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:14.869Z] STEP="Trigger Background Processing" elapsed_step=10ms elapsed_total=13ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:14.899Z] STEP="File Parsing Start" elapsed_step=30ms elapsed_total=43ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:15.198Z] STEP="File Parsing Complete" elapsed_step=299ms elapsed_total=342ms details={"mediaType":"application/pdf","fileSizeKB":"358.2","pageCount":4}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:15.204Z] STEP="Analysis API Call Start" elapsed_step=6ms elapsed_total=348ms details={"model":"claude-sonnet-5"}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:18.014Z] STEP="Frontend Polling Status" elapsed_step=2810ms elapsed_total=3158ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:21.009Z] STEP="Frontend Polling Status" elapsed_step=2995ms elapsed_total=6153ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:24.021Z] STEP="Frontend Polling Status" elapsed_step=3012ms elapsed_total=9165ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:27.006Z] STEP="Frontend Polling Status" elapsed_step=2985ms elapsed_total=12150ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:30.029Z] STEP="Frontend Polling Status" elapsed_step=3023ms elapsed_total=15173ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:33.003Z] STEP="Frontend Polling Status" elapsed_step=2974ms elapsed_total=18147ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:36.018Z] STEP="Frontend Polling Status" elapsed_step=3015ms elapsed_total=21162ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:39.013Z] STEP="Frontend Polling Status" elapsed_step=2995ms elapsed_total=24157ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:42.052Z] STEP="Frontend Polling Status" elapsed_step=3039ms elapsed_total=27196ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:45.000Z] STEP="Frontend Polling Status" elapsed_step=2948ms elapsed_total=30144ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:48.016Z] STEP="Frontend Polling Status" elapsed_step=3016ms elapsed_total=33160ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:51.012Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=36156ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:54.012Z] STEP="Frontend Polling Status" elapsed_step=3000ms elapsed_total=39156ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:15:57.008Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=42152ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:00.005Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=45149ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:03.009Z] STEP="Frontend Polling Status" elapsed_step=3004ms elapsed_total=48153ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:06.019Z] STEP="Frontend Polling Status" elapsed_step=3010ms elapsed_total=51163ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:09.002Z] STEP="Frontend Polling Status" elapsed_step=2983ms elapsed_total=54146ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:12.014Z] STEP="Frontend Polling Status" elapsed_step=3012ms elapsed_total=57158ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.002Z] STEP="Frontend Polling Status" elapsed_step=2988ms elapsed_total=60146ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.228Z] STEP="Analysis API Call Complete" elapsed_step=226ms elapsed_total=60372ms details={"usage":{"input_tokens":17303,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8821,"output_tokens_details":{"thinking_tokens":0},"service_tier":"standard","inference_geo":"global"}}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.236Z] STEP="HTML Template Render Start" elapsed_step=8ms elapsed_total=60380ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.307Z] STEP="HTML Template Render Complete" elapsed_step=71ms elapsed_total=60451ms details={"durationMs":68,"lengthChars":62504}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.309Z] STEP="Result Persistence Start" elapsed_step=2ms elapsed_total=60453ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:15.353Z] STEP="Result Persistence Complete" elapsed_step=44ms elapsed_total=60497ms details={"htmlStored":true}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:18.025Z] STEP="Frontend Polling Status" elapsed_step=2672ms elapsed_total=63169ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:25.781Z] STEP="User Download Click Received" elapsed_step=7756ms elapsed_total=70925ms
+[ANALYSIS 6a947332bfaf8440feb47f9f] [2026-08-30T18:16:25.795Z] STEP="Download Serving htmlReport" elapsed_step=14ms elapsed_total=70939ms

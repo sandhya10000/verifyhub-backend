@@ -4,6 +4,9 @@ const mime = require('mime-types');
 const Anthropic = require('@anthropic-ai/sdk');
 const { PDFDocument } = require('pdf-lib');
 const AIAnalysis = require('../models/AIAnalysis');
+const { logStep } = require('./logger');
+const { renderCreditReport } = require('./reportRenderer');
+
 
 // ---------------------------------------------------------------------------
 // Validate critical env vars at startup so problems are visible immediately
@@ -64,11 +67,11 @@ function isPdfPageLimitError(err) {
 // ---------------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------------
-const CREDIT_ANALYSIS_PROMPT = fs.readFileSync(
-  path.join(__dirname, '../config/ai-analysis-prompt.txt'),
+const EXTRACTION_PROMPT = fs.readFileSync(
+  path.join(__dirname, '../config/ai-extraction-prompt.txt'),
   'utf-8'
 );
-console.log('[claudeService] Main prompt loaded, length:', CREDIT_ANALYSIS_PROMPT.length, 'chars');
+console.log('[claudeService] Extraction prompt loaded, length:', EXTRACTION_PROMPT.length, 'chars');
 
 const CHUNK_EXTRACTION_PROMPT = fs.readFileSync(
   path.join(__dirname, '../config/chunk-extraction-prompt.txt'),
@@ -77,29 +80,147 @@ const CHUNK_EXTRACTION_PROMPT = fs.readFileSync(
 console.log('[claudeService] Chunk extraction prompt loaded, length:', CHUNK_EXTRACTION_PROMPT.length, 'chars');
 
 // ---------------------------------------------------------------------------
-// Tool definition -- forces Claude to return structured output (unchanged)
+// ANALYSIS_TOOL — expanded schema: all accounts, DPD history, enquiries,
+// and qualitative fields (risk factors, action plan, projections).
+// Claude returns this via tool_choice so output is always structured JSON.
 // ---------------------------------------------------------------------------
 const ANALYSIS_TOOL = {
   name: 'submit_credit_analysis',
-  description: 'Submit the structured credit analysis result extracted from the uploaded report.',
+  description: 'Submit the complete structured credit data extracted from the uploaded bureau report.',
   input_schema: {
     type: 'object',
-    properties: {
-      score:               { type: 'number' },
-      score_band:          { type: 'string' },
-      active_loans:        { type: 'number' },
-      overdue_status:      { type: 'string' },
-      enquiries_6m:        { type: 'number' },
-      enquiries_rating:    { type: 'string' },
-      foir_percent:        { type: 'number' },
-      foir_rating:         { type: 'string' },
-      max_eligible_amount: { type: 'number' },
-      recommendation:      { type: 'string' },
-    },
     required: [
-      'score', 'score_band', 'active_loans', 'overdue_status',
-      'enquiries_6m', 'foir_percent', 'max_eligible_amount', 'recommendation',
+      'client_name', 'credit_score', 'accounts', 'enquiries',
+      'risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
+      'risk_concentration_paragraph', 'projection_assumptions', 'projected_scores',
+      'recommendation',
     ],
+    properties: {
+      // Personal / Summary
+      client_name:       { type: 'string' },
+      report_date:       { type: 'string' },
+      pan:               { type: ['string', 'null'] },
+      dob:               { type: ['string', 'null'] },
+      bureau_control_no: { type: ['string', 'null'] },
+      credit_score:      { type: 'number' },
+      score_band:        { type: 'string' },
+      foir_percent:      { type: ['number', 'null'] },
+      foir_rating:       { type: ['string', 'null'] },
+      max_eligible_amount: { type: ['number', 'null'] },
+      recommendation:    { type: 'string' },
+      // Accounts
+      accounts: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['lender', 'masked_account_number', 'account_type'],
+          properties: {
+            lender:                { type: 'string' },
+            masked_account_number: { type: 'string' },
+            account_type:          { type: 'string' },
+            ownership:             { type: ['string', 'null'] },
+            opened_date:           { type: ['string', 'null'] },
+            closed_date:           { type: ['string', 'null'] },
+            status:                { type: ['string', 'null'] },
+            sanctioned_amount:     { type: ['number', 'null'] },
+            current_balance:       { type: ['number', 'null'] },
+            overdue_amount:        { type: 'number' },
+            emi_amount:            { type: ['number', 'null'] },
+            written_off_amount:    { type: 'number' },
+            principal_written_off: { type: ['number', 'null'] },
+            suit_filed:            { type: 'boolean' },
+            max_dpd:               { type: 'number' },
+            dpd_history: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['month', 'value'],
+                properties: {
+                  month: { type: 'string' },
+                  value: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+      // Enquiries
+      enquiries: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['member', 'date'],
+          properties: {
+            member:  { type: 'string' },
+            date:    { type: 'string' },
+            purpose: { type: ['string', 'null'] },
+            amount:  { type: ['number', 'null'] },
+          },
+        },
+      },
+      // Qualitative / judgment fields
+      risk_factors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['title', 'explanation'],
+          properties: {
+            title:       { type: 'string' },
+            explanation: { type: 'string' },
+          },
+        },
+      },
+      action_month_1:               { type: 'string' },
+      action_month_2:               { type: 'string' },
+      action_month_3:               { type: 'string' },
+      risk_concentration_paragraph: { type: 'string' },
+      projection_assumptions:       { type: 'string' },
+      projected_scores: {
+        type: 'array',
+        items: { type: 'number' },
+      },
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// QUALITATIVE_TOOL — used in synthesizeFinalResult() for the chunked path.
+// Only asks Claude for the qualitative fields — account data already in DB.
+// ---------------------------------------------------------------------------
+const QUALITATIVE_TOOL = {
+  name: 'submit_qualitative_analysis',
+  description: 'Submit the qualitative analysis fields derived from the structured credit data.',
+  input_schema: {
+    type: 'object',
+    required: ['risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
+               'risk_concentration_paragraph', 'projection_assumptions', 'projected_scores',
+               'recommendation'],
+    properties: {
+      foir_percent:                 { type: ['number', 'null'] },
+      foir_rating:                  { type: ['string', 'null'] },
+      max_eligible_amount:          { type: ['number', 'null'] },
+      recommendation:               { type: 'string' },
+      risk_factors: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['title', 'explanation'],
+          properties: {
+            title:       { type: 'string' },
+            explanation: { type: 'string' },
+          },
+        },
+      },
+      action_month_1:               { type: 'string' },
+      action_month_2:               { type: 'string' },
+      action_month_3:               { type: 'string' },
+      risk_concentration_paragraph: { type: 'string' },
+      projection_assumptions:       { type: 'string' },
+      projected_scores: {
+        type: 'array',
+        items: { type: 'number' },
+      },
+    },
   },
 };
 
@@ -121,8 +242,6 @@ const CHUNK_EXTRACTION_TOOL = {
       bureau_control_no:     { type: 'string' },
       credit_score:          { type: 'number' },
       score_band:            { type: 'string' },
-      enquiries_6m:          { type: 'number' },
-      enquiries_12m:         { type: 'number' },
       accounts: {
         type: 'array',
         items: {
@@ -279,8 +398,7 @@ function mergeChunkResults(chunkResults) {
     bureau_control_no: null,
     credit_score:      null,
     score_band:        null,
-    enquiries_6m:      null,
-    enquiries_12m:     null,
+    enquiries:         [],   // raw enquiry objects — counted deterministically in renderCreditReport
     accounts:          [],
   };
 
@@ -298,8 +416,9 @@ function mergeChunkResults(chunkResults) {
       merged.score_band        = chunk.score_band        || null;
     }
 
-    if (chunk.enquiries_6m  != null && merged.enquiries_6m  === null) merged.enquiries_6m  = chunk.enquiries_6m;
-    if (chunk.enquiries_12m != null && merged.enquiries_12m === null) merged.enquiries_12m = chunk.enquiries_12m;
+    if (chunk.enquiries && Array.isArray(chunk.enquiries) && chunk.enquiries.length > 0) {
+      merged.enquiries = (merged.enquiries || []).concat(chunk.enquiries);
+    }
 
     for (const acct of (chunk.accounts || [])) {
       const key = (acct.masked_account_number || '').trim().toLowerCase();
@@ -335,70 +454,68 @@ function mergeChunkResults(chunkResults) {
 
 // ---------------------------------------------------------------------------
 // synthesizeFinalResult
-// After all chunks are merged, one final Claude call produces the 6 UI summary
-// fields (score, FOIR, recommendation, etc.) from the merged JSON context.
-// No PDF is sent -- just structured data. Uses the existing ANALYSIS_TOOL.
+// For the chunked path: after all chunks are merged, one Claude call
+// produces the QUALITATIVE fields (risk factors, action plan, projections)
+// from the merged JSON. No PDF re-sent. Uses QUALITATIVE_TOOL.
+// Returns an object that is merged with mergedData before rendering.
 // ---------------------------------------------------------------------------
 async function synthesizeFinalResult(mergedData, analysisId) {
-  console.log(`[claudeService:${analysisId}] Synthesizing final result from merged data (${mergedData.total_accounts} accounts)...`);
+  console.log(`[claudeService:${analysisId}] Synthesizing qualitative fields from merged data (${mergedData.total_accounts} accounts)...`);
 
-  // Compact JSON context -- excludes full payment history arrays (too large)
   const context = {
     client_name:       mergedData.client_name,
     report_date:       mergedData.report_date,
-    pan:               mergedData.pan,
     credit_score:      mergedData.credit_score,
     score_band:        mergedData.score_band,
-    enquiries_6m:      mergedData.enquiries_6m,
-    enquiries_12m:     mergedData.enquiries_12m,
+    enquiries_6m:      null,
+    enquiries_12m:     null,
     total_accounts:    mergedData.total_accounts,
-    active_accounts:   mergedData.active_accounts,
     total_outstanding: mergedData.total_outstanding,
     total_overdue:     mergedData.total_overdue,
     total_sanctioned:  mergedData.total_sanctioned,
     total_written_off: mergedData.total_written_off,
-    accounts: mergedData.accounts.map((a) => ({
-      lender:                 a.lender,
-      account_type:           a.account_type,
-      status:                 a.status,
-      sanctioned_amount:      a.sanctioned_amount,
-      current_balance:        a.current_balance,
-      overdue_amount:         a.overdue_amount,
-      written_off_amount:     a.written_off_amount,
-      max_dpd:                a.max_dpd,
-      payment_history_months: (a.payment_history || []).length,
+    accounts: (mergedData.accounts || []).map((a) => ({
+      lender:             a.lender,
+      account_type:       a.account_type,
+      status:             a.status,
+      sanctioned_amount:  a.sanctioned_amount,
+      current_balance:    a.current_balance,
+      overdue_amount:     a.overdue_amount,
+      written_off_amount: a.written_off_amount,
+      max_dpd:            a.max_dpd,
+      dpd_months:         (a.dpd_history || a.payment_history || []).length,
     })),
   };
+
+  const qualitativePrompt =
+    'You are a senior credit analyst. The following JSON contains structured credit data ' +
+    'extracted from a CIBIL report. Produce the qualitative analysis fields using the ' +
+    'submit_qualitative_analysis tool. Be specific — name the lenders and actual figures.\n\n' +
+    '```json\n' + JSON.stringify(context, null, 2) + '\n```';
 
   const response = await anthropic.messages.create({
     model:      CLAUDE_MODEL,
     max_tokens: 4000,
-    system:     CREDIT_ANALYSIS_PROMPT,
     messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text:
-              'The following JSON contains structured credit data extracted from a multi-section credit report. ' +
-              'Analyze this data and return the structured credit analysis result using the submit_credit_analysis tool.\n\n' +
-              '```json\n' + JSON.stringify(context, null, 2) + '\n```',
-          },
-        ],
-      },
+      { role: 'user', content: [{ type: 'text', text: qualitativePrompt }] },
     ],
-    tools:       [ANALYSIS_TOOL],
-    tool_choice: { type: 'tool', name: 'submit_credit_analysis' },
+    tools:       [QUALITATIVE_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_qualitative_analysis' },
   });
 
   const toolBlock = response.content.find((c) => c.type === 'tool_use');
   if (!toolBlock) {
-    console.error(`[claudeService:${analysisId}] synthesizeFinalResult: no tool_use block. Full response:`, JSON.stringify(response.content, null, 2));
-    throw new Error('Synthesis call did not return a tool_use block');
+    console.error(`[claudeService:${analysisId}] synthesizeFinalResult: no tool_use block.`);
+    // Return safe defaults so render still works
+    return {
+      risk_factors: [], action_month_1: '', action_month_2: '', action_month_3: '',
+      risk_concentration_paragraph: '', projection_assumptions: '',
+      projected_scores: [mergedData.credit_score || 0, 0, 0, 0],
+      recommendation: '',
+    };
   }
 
-  console.log(`[claudeService:${analysisId}] Synthesis complete. Score: ${toolBlock.input.score}`);
+  console.log(`[claudeService:${analysisId}] Qualitative synthesis complete.`);
   return toolBlock.input;
 }
 
@@ -425,6 +542,7 @@ async function processAnalysisInBackground(analysisId) {
 
     // ---- 2. Read the uploaded file ----
     let fileBuffer;
+    logStep(analysisId, 'File Parsing Start');
     try {
       fileBuffer = await fs.promises.readFile(analysis.filePath);
     } catch (fileErr) {
@@ -448,6 +566,9 @@ async function processAnalysisInBackground(analysisId) {
         console.warn(`[claudeService:${analysisId}] Could not count pages: ${pdfErr.message} -- defaulting to single-call path`);
       }
     }
+    
+    logStep(analysisId, 'File Parsing Complete', { mediaType, fileSizeKB, pageCount });
+
 
     const useChunkedPath = pageCount !== null && pageCount > CHUNK_PAGE_LIMIT;
 
@@ -468,10 +589,11 @@ async function processAnalysisInBackground(analysisId) {
 
       let response;
       try {
+        logStep(analysisId, 'Analysis API Call Start', { model: CLAUDE_MODEL });
         response = await anthropic.messages.create({
           model:      CLAUDE_MODEL,
-          max_tokens: 4000,
-          system:     CREDIT_ANALYSIS_PROMPT,
+          max_tokens: 12000,
+          system:     EXTRACTION_PROMPT,
           messages: [
             {
               role: 'user',
@@ -480,13 +602,15 @@ async function processAnalysisInBackground(analysisId) {
                   type:   'document',
                   source: { type: 'base64', media_type: mediaType, data: base64Data },
                 },
-                { type: 'text', text: 'Analyze this credit report and return the structured result.' },
+                { type: 'text', text: 'Extract all credit data from this report and return via the submit_credit_analysis tool.' },
               ],
             },
           ],
           tools:       [ANALYSIS_TOOL],
           tool_choice: { type: 'tool', name: 'submit_credit_analysis' },
         });
+        logStep(analysisId, 'Analysis API Call Complete', { usage: response.usage });
+
       } catch (apiErr) {
         console.error(`[claudeService:${analysisId}] Claude API call FAILED`);
         console.error(`[claudeService:${analysisId}]   Error type    :`, apiErr.constructor && apiErr.constructor.name);
@@ -517,27 +641,53 @@ async function processAnalysisInBackground(analysisId) {
       }
 
       const result = toolUseBlock.input;
-      console.log(`[claudeService:${analysisId}] Extracted structured result:`, JSON.stringify(result, null, 2));
+      console.log(`[claudeService:${analysisId}] Extracted ${(result.accounts||[]).length} accounts, ${(result.enquiries||[]).length} enquiries`);
 
+      // ── Render HTML immediately from structured data (no second Claude call) ──
+      logStep(analysisId, 'HTML Template Render Start');
+      const renderStart = Date.now();
+      let htmlReport = null;
+      try {
+        htmlReport = await renderCreditReport(result);
+        logStep(analysisId, 'HTML Template Render Complete', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
+        console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
+      } catch (renderErr) {
+        console.error(`[claudeService:${analysisId}] HTML render failed:`, renderErr.message);
+        // Non-fatal: store result without HTML, download will show an error
+      }
+
+      // ── Single atomic DB write: result + HTML together ──
+      logStep(analysisId, 'Result Persistence Start');
+      const activeLoans = (result.accounts || []).filter(
+        (a) => (a.status || '').toLowerCase() === 'active'
+      ).length;
+      const hasOverdue = (result.accounts || []).some((a) => (a.overdue_amount || 0) > 0);
       await AIAnalysis.findByIdAndUpdate(analysisId, {
         status:           'completed',
         isChunked:        false,
+        mergedData:       result,
         rawModelResponse: response,
         debugError:       null,
+        // Keep backward-compat result fields for getAnalysis API response
         result: {
-          score:             result.score,
+          score:             result.credit_score,
           scoreBand:         result.score_band,
-          activeLoans:       result.active_loans,
-          overdueStatus:     result.overdue_status,
-          enquiries6m:       result.enquiries_6m,
-          enquiriesRating:   result.enquiries_rating,
+          activeLoans,
+          overdueStatus:     hasOverdue ? 'Overdue' : 'Clear',
+          enquiries6m:       null,  // computed deterministically at render time
+          enquiriesRating:   null,
           foirPercent:       result.foir_percent,
           foirRating:        result.foir_rating,
           maxEligibleAmount: result.max_eligible_amount,
           recommendation:    result.recommendation,
         },
+        htmlReport:     htmlReport,
+        htmlGenerating: false,
+        htmlStatus:     htmlReport ? 'completed' : 'failed',
       });
-      console.log(`[claudeService:${analysisId}] Status -> completed (single-call path)`);
+      logStep(analysisId, 'Result Persistence Complete', { htmlStored: !!htmlReport });
+      console.log(`[claudeService:${analysisId}] Status -> completed (single-call path, HTML stored inline)`);
+
       return;
     }
 
@@ -574,29 +724,51 @@ async function processAnalysisInBackground(analysisId) {
     const mergedData = mergeChunkResults(chunkResults);
     console.log(`[claudeService:${analysisId}] Merge complete: ${mergedData.total_accounts} deduped accounts, score=${mergedData.credit_score}`);
 
-    // B4. Final synthesis call (produces the 6 UI summary fields from JSON)
-    const finalResult = await synthesizeFinalResult(mergedData, analysisId);
+    // B4. Synthesis call — qualitative fields from merged JSON (no PDF re-send)
+    const qualitativeFields = await synthesizeFinalResult(mergedData, analysisId);
 
-    // B5. Persist completed result
+    // B4b. Merge qualitative fields into mergedData for rendering
+    const fullData = Object.assign({}, mergedData, qualitativeFields);
+
+    // B4c. Render HTML from merged structured data
+    logStep(analysisId, 'HTML Template Render Start (chunked path)');
+    const renderStart = Date.now();
+    let htmlReport = null;
+    try {
+      htmlReport = await renderCreditReport(fullData);
+      logStep(analysisId, 'HTML Template Render Complete (chunked path)', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
+      console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
+    } catch (renderErr) {
+      console.error(`[claudeService:${analysisId}] HTML render failed (chunked path):`, renderErr.message);
+    }
+
+    // B5. Persist completed result — single atomic write with HTML
+    const activeLoansChunked = (mergedData.accounts || []).filter(
+      (a) => (a.status || '').toLowerCase() === 'active'
+    ).length;
+    const hasOverdueChunked = (mergedData.accounts || []).some((a) => (a.overdue_amount || 0) > 0);
     await AIAnalysis.findByIdAndUpdate(analysisId, {
       status:     'completed',
       isChunked:  true,
-      mergedData, // stored so generateFullHtmlReport() can use it without re-reading the PDF
+      mergedData: fullData,
       debugError: null,
       result: {
-        score:             finalResult.score,
-        scoreBand:         finalResult.score_band,
-        activeLoans:       finalResult.active_loans,
-        overdueStatus:     finalResult.overdue_status,
-        enquiries6m:       finalResult.enquiries_6m,
-        enquiriesRating:   finalResult.enquiries_rating,
-        foirPercent:       finalResult.foir_percent,
-        foirRating:        finalResult.foir_rating,
-        maxEligibleAmount: finalResult.max_eligible_amount,
-        recommendation:    finalResult.recommendation,
+        score:             mergedData.credit_score || qualitativeFields.credit_score,
+        scoreBand:         mergedData.score_band   || qualitativeFields.score_band,
+        activeLoans:       activeLoansChunked,
+        overdueStatus:     hasOverdueChunked ? 'Overdue' : 'Clear',
+        enquiries6m:       null,  // computed deterministically at render time
+        enquiriesRating:   null,
+        foirPercent:       qualitativeFields.foir_percent,
+        foirRating:        qualitativeFields.foir_rating,
+        maxEligibleAmount: qualitativeFields.max_eligible_amount,
+        recommendation:    qualitativeFields.recommendation,
       },
+      htmlReport:     htmlReport,
+      htmlGenerating: false,
+      htmlStatus:     htmlReport ? 'completed' : 'failed',
     });
-    console.log(`[claudeService:${analysisId}] Status -> completed (chunked path)`);
+    console.log(`[claudeService:${analysisId}] Status -> completed (chunked path, HTML stored inline)`);
 
   } catch (err) {
     console.error('!'.repeat(60));
@@ -642,15 +814,27 @@ async function processAnalysisInBackground(analysisId) {
 }
 
 // ---------------------------------------------------------------------------
-// generateFullHtmlReport -- second Claude call, free-text HTML output.
-// For SHORT files (isChunked=false): re-sends the PDF natively (unchanged).
-// For LARGE files (isChunked=true): generates HTML from stored mergedData JSON.
-// Both paths use the same system prompt and produce identical visual output.
+// generateFullHtmlReport — REMOVED.
+// HTML is now rendered synchronously by reportRenderer.js immediately after
+// the extraction tool call completes. No second Claude call is needed.
+// This function is kept as a stub for any external callers that have not
+// yet been updated, so the server does not crash at startup.
 // ---------------------------------------------------------------------------
 async function generateFullHtmlReport(analysisId) {
-  console.log(`\n${'~'.repeat(60)}`);
-  console.log(`[htmlReport:${analysisId}] HTML generation started at ${new Date().toISOString()}`);
-  console.log('~'.repeat(60));
+  console.warn(`[htmlReport:${analysisId}] generateFullHtmlReport() is deprecated. HTML is now generated inline during processAnalysisInBackground(). This call is a no-op.`);
+  return null;
+}
+
+async function processHtmlGenerationInBackground(analysisId) {
+  console.warn(`[processHtmlGenerationInBackground:${analysisId}] Deprecated — HTML is generated inline. No-op.`);
+}
+
+module.exports = { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground };
+
+// ============================================================================
+// DEAD CODE BELOW — kept for reference, will be removed in next cleanup pass.
+// ============================================================================
+async function _deadCodeStart() {
 
   const analysis = await AIAnalysis.findById(analysisId);
   if (!analysis) throw new Error(`[htmlReport:${analysisId}] Analysis record not found`);
@@ -678,13 +862,17 @@ async function generateFullHtmlReport(analysisId) {
     const base64Data = fileBuffer.toString('base64');
     const mediaType  = mime.lookup(analysis.filePath) || 'application/pdf';
     console.log(`[htmlReport:${analysisId}] File: ${analysis.filePath} | ${(fileBuffer.length / 1024).toFixed(1)} KB | ${mediaType}`);
-    console.log(`[htmlReport:${analysisId}] Calling Claude API (short-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 25000`);
+    console.log(`[htmlReport:${analysisId}] Calling Claude API (short-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 65000`);
 
     let response;
     try {
-      const stream = anthropic.messages.stream({
+      // Request shape: model, max_tokens, thinking, messages, system
+      // Thinking DISABLED: HTML generation is a template-fill task, not reasoning.
+      // This eliminates 1-3 min of thinking overhead per generation.
+      const requestPayload = {
         model:      CLAUDE_MODEL,
-        max_tokens: 25000,
+        max_tokens: 65000,
+        thinking:   { type: 'disabled' },
         system:     CREDIT_ANALYSIS_PROMPT,
         messages: [
           {
@@ -701,8 +889,40 @@ async function generateFullHtmlReport(analysisId) {
             ],
           },
         ],
+      };
+      
+      console.log(`[htmlReport:${analysisId}] Actual request payload being sent:`, JSON.stringify(requestPayload, (k,v) => k==='data' ? '<base64>' : v, 2));
+      
+      const startTime = Date.now();
+      let firstByteTime = null;
+      let tokenCount = 0;
+      console.log(`[htmlReport:${analysisId}] TIMING: Stream starting at ${startTime}`);
+      logStep(analysisId, 'HTML Generation API Call Start', { path: 'short-file' });
+
+      const stream = anthropic.messages.stream(requestPayload);
+      
+      stream.on('text', () => {
+        tokenCount++;
+        if (!firstByteTime) {
+          firstByteTime = Date.now();
+          logStep(analysisId, 'HTML Generation First Byte Received', { timeToFirstByte: firstByteTime - startTime });
+          console.log(`[htmlReport:${analysisId}] TIMING: First byte received in ${firstByteTime - startTime}ms`);
+        }
+        if (tokenCount % 100 === 0) {
+            logStep(analysisId, 'HTML Generation Stream Progress', { textChunks: tokenCount });
+        }
       });
+      
       response = await stream.finalMessage();
+      
+      const endTime = Date.now();
+      logStep(analysisId, 'HTML Generation API Call Complete', { 
+        usage: response.usage, 
+        durationMs: endTime - startTime, 
+        tokensPerSec: response.usage?.output_tokens / ((endTime - startTime) / 1000)
+      });
+      console.log(`[htmlReport:${analysisId}] TIMING: Stream completed in ${endTime - (firstByteTime || startTime)}ms (Total since start: ${endTime - startTime}ms)`);
+
     } catch (apiErr) {
       console.error(`[htmlReport:${analysisId}] Claude API call FAILED`);
       console.error(`[htmlReport:${analysisId}]   Error type    :`, apiErr.constructor && apiErr.constructor.name);
@@ -727,13 +947,17 @@ async function generateFullHtmlReport(analysisId) {
 
   const mergedJson = JSON.stringify(analysis.mergedData, null, 2);
   console.log(`[htmlReport:${analysisId}] mergedData: ${mergedJson.length} chars, ${analysis.mergedData.total_accounts} accounts`);
-  console.log(`[htmlReport:${analysisId}] Calling Claude API (large-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 25000`);
+  console.log(`[htmlReport:${analysisId}] Calling Claude API (large-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 65000`);
 
   let response;
   try {
-    const stream = anthropic.messages.stream({
+    // Request shape: model, max_tokens, thinking, messages, system
+    // Thinking DISABLED: HTML generation is a template-fill task, not reasoning.
+    // This eliminates 1-3 min of thinking overhead per generation.
+    const requestPayload = {
       model:      CLAUDE_MODEL,
-      max_tokens: 25000,
+      max_tokens: 65000,
+      thinking:   { type: 'disabled' },
       system:     CREDIT_ANALYSIS_PROMPT,
       messages: [
         {
@@ -750,8 +974,28 @@ async function generateFullHtmlReport(analysisId) {
           ],
         },
       ],
+    };
+
+    console.log(`[htmlReport:${analysisId}] Actual request payload being sent:`, JSON.stringify(requestPayload, null, 2));
+
+    const startTime = Date.now();
+    let firstByteTime = null;
+    console.log(`[htmlReport:${analysisId}] TIMING: Stream starting at ${startTime}`);
+
+    const stream = anthropic.messages.stream(requestPayload);
+
+    stream.on('text', () => {
+      if (!firstByteTime) {
+        firstByteTime = Date.now();
+        console.log(`[htmlReport:${analysisId}] TIMING: First byte received in ${firstByteTime - startTime}ms`);
+      }
     });
+
     response = await stream.finalMessage();
+    
+    const endTime = Date.now();
+    console.log(`[htmlReport:${analysisId}] TIMING: Stream completed in ${endTime - (firstByteTime || startTime)}ms (Total since start: ${endTime - startTime}ms)`);
+
   } catch (apiErr) {
     console.error(`[htmlReport:${analysisId}] Claude API call FAILED (large-file path)`);
     console.error(`[htmlReport:${analysisId}]   Error type    :`, apiErr.constructor && apiErr.constructor.name);
@@ -776,11 +1020,23 @@ async function _extractAndPersistHtml(response, analysisId) {
 
   const textBlock = response.content.find((c) => c.type === 'text');
   if (!textBlock) {
-    console.error(`[htmlReport:${analysisId}] No text block in response. Full content:`, JSON.stringify(response.content, null, 2));
+    const blockTypes = response.content.map(c => c.type);
+    console.error(`[htmlReport:${analysisId}] No text block found.`);
+    console.error(`[htmlReport:${analysisId}] stop_reason: ${response.stop_reason}`);
+    console.error(`[htmlReport:${analysisId}] block types:`, blockTypes);
+    console.error(`[htmlReport:${analysisId}] token usage:`, response.usage);
+
+    if (response.stop_reason === 'max_tokens') {
+      const maxTokenErr = new Error("HTML generation hit the max_tokens limit before producing output (likely during the thinking phase). Consider raising max_tokens or lowering effort.");
+      maxTokenErr.code = 'MAX_TOKENS_EXCEEDED';
+      throw maxTokenErr;
+    }
+
     throw new Error('Claude did not return a text block -- expected free-text HTML output');
   }
 
   let rawHtml = (textBlock.text || '').trim();
+  logStep(analysisId, 'HTML Extraction & Validation Start');
   console.log(`[htmlReport:${analysisId}] Raw HTML length: ${rawHtml.length} chars`);
   console.log(`[htmlReport:${analysisId}] First 300 chars:\n${rawHtml.slice(0, 300)}`);
 
@@ -803,14 +1059,36 @@ async function _extractAndPersistHtml(response, analysisId) {
       'Check server logs for the raw response.'
     );
   }
+  logStep(analysisId, 'HTML Extraction & Validation Complete');
 
+  const startDb = Date.now();
+  logStep(analysisId, 'HTML Persistence to DB Start');
   await AIAnalysis.findByIdAndUpdate(analysisId, {
     htmlReport:     rawHtml,
     htmlGenerating: false,
+    htmlStatus:     'completed'
   });
+  const endDb = Date.now();
+  logStep(analysisId, 'HTML Persistence to DB Complete', { lengthChars: rawHtml.length });
+  console.log(`[htmlReport:${analysisId}] TIMING: DB write completed in ${endDb - startDb}ms (htmlStatus = completed)`);
+
   console.log(`[htmlReport:${analysisId}] HTML report stored in DB (${rawHtml.length} chars)`);
 
   return rawHtml;
 }
 
-module.exports = { processAnalysisInBackground, generateFullHtmlReport };
+async function processHtmlGenerationInBackground(analysisId) {
+  try {
+    console.log(`[processHtmlGenerationInBackground:${analysisId}] Starting background generation`);
+    await generateFullHtmlReport(analysisId);
+  } catch (genErr) {
+    console.error(`[processHtmlGenerationInBackground:${analysisId}] FAILED:`, genErr.message);
+    await AIAnalysis.findByIdAndUpdate(analysisId, { 
+      htmlGenerating: false,
+      htmlStatus: 'failed',
+      lastHtmlGenerationFailure: new Date()
+    });
+  }
+}
+
+
