@@ -1,26 +1,29 @@
 const express = require("express");
+const auth = require("../middleware/auth");
 const router = express.Router();
 
 const {
-  getCibilReport,
+  CibilReportFromDigi,
   fetchCibilReport,
-
-  getCrifReport,
-  getEquifaxReport,
-  getExperianReport,
+  CrifReport,
+  EquifaxReport,
+  ExperianReport,
+  getAllCreditReports,
 } = require("../controllers/creditController");
 
-// CIBIL  POST /api/credit/generate-cibil-report
-router.post("/generate-cibil-report", getCibilReport);
-router.get("/get-cibil-rpt/:id", fetchCibilReport);
+// CIBIL
+router.post("/generate-cibil-report", auth, CibilReportFromDigi);
 
-// CRIF POST /api/credit/generate-crif-report
-router.post("/generate-crif-report", getCrifReport);
+// CRIF
+router.post("/generate-crif-report", auth, CrifReport);
 
-// EQUIFAX POST /api/credit/generate-equifax-report
-router.post("/generate-equifax-report", getEquifaxReport);
+// EQUIFAX
+router.post("/generate-equifax-report", auth, EquifaxReport);
 
-// EXPERIAN POST /api/credit/generate-experian-report
-router.post("/generate-experian-report", getExperianReport);
+// EXPERIAN
+router.post("/generate-experian-report", auth, ExperianReport);
+
+// GET ALL CREDIT REPORTS
+router.get("/get-credit-rpt", auth, getAllCreditReports);
 
 module.exports = router;

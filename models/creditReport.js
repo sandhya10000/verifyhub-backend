@@ -5,6 +5,25 @@ const creditReportSchema = new mongoose.Schema(
     // =========================
     // CUSTOMER DETAILS
     // =========================
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
+    orderId: {
+      type: String,
+      index: true,
+    },
+
+    // =========================
+    // CRIF REFERENCES
+    // =========================
+    reportId: {
+      type: String,
+      index: true,
+    },
     name: {
       type: String,
       required: true,
@@ -90,6 +109,13 @@ const creditReportSchema = new mongoose.Schema(
     reportData: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
+    },
+    localPath: {
+      type: String,
+    },
+    isPublic: {
+      type: Boolean,
+      default: false,
     },
 
     // =========================

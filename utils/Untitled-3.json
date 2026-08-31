@@ -1,0 +1,9 @@
+{
+    "success": false,
+    "message": "DIGI authentication failed",
+    "error": "Unauthorized,  Invalid Token ",
+    "digiResponse": {
+        "status": false,
+        "message": "Unauthorized,  Invalid Token "
+    }
+}
