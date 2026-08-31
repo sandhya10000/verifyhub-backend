@@ -1,0 +1,1127 @@
+{
+    "success": true,
+    "message": "Score Fetched",
+    "data": {
+        "status": "SUCCESS",
+        "message": "Score Fetched",
+        "data": {
+            "score": 754,
+            "status": "success",
+            "file": "INDC1787984972873FA865C4.json",
+            "data": {
+                "B2C-REPORT": {
+                    "HEADER": {
+                        "DATE-OF-REQUEST": "29-08-2026",
+                        "PREPARED-FOR": "",
+                        "PREPARED-FOR-ID": "DTC0000236",
+                        "DATE-OF-ISSUE": "29-08-2026",
+                        "REPORT-ID": "CCR260829CR435926725",
+                        "BATCH-ID": "4937905851260829",
+                        "inquiryId_": "13950050316",
+                        "STATUS": "SUCCESS"
+                    },
+                    "REQUEST": {
+                        "NAME": "D KUMAR",
+                        "DOB": "09-05-1986",
+                        "PAN": "BNLPK9404P",
+                        "EMAIL-1": "praneethdpk@gmail.com",
+                        "ADDRESS-1": "ANANTAPUR,  Andhrapradesh Anantapur 515001 Andhra Pradesh",
+                        "ADDRESS-2": "",
+                        "ADDRESS-3": "",
+                        "PHONE-1": "9885936377"
+                    },
+                    "PERSONAL-INFO-VARIATION": {
+                        "NAME-VARIATIONS": {
+                            "VARIATION": [
+                                {
+                                    "VALUE": "PRANEETH KUMAR D",
+                                    "REPORTED-DATE": "30-06-2024"
+                                },
+                                {
+                                    "VALUE": "D KUMAR",
+                                    "REPORTED-DATE": "30-06-2026"
+                                },
+                                {
+                                    "VALUE": "D PRANEETH KUMAR",
+                                    "REPORTED-DATE": "31-07-2024"
+                                }
+                            ]
+                        },
+                        "ADDRESS-VARIATIONS": {
+                            "VARIATION": [
+                                {
+                                    "VALUE": "D.NO:12-2-649 JESUS NAGAR 515001 AP",
+                                    "REPORTED-DATE": "30-06-2023"
+                                },
+                                {
+                                    "VALUE": "12-2-649 JESUS NAGAR JESUS NAGAR JESUS NAGARANANTAPUR ANDHRA PRADESH515001 ANANTAPUR AP 515001 515001 AP",
+                                    "REPORTED-DATE": "31-07-2024"
+                                },
+                                {
+                                    "VALUE": "12-2-649, JESUS NAGAR, JESUS NAG AR ANANTAPUR ANANT 515001 AP",
+                                    "REPORTED-DATE": "15-11-2025"
+                                },
+                                {
+                                    "VALUE": "S/O D PRABHAKAR DNO 12/2/649 JESUS NAGAR ANANTAPUR COLLECTORATE S.O ANANTPUR, ANDHRA PRADESH 515001 AP",
+                                    "REPORTED-DATE": "31-05-2024"
+                                },
+                                {
+                                    "VALUE": "S-O B D N PRABHAKAR 12-2-649 JESUS NAGAR JESUS NAGAR ANANTAPUR ANANTAPUR AN 515001 AP",
+                                    "REPORTED-DATE": "23-08-2026"
+                                },
+                                {
+                                    "VALUE": "12-2-649 JESUS NAGAR JESUS NAGAR JESUS NAGARANANTAPUR ANDHRA PRADESH515001 515001 AP",
+                                    "REPORTED-DATE": "23-08-2026"
+                                },
+                                {
+                                    "VALUE": "12 2 649 JESUS NAGAR JESUS NAG AR ANANTAPUR ANANTAPUR 515001 AP",
+                                    "REPORTED-DATE": "23-08-2026"
+                                },
+                                {
+                                    "VALUE": "12-2-649, JESUS NAGAR, JESUS NAG AR,  ANANTAPUR, ANANTAPUR  ANANT 515001 AP",
+                                    "REPORTED-DATE": "31-01-2026"
+                                },
+                                {
+                                    "VALUE": "S/O BDN PRABHAKAR 12-2/649, JESUS NAGAR A NANTAPUR JESUS, NAGAR ANANTAPUR ANDHRA 26 ANDHRA PRADESH 515001 AP",
+                                    "REPORTED-DATE": "30-09-2024"
+                                },
+                                {
+                                    "VALUE": "122649 JESUS NAGAR JESUS NAGAR JESUS NAGARANANTAPUR ANDHRA PRADESH515001 ANANTAPUR ANDHRA PRADESH 515001 AP",
+                                    "REPORTED-DATE": "23-08-2026"
+                                }
+                            ]
+                        },
+                        "PAN-VARIATIONS": {
+                            "VARIATION": {
+                                "VALUE": "BNLPK9404P",
+                                "REPORTED-DATE": "23-08-2026"
+                            }
+                        },
+                        "UID-VARIATIONS": {
+                            "VARIATION": {
+                                "VALUE": "XXXXXXXX3819",
+                                "REPORTED-DATE": "31-07-2024"
+                            }
+                        },
+                        "OTHER-ID-VARIATIONS": {
+                            "VARIATION": {
+                                "VALUE": "10026538635939",
+                                "REPORTED-DATE": "30-06-2026"
+                            }
+                        },
+                        "DRIVING-LICENSE-VARIATIONS": "",
+                        "DATE-OF-BIRTH-VARIATIONS": {
+                            "VARIATION": [
+                                {
+                                    "VALUE": "01-01-1986",
+                                    "REPORTED-DATE": "30-06-2024"
+                                },
+                                {
+                                    "VALUE": "09-05-1986",
+                                    "REPORTED-DATE": "30-06-2026"
+                                }
+                            ]
+                        },
+                        "VOTER-ID-VARIATIONS": "",
+                        "PASSPORT-VARIATIONS": "",
+                        "PHONE-NUMBER-VARIATIONS": {
+                            "VARIATION": [
+                                {
+                                    "VALUE": "9885936377",
+                                    "REPORTED-DATE": "23-08-2026"
+                                },
+                                {
+                                    "VALUE": "1",
+                                    "REPORTED-DATE": "30-06-2026"
+                                },
+                                {
+                                    "VALUE": "2",
+                                    "REPORTED-DATE": "30-06-2026"
+                                }
+                            ]
+                        },
+                        "RATION-CARD-VARIATIONS": "",
+                        "EMAIL-VARIATIONS": {
+                            "VARIATION": {
+                                "VALUE": "praneethdpk@gmail.com",
+                                "REPORTED-DATE": "23-08-2026"
+                            }
+                        }
+                    },
+                    "SECONDARY-MATCHES": "",
+                    "ACCOUNTS-SUMMARY": {
+                        "DERIVED-ATTRIBUTES": {
+                            "INQURIES-IN-LAST-SIX-MONTHS": "1",
+                            "LENGTH-OF-CREDIT-HISTORY-YEAR": "8",
+                            "LENGTH-OF-CREDIT-HISTORY-MONTH": "0",
+                            "AVERAGE-ACCOUNT-AGE-YEAR": "1",
+                            "AVERAGE-ACCOUNT-AGE-MONTH": "3",
+                            "NEW-ACCOUNTS-IN-LAST-SIX-MONTHS": "4",
+                            "NEW-DELINQ-ACCOUNT-IN-LAST-SIX-MONTHS": "0"
+                        },
+                        "PRIMARY-ACCOUNTS-SUMMARY": {
+                            "PRIMARY-NUMBER-OF-ACCOUNTS": "23",
+                            "PRIMARY-ACTIVE-NUMBER-OF-ACCOUNTS": "4",
+                            "PRIMARY-OVERDUE-NUMBER-OF-ACCOUNTS": "1",
+                            "PRIMARY-SECURED-NUMBER-OF-ACCOUNTS": "15",
+                            "PRIMARY-UNSECURED-NUMBER-OF-ACCOUNTS": "8",
+                            "PRIMARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+                            "PRIMARY-CURRENT-BALANCE": "3,17,640",
+                            "PRIMARY-SANCTIONED-AMOUNT": "3,25,036",
+                            "PRIMARY-DISBURSED-AMOUNT": "3,25,036"
+                        },
+                        "SECONDARY-ACCOUNTS-SUMMARY": {
+                            "SECONDARY-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-ACTIVE-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-OVERDUE-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-SECURED-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-UNSECURED-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+                            "SECONDARY-CURRENT-BALANCE": "0",
+                            "SECONDARY-SANCTIONED-AMOUNT": "0",
+                            "SECONDARY-DISBURSED-AMOUNT": "0"
+                        }
+                    },
+                    "EMPLOYMENT-DETAILS": {
+                        "EMPLOYMENT-DETAIL": {
+                            "ACCT-TYPE": "Gold Loan",
+                            "DATE-REPORTED": "23-08-2026",
+                            "OCCUPATION": "SELF EMPLOYED PROFESSIONAL"
+                        }
+                    },
+                    "RESPONSES": {
+                        "RESPONSE": [
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "26660000015416",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-07-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,38,000",
+                                    "DISBURSED-DT": "03-01-2026",
+                                    "LAST-PAYMENT-DATE": "16-07-2026",
+                                    "CLOSED-DATE": "16-07-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/STD|Apr:2026,000/STD|Mar:2026,000/STD|Feb:2026,000/STD|Jan:2026,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": [
+                                            {
+                                                "SECURITY-TYPE": "Gold",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "1,70,850",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            },
+                                            {
+                                                "SECURITY-TYPE": "",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "1,70,850",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            },
+                                            {
+                                                "SECURITY-TYPE": "No Collateral",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            }
+                                        ]
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "FLIPKART-89765379",
+                                    "CREDIT-GUARANTOR": "IDFC",
+                                    "ACCT-TYPE": "Consumer Loan",
+                                    "DATE-REPORTED": "28-02-2025",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "16,000",
+                                    "DISBURSED-DT": "25-09-2022",
+                                    "LAST-PAYMENT-DATE": "01-11-2022",
+                                    "CLOSED-DATE": "04-02-2025",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Feb:2025,000/XXX|Jan:2025,000/XXX|Dec:2024,000/XXX|Nov:2024,000/XXX|Oct:2024,000/XXX|Sep:2024,000/XXX|Aug:2024,000/XXX|Jul:2024,000/XXX|Jun:2024,000/XXX|May:2024,000/XXX|Apr:2024,000/XXX|Mar:2024,000/XXX|Feb:2024,000/XXX|Jan:2024,000/XXX|Dec:2023,000/XXX|Nov:2023,000/XXX|Oct:2023,000/XXX|Sep:2023,000/XXX|Aug:2023,000/XXX|Jul:2023,000/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,000/XXX|Feb:2023,000/XXX|Jan:2023,000/XXX|Dec:2022,000/XXX|Nov:2022,000/XXX|Oct:2022,000/XXX|Sep:2022,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": "",
+                                    "REPAYMENT-TENURE": "84",
+                                    "SUIT-FILED_WILFUL-DEFAULT": "No Suit filed",
+                                    "ACTUAL-PAYMENT": "9,868"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "24660001465374",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "28-02-2025",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,33,300",
+                                    "DISBURSED-DT": "14-06-2024",
+                                    "LAST-PAYMENT-DATE": "11-12-2024",
+                                    "CLOSED-DATE": "11-12-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Dec:2024,000/STD|Nov:2024,000/STD|Oct:2024,000/STD|Sep:2024,000/STD|Aug:2024,000/STD|Jul:2024,000/STD|Jun:2024,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "1,62,851",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "6",
+                                    "INTEREST-RATE": "18.5"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "9001090470325000",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "23-08-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Active",
+                                    "DISBURSED-AMT": "44,000",
+                                    "DISBURSED-DT": "17-08-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "44,000",
+                                    "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "44,000",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "9001090159164765",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-07-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Active",
+                                    "DISBURSED-AMT": "1,13,600",
+                                    "DISBURSED-DT": "16-05-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "1,13,600",
+                                    "COMBINED-PAYMENT-HISTORY": "Jul:2026,000/STD|Jun:2026,000/XXX|May:2026,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": [
+                                            {
+                                                "SECURITY-TYPE": "Gold",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "1,13,600",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            },
+                                            {
+                                                "SECURITY-TYPE": "",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "1,13,600",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            }
+                                        ]
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MAL00008652",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "30-04-2022",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "16,000",
+                                    "DISBURSED-DT": "11-02-2021",
+                                    "LAST-PAYMENT-DATE": "14-04-2022",
+                                    "CLOSED-DATE": "14-04-2022",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Apr:2022,000/XXX|Mar:2022,000/XXX|Feb:2022,000/XXX|Jan:2022,000/XXX|Dec:2021,000/XXX|Nov:2021,000/XXX|Oct:2021,000/XXX|Sep:2021,000/XXX|Aug:2021,000/XXX|Jul:2021,000/XXX|Jun:2021,000/XXX|May:2021,000/XXX|Apr:2021,000/XXX|Mar:2021,000/XXX|Feb:2021,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "16,000",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "16,000"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MHL00000856",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "31-07-2023",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,00,000",
+                                    "DISBURSED-DT": "14-04-2022",
+                                    "LAST-PAYMENT-DATE": "08-07-2023",
+                                    "CLOSED-DATE": "08-07-2023",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Jul:2023,000/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,XXX/XXX|Feb:2023,XXX/XXX|Jan:2023,XXX/XXX|Dec:2022,XXX/XXX|Nov:2022,XXX/XXX|Oct:2022,XXX/XXX|Sep:2022,XXX/XXX|Aug:2022,XXX/XXX|Jul:2022,XXX/XXX|Jun:2022,XXX/XXX|May:2022,XXX/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "1,00,300",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "1,00,000"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "25660001015211",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "15-11-2025",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,78,700",
+                                    "DISBURSED-DT": "09-07-2025",
+                                    "LAST-PAYMENT-DATE": "17-10-2025",
+                                    "CLOSED-DATE": "17-10-2025",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Oct:2025,000/STD|Sep:2025,000/STD|Aug:2025,000/STD|Jul:2025,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "2,20,645",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "33632300",
+                                    "CREDIT-GUARANTOR": "HDFC BANK LTD",
+                                    "ACCT-TYPE": "Auto Loan (Personal)",
+                                    "DATE-REPORTED": "30-06-2023",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "5,06,532",
+                                    "DISBURSED-DT": "29-06-2015",
+                                    "LAST-PAYMENT-DATE": "05-06-2023",
+                                    "CLOSED-DATE": "05-06-2023",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "651",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Jun:2023,000/LOS|May:2023,900/LOS|Apr:2023,900/LOS|Mar:2023,900/LOS|Feb:2023,900/LOS|Jan:2023,900/LOS|Dec:2022,900/LOS|Nov:2022,900/LOS|Oct:2022,900/LOS|Sep:2022,879/LOS|Aug:2022,849/LOS|Jul:2022,818/LOS|Jun:2022,787/LOS|May:2022,757/LOS|Apr:2022,756/LOS|Mar:2022,726/LOS|Feb:2022,695/LOS|Jan:2022,667/LOS|Dec:2021,635/LOS|Nov:2021,604/LOS|Oct:2021,574/LOS|Sep:2021,543/LOS|Aug:2021,513/LOS|Jul:2021,482/LOS|Jun:2021,451/LOS|May:2021,421/LOS|Apr:2021,390/LOS|Mar:2021,360/LOS|Feb:2021,329/LOS|Jan:2021,301/LOS|Dec:2020,270/LOS|Nov:2020,239/LOS|Oct:2020,209/LOS|Sep:2020,178/LOS|Aug:2020,208/LOS|Jul:2020,177/SUB|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "PRINCIPAL-WRITE-OFF-AMT": "0",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "0",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "0",
+                                    "WRITTEN-OFF_SETTLED-STATUS": "Post (WO) Settled",
+                                    "ACTUAL-PAYMENT": "21,776"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450BVS00000199",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "31-03-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "50,500",
+                                    "DISBURSED-DT": "25-06-2022",
+                                    "LAST-PAYMENT-DATE": "26-03-2024",
+                                    "CLOSED-DATE": "26-03-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Mar:2024,000/XXX|Feb:2024,157/XXX|Jan:2024,128/XXX|Dec:2023,097/XXX|Nov:2023,066/XXX|Oct:2023,036/XXX|Sep:2023,005/XXX|Aug:2023,000/XXX|Jul:2023,000/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,000/XXX|Feb:2023,XXX/XXX|Jan:2023,XXX/XXX|Dec:2022,XXX/XXX|Nov:2022,XXX/XXX|Oct:2022,XXX/XXX|Sep:2022,XXX/XXX|Aug:2022,XXX/XXX|Jul:2022,XXX/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "50,500",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "50,500"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450SRS00000627",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "30-06-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "59,900",
+                                    "DISBURSED-DT": "26-03-2024",
+                                    "LAST-PAYMENT-DATE": "14-06-2024",
+                                    "CLOSED-DATE": "14-06-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Jun:2024,000/XXX|May:2024,000/XXX|Apr:2024,000/XXX|Mar:2024,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "59,900",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "59,900"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MSL00029051",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-12-2022",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "44,800",
+                                    "DISBURSED-DT": "22-07-2021",
+                                    "LAST-PAYMENT-DATE": "24-12-2022",
+                                    "CLOSED-DATE": "24-12-2022",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Dec:2022,000/XXX|Nov:2022,039/XXX|Oct:2022,009/XXX|Sep:2022,000/XXX|Aug:2022,000/XXX|Jul:2022,000/XXX|Jun:2022,000/XXX|May:2022,000/XXX|Apr:2022,000/XXX|Mar:2022,000/XXX|Feb:2022,000/XXX|Jan:2022,000/XXX|Dec:2021,000/XXX|Nov:2021,000/XXX|Oct:2021,000/XXX|Sep:2021,000/XXX|Aug:2021,000/XXX|Jul:2021,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "45,000",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "44,800"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MHL00005100",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "31-05-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "72,800",
+                                    "DISBURSED-DT": "26-03-2024",
+                                    "LAST-PAYMENT-DATE": "18-05-2024",
+                                    "CLOSED-DATE": "18-05-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "May:2024,000/XXX|Apr:2024,000/XXX|Mar:2024,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "72,800",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "72,800"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MAL00010213",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "14-10-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "77,800",
+                                    "DISBURSED-DT": "16-04-2022",
+                                    "LAST-PAYMENT-DATE": "30-08-2023",
+                                    "CLOSED-DATE": "30-08-2023",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Aug:2023,000/XXX|Jul:2023,015/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,XXX/XXX|Feb:2023,XXX/XXX|Jan:2023,XXX/XXX|Dec:2022,XXX/XXX|Nov:2022,XXX/XXX|Oct:2022,XXX/XXX|Sep:2022,XXX/XXX|Aug:2022,XXX/XXX|Jul:2022,XXX/XXX|Jun:2022,XXX/XXX|May:2022,XXX/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "77,800",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "WRITTEN-OFF_SETTLED-STATUS": "Settled",
+                                    "ACTUAL-PAYMENT": "77,800"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450SRS00000477",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-03-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "40,000",
+                                    "DISBURSED-DT": "13-04-2022",
+                                    "LAST-PAYMENT-DATE": "26-03-2024",
+                                    "CLOSED-DATE": "26-03-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Mar:2024,000/XXX|Feb:2024,231/XXX|Jan:2024,202/XXX|Dec:2023,171/XXX|Nov:2023,140/XXX|Oct:2023,110/XXX|Sep:2023,079/XXX|Aug:2023,049/XXX|Jul:2023,018/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,000/XXX|Feb:2023,000/XXX|Jan:2023,000/XXX|Dec:2022,000/XXX|Nov:2022,000/XXX|Oct:2022,000/XXX|Sep:2022,000/XXX|Aug:2022,000/XXX|Jul:2022,000/XXX|Jun:2022,000/XXX|May:2022,000/XXX|Apr:2022,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "41,950",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "40,000"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "9001090468325490",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-07-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Active",
+                                    "DISBURSED-AMT": "1,54,600",
+                                    "DISBURSED-DT": "16-07-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "1,54,600",
+                                    "COMBINED-PAYMENT-HISTORY": "Jul:2026,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "1,54,600",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "XXXXXXXXXXXX5937",
+                                    "CREDIT-GUARANTOR": "KOTAK MAHINDRA BANK",
+                                    "ACCT-TYPE": "Secured Credit Card",
+                                    "DATE-REPORTED": "23-08-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Active",
+                                    "DISBURSED-AMT": "12,836",
+                                    "DISBURSED-DT": "30-03-2022",
+                                    "LAST-PAYMENT-DATE": "21-08-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "5,440",
+                                    "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|Mar:2026,000/XXX|Feb:2026,000/XXX|Jan:2026,000/XXX|Dec:2025,000/XXX|Nov:2025,000/XXX|Oct:2025,000/XXX|Sep:2025,000/XXX|Aug:2025,000/XXX|Jul:2025,000/XXX|Jun:2025,000/XXX|May:2025,000/XXX|Apr:2025,000/XXX|Mar:2025,000/XXX|Feb:2025,000/XXX|Jan:2025,000/XXX|Dec:2024,000/XXX|Nov:2024,000/XXX|Oct:2024,000/XXX|Sep:2024,000/XXX|Aug:2024,000/XXX|Jul:2024,000/XXX|Jun:2024,XXX/XXX|May:2024,000/XXX|Apr:2024,000/XXX|Mar:2024,000/XXX|Feb:2024,000/XXX|Jan:2024,000/XXX|Dec:2023,000/XXX|Nov:2023,000/XXX|Oct:2023,000/XXX|Sep:2023,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "CREDIT-LIMIT": "18,000",
+                                    "SECURITY-DETAILS": "",
+                                    "REPAYMENT-TENURE": "0",
+                                    "CASH-LIMIT": "16,200",
+                                    "ACTUAL-PAYMENT": "4,917"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "24660002679824",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-07-2025",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,22,800",
+                                    "DISBURSED-DT": "11-12-2024",
+                                    "LAST-PAYMENT-DATE": "09-07-2025",
+                                    "CLOSED-DATE": "09-07-2025",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Jul:2025,000/STD|Jun:2025,020/SMA|May:2025,000/STD|Apr:2025,000/STD|Mar:2025,000/STD|Feb:2025,000/STD|Jan:2025,000/STD|Dec:2024,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "1,62,851",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "6",
+                                    "INTEREST-RATE": "18.5"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450WBP00000091",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "30-04-2022",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "40,000",
+                                    "DISBURSED-DT": "08-02-2021",
+                                    "LAST-PAYMENT-DATE": "13-04-2022",
+                                    "CLOSED-DATE": "13-04-2022",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Apr:2022,000/XXX|Mar:2022,000/XXX|Feb:2022,000/XXX|Jan:2022,000/XXX|Dec:2021,000/XXX|Nov:2021,000/XXX|Oct:2021,000/XXX|Sep:2021,000/XXX|Aug:2021,000/XXX|Jul:2021,000/XXX|Jun:2021,000/XXX|May:2021,000/XXX|Apr:2021,000/XXX|Mar:2021,000/XXX|Feb:2021,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "40,050",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "40,000"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "26660000389471",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "23-08-2026",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "40,300",
+                                    "DISBURSED-DT": "13-02-2026",
+                                    "LAST-PAYMENT-DATE": "17-08-2026",
+                                    "CLOSED-DATE": "17-08-2026",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/STD|Jul:2026,000/STD|Jun:2026,000/XXX|May:2026,000/STD|Apr:2026,000/STD|Mar:2026,000/STD|Feb:2026,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": [
+                                            {
+                                                "SECURITY-TYPE": "",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "49,868",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            },
+                                            {
+                                                "SECURITY-TYPE": "No Collateral",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            },
+                                            {
+                                                "SECURITY-TYPE": "Gold",
+                                                "OWNER-NAME": "",
+                                                "SECURITY-VALUE": "49,868",
+                                                "DATE-OF-VALUE": "",
+                                                "SECURITY-CHARGE": "",
+                                                "PROPERTY-ADDRESS": "",
+                                                "AUTOMOBILE-TYPE": "",
+                                                "YEAR-OF-MANUFACTURE": "",
+                                                "REGISTRATION-NUMBER": "",
+                                                "ENGINE-NUMBER": "",
+                                                "CHASSIS-NUMBER": ""
+                                            }
+                                        ]
+                                    },
+                                    "REPAYMENT-TENURE": "12"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450MSL00031449",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "31-03-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "50,300",
+                                    "DISBURSED-DT": "24-12-2022",
+                                    "LAST-PAYMENT-DATE": "26-03-2024",
+                                    "CLOSED-DATE": "26-03-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "Mar:2024,000/XXX|Feb:2024,000/XXX|Jan:2024,000/XXX|Dec:2023,000/XXX|Nov:2023,000/XXX|Oct:2023,000/XXX|Sep:2023,000/XXX|Aug:2023,000/XXX|Jul:2023,000/XXX|Jun:2023,000/XXX|May:2023,000/XXX|Apr:2023,000/XXX|Mar:2023,000/XXX|Feb:2023,XXX/XXX|Jan:2023,XXX/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "50,300",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "50,300"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "24660000184160",
+                                    "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                                    "ACCT-TYPE": "Gold Loan",
+                                    "DATE-REPORTED": "31-07-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "1,99,100",
+                                    "DISBURSED-DT": "23-01-2024",
+                                    "LAST-PAYMENT-DATE": "18-05-2024",
+                                    "CLOSED-DATE": "18-05-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "May:2024,000/STD|Apr:2024,000/STD|Mar:2024,000/STD|Feb:2024,000/STD|Jan:2024,000/STD|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "3,56,014",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "6",
+                                    "INTEREST-RATE": "12.99",
+                                    "ACTUAL-PAYMENT": "0"
+                                }
+                            },
+                            {
+                                "LOAN-DETAILS": {
+                                    "ACCT-NUMBER": "2450SRS00000626",
+                                    "CREDIT-GUARANTOR": "MUTHOOT FINANCE LIMITED",
+                                    "ACCT-TYPE": "Other",
+                                    "DATE-REPORTED": "31-05-2024",
+                                    "OWNERSHIP-IND": "Individual",
+                                    "ACCOUNT-STATUS": "Closed",
+                                    "DISBURSED-AMT": "51,400",
+                                    "DISBURSED-DT": "26-03-2024",
+                                    "LAST-PAYMENT-DATE": "18-05-2024",
+                                    "CLOSED-DATE": "18-05-2024",
+                                    "OVERDUE-AMT": "0",
+                                    "WRITE-OFF-AMT": "0",
+                                    "CURRENT-BAL": "0",
+                                    "COMBINED-PAYMENT-HISTORY": "May:2024,000/XXX|Apr:2024,000/XXX|Mar:2024,000/XXX|",
+                                    "MATCHED-TYPE": "PRIMARY",
+                                    "LINKED-ACCOUNTS": "",
+                                    "SECURITY-DETAILS": {
+                                        "SECURITY-DETAIL": {
+                                            "SECURITY-TYPE": "Gold",
+                                            "OWNER-NAME": "",
+                                            "SECURITY-VALUE": "51,450",
+                                            "DATE-OF-VALUE": "",
+                                            "SECURITY-CHARGE": "",
+                                            "PROPERTY-ADDRESS": "",
+                                            "AUTOMOBILE-TYPE": "",
+                                            "YEAR-OF-MANUFACTURE": "",
+                                            "REGISTRATION-NUMBER": "",
+                                            "ENGINE-NUMBER": "",
+                                            "CHASSIS-NUMBER": ""
+                                        }
+                                    },
+                                    "REPAYMENT-TENURE": "12",
+                                    "INTEREST-RATE": "24.0",
+                                    "ACTUAL-PAYMENT": "51,400"
+                                }
+                            }
+                        ]
+                    },
+                    "INQUIRY-HISTORY": {
+                        "HISTORY": {
+                            "MEMBER-NAME": "AU SMALL FINANCE BANK LIMITED",
+                            "INQUIRY-DATE": "16-05-2026",
+                            "PURPOSE": "Auto Loan (Personal)",
+                            "OWNERSHIP-TYPE": "PRIMARY",
+                            "AMOUNT": "0",
+                            "REMARK": ""
+                        }
+                    },
+                    "SCORES": {
+                        "SCORE": {
+                            "SCORE-TYPE": "PERFORM CONSUMER 2.2",
+                            "SCORE-VALUE": "754",
+                            "SCORE-FACTORS": "SF01|SF11|SF25|SF33|",
+                            "SCORE-COMMENTS": "D"
+                        }
+                    },
+                    "verificarionScoreList": "",
+                    "PRINTABLE-REPORT": {
+                        "TYPE": "",
+                        "FILE-NAME": "",
+                        "CONTENT": ""
+                    },
+                    "enhanceProCcirFlag": "false",
+                    "ccirFlag": "false"
+                }
+            },
+            "displayId": "INDC1787984972873FA865C4"
+        },
+        "code": 200
+    }
+}
