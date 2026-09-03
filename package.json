@@ -24,7 +24,7 @@
     "morgan": "^1.11.0",
     "multer": "^2.2.0",
     "pdf-lib": "^1.17.1",
-    "puppeteer": "^25.5.0",
+    "puppeteer": "^25.9.0",
     "razorpay": "^2.9.8"
   },
   "devDependencies": {

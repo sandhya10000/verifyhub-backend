@@ -3,6 +3,7 @@ dotenv.config(); // MUST be first — env vars must be available before any othe
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 dotenv.config();
 
 console.log(
@@ -68,6 +69,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// =========================
+// SERVE UPLOADED FILES
+// =========================
+
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // Default Route
 app.get("/", (req, res) => {
   res.json({

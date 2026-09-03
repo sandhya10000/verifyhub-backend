@@ -6,7 +6,7 @@ const config = require("../config/bureau.config");
 
 const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
-
+const generateExperianPdf = require("../services/experianPdf.service");
 const CibilReportFromDigi = async (req, res) => {
   let creditReport = null;
 
@@ -1425,7 +1425,6 @@ const ExperianReport = async (req, res) => {
             lastName: "${lastName}"
             dob: "${dateOfBirth}"
             pincode: "${pin}"
-
             consent: {
               consentFlag: true
               consentTimestamp: ${consentTimestamp}
@@ -1434,7 +1433,6 @@ const ExperianReport = async (req, res) => {
             }
           }
         ) {
-
           status
           ok
           message
@@ -1576,10 +1574,13 @@ const ExperianReport = async (req, res) => {
       providerCode,
       baseUrl,
       endpoint,
+
       accessKeyPresent: !!accessKey,
       accessKeyLength: accessKey.length,
+
       secretKeyPresent: !!secretKey,
       secretKeyLength: secretKey.length,
+
       serviceKeyPresent: !!serviceKey,
       serviceKeyLength: serviceKey.length,
     });
@@ -1590,29 +1591,21 @@ const ExperianReport = async (req, res) => {
 
     creditReport = await CreditReport.create({
       userId,
-
       orderId: orderId ? String(orderId).trim() : null,
 
       name: String(fullName).trim(),
-
-      mobile: mobile,
-
-      pan: pan,
+      mobile,
+      pan,
 
       reportType: "EXPERIAN",
-
       consent: "Y",
-
       bureau: "EXPERIAN",
 
       status: "Pending",
 
       reportUrl: null,
-
       localPath: null,
-
       reportData: null,
-
       score: null,
 
       isPublic: false,
@@ -1650,9 +1643,7 @@ const ExperianReport = async (req, res) => {
         message: "Invalid response from Experian API",
 
         creditReportId: creditReport._id,
-
         userId: creditReport.userId,
-
         status: creditReport.status,
 
         response: apiData,
@@ -1665,7 +1656,6 @@ const ExperianReport = async (req, res) => {
 
     if (!verify.ok) {
       creditReport.status = "Failed";
-
       creditReport.reportData = apiData;
 
       await creditReport.save();
@@ -1676,13 +1666,10 @@ const ExperianReport = async (req, res) => {
         message: verify.message || "Experian verification failed",
 
         creditReportId: creditReport._id,
-
         userId: creditReport.userId,
-
         status: creditReport.status,
 
         error: verify.error || null,
-
         result: verify.result || null,
       });
     }
@@ -1695,7 +1682,6 @@ const ExperianReport = async (req, res) => {
 
     if (!result) {
       creditReport.status = "Failed";
-
       creditReport.reportData = apiData;
 
       await creditReport.save();
@@ -1706,9 +1692,7 @@ const ExperianReport = async (req, res) => {
         message: "Experian report result not received",
 
         creditReportId: creditReport._id,
-
         userId: creditReport.userId,
-
         status: creditReport.status,
 
         error: verify.error || null,
@@ -1754,67 +1738,78 @@ const ExperianReport = async (req, res) => {
     const version = creditProfile.Version ?? null;
 
     // ============================================================
-    // 22. EXPERIAN REPORT URL
-    // ============================================================
-
-    const reportUrl = result?.excelExperianReport || null;
-
-    console.log(
-      "[EXPERIAN] Report URL:",
-      reportUrl ? "Available" : "Not Available",
-    );
-
-    // ============================================================
-    // 23. SAVE REPORT LOCALLY
+    // 22. GENERATE PDF FROM EXPERIAN JSON
     // ============================================================
 
     let localPath = null;
 
-    if (reportUrl) {
-      try {
-        localPath = await saveCreditReportLocally(
-          reportUrl,
-          creditReport._id.toString(),
-          "EXPERIAN",
-          "xlsx",
-        );
+    try {
+      localPath = await generateExperianPdf(
+        result,
+        creditReport._id.toString(),
+      );
 
-        console.log("[EXPERIAN] Report saved locally:", localPath);
-      } catch (fileError) {
-        console.error(
-          "[EXPERIAN] Local report save failed:",
-          fileError.message,
-        );
-
-        // File save fail hone par API report ko Failed
-        // karna zaroori nahi hai.
-        // API successfully report de chuki hai.
-      }
+      console.log("[EXPERIAN] PDF generated:", localPath);
+    } catch (pdfError) {
+      console.error("[EXPERIAN] PDF generation failed:", pdfError.message);
     }
 
     // ============================================================
-    // 24. UPDATE CREDIT REPORT
+    // 23. PDF URL
+    // ============================================================
+
+    const pdfUrl = localPath
+      ? `/uploads/credit-reports/experian/experian-${creditReport._id}.pdf`
+      : null;
+
+    // ============================================================
+    // 24. PDF GENERATION FAILED
+    // ============================================================
+
+    if (!localPath) {
+      creditReport.status = "Failed";
+      creditReport.reportData = apiData;
+
+      await creditReport.save();
+
+      return res.status(500).json({
+        success: false,
+
+        message: "Experian report generated but PDF creation failed",
+
+        creditReportId: creditReport._id,
+        userId: creditReport.userId,
+
+        status: creditReport.status,
+      });
+    }
+
+    // ============================================================
+    // 25. UPDATE CREDIT REPORT
     // ============================================================
 
     creditReport.score = score;
 
-    creditReport.reportUrl = reportUrl;
+    // No external report URL
+    creditReport.reportUrl = null;
 
-    creditReport.localPath = localPath;
+    // Local PDF filesystem path
+    creditReport.localPath = pdfUrl;
 
+    // Complete Experian API response
     creditReport.reportData = apiData;
 
     creditReport.status = "Success";
 
-    // Optional fields agar schema mein available hain
-    // creditReport.reportNumber = reportNumber;
-
     await creditReport.save();
 
-    console.log("[EXPERIAN] Credit Report Updated:", creditReport._id);
+    console.log(
+      "[EXPERIAN] Credit Report Updated Successfully:",
+      creditReport._id,
+    );
 
     // ============================================================
-    // 25. FINAL RESPONSE
+    // 26. FINAL RESPONSE
     // ============================================================
 
     return res.status(200).json({
@@ -1823,32 +1818,25 @@ const ExperianReport = async (req, res) => {
       message: verify.message || "Experian report generated successfully",
 
       creditReportId: creditReport._id,
-
       userId: creditReport.userId,
 
-      reportId: creditReport.reportId || reportNumber,
-
-      orderId: creditReport.orderId,
-
-      status: creditReport.status,
-
       score: creditReport.score,
-
       scoreConfidence,
-
       exactMatch,
 
       reportNumber,
-
       reportDate,
-
       reportTime,
-
       version,
 
-      reportUrl: creditReport.reportUrl,
+      // External URL not used
+      reportUrl: null,
 
+      // Actual server filesystem path
       localPath: creditReport.localPath,
+
+      // Browser/frontend URL
+      pdfUrl,
 
       data: {
         header: result?.Header || null,
@@ -1864,8 +1852,6 @@ const ExperianReport = async (req, res) => {
         nonCreditCAPS: result?.NonCreditCAPS || null,
 
         currentApplication: result?.Current_Application || null,
-
-        excelExperianReport: result?.excelExperianReport || null,
       },
 
       creditReport,
@@ -1913,7 +1899,7 @@ const ExperianReport = async (req, res) => {
       return res.status(error.response.status || 500).json({
         success: false,
 
-        message: "Experian API request failed",
+        message: "Service Unavailable",
 
         creditReportId: creditReport?._id || null,
 

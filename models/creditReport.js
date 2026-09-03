@@ -110,8 +110,10 @@ const creditReportSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+
     localPath: {
       type: String,
+      default: null,
     },
     isPublic: {
       type: Boolean,
