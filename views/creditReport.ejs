@@ -6,16 +6,19 @@
 <title>Credit Analysis Report — <%- data.client_name || 'Client' %></title>
 <style>
 :root{
- --grad:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%);
- --crit:#dc3545;--high:#fd7e14;--med:#ffc107;--low:#28a745;
- --bg:#f4f6f9;--card:#fff;--ink:#2d3436;--muted:#6b7280;
+  --grad:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%);
+  --crit:#dc3545;--high:#fd7e14;--med:#ffc107;--low:#28a745;
+  --bg:#f4f6f9;--card:#fff;--ink:#2d3436;--muted:#6b7280;
+  /* Hero accent bar shown between the purple banner and the white card */
+  --hero-accent:linear-gradient(90deg,#4A00E0 0%,#a855f7 40%,#8E2DE2 70%,#06b6d4 100%);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
- font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55}
+  font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55}
 .container{max-width:1200px;margin:0 auto;padding:0 16px 60px}
 .card{background:var(--card);border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.1);
- padding:26px;margin:22px 0}
+  padding:26px;margin:22px 0}
+.hero-card{box-shadow:none;border-radius:0 0 12px 12px;margin-top:0;}
 h1,h2,h3,h4{margin:0 0 12px}
 .section-title{font-size:1.45rem;border-left:6px solid #8E2DE2;padding-left:12px;margin:34px 0 6px}
 .section-no{color:#8E2DE2;font-weight:700}
@@ -24,25 +27,67 @@ table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.92rem}
 th{background:var(--grad);color:#fff;padding:11px 10px;text-align:left;font-weight:600}
 td{padding:10px;border-bottom:1px solid #eef0f4}
 tbody tr:hover{background:#f7f4ff}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;color:#fff;font-size:.72rem;
- font-weight:700;letter-spacing:.3px}
-.b-CRITICAL{background:var(--crit)}.b-HIGH{background:var(--high)}
-.b-MEDIUM{background:var(--med);color:#5a4b00}.b-LOW{background:var(--low)}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;
+  border-radius:20px;color:#fff;font-size:.72rem;font-weight:700;
+  letter-spacing:.3px;border:none}
+/* Gradient fills + inset highlight for each severity */
+.b-CRITICAL{
+  background:linear-gradient(135deg,#dc3545 0%,#b02030 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(220,53,69,.4)}
+.b-HIGH{
+  background:linear-gradient(135deg,#fd7e14 0%,#d96209 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(253,126,20,.4)}
+.b-MEDIUM{
+  background:linear-gradient(135deg,#ffc107 0%,#d4980a 100%);color:#5a4b00;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 2px 6px rgba(255,193,7,.35)}
+.b-LOW{
+  background:linear-gradient(135deg,#28a745 0%,#1a7a32 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(40,167,69,.4)}
+/* Score-band badge used in the hero — slightly larger */
+.score-badge{
+  font-size:.95rem;padding:7px 20px;border-radius:24px;
+  display:inline-flex;align-items:center;gap:6px}
+
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+
 .gridkv{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 26px;font-size:.9rem}
-.kv{display:flex;justify-content:space-between;border-bottom:1px dotted #e3e6ee;padding:5px 0}
-.kv b{font-weight:600}
+
+/* ── Client detail grid — two columns with a centre divider ─────────────── */
+.hero-gridkv{
+  display:grid;
+  grid-template-columns:1fr 4px 1fr;   /* col | divider | col */
+  gap:8px 0;
+  font-size:.9rem}
+/* The centre divider cell */
+.gridkv-divider{
+  grid-column:2;
+  grid-row:2 / -1;
+  width:1px;
+  background:#e3e6ee;
+  margin:0 16px;
+  align-self:stretch}
+.kv-left { grid-column: 1; }
+.kv-right { grid-column: 3; }
+.kv{display:flex;align-items:center;gap:12px;border-bottom:1px dotted #e3e6ee;padding:12px 4px}
+.kv b{font-weight:600;display:block;color:#6b7280;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
+.kv-icon-wrap{width:36px;height:36px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.kv-icon{stroke:#3b82f6;}
+.kv-content{display:flex;flex-direction:column}
+.kv span{color:var(--ink);font-size:.95rem;font-weight:600;}
+
 .chartimg{width:100%;height:auto;border-radius:8px;display:block}
 .statbox{background:var(--grad);color:#fff;border-radius:12px;padding:18px;text-align:center}
 .statbox .n{font-size:1.7rem;font-weight:700}
 .statbox .l{font-size:.78rem;opacity:.9}
 .risk-item{display:flex;gap:14px;align-items:flex-start;padding:14px;border-radius:10px;
- background:#faf9ff;margin:10px 0;border-left:5px solid #8E2DE2}
+  background:#faf9ff;margin:10px 0;border-left:5px solid #8E2DE2}
 .risk-item .rk{font-size:1.4rem;font-weight:800;color:#8E2DE2;min-width:34px}
 .acct-card{border:1px solid #ece8fb;border-radius:12px;margin:16px 0;overflow:hidden}
 .acct-head{background:var(--grad);color:#fff;padding:14px 18px;display:flex;
- justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .acct-head .who{font-weight:700}
 .acct-body{padding:18px}
 .ph-grid{display:flex;flex-wrap:wrap;gap:3px;margin:10px 0}
@@ -50,7 +95,7 @@ tbody tr:hover{background:#f7f4ff}
 .ph-cell small{display:block;font-size:.55rem;opacity:.85;color:#2d3436}
 .hbar{height:18px;border-radius:9px;background:#eee;overflow:hidden;margin:6px 0}
 .hbar>span{display:block;height:100%;border-radius:9px}
-.note{background:#fff8e6;border-left:5px solid var(--med);padding:12px 16px;border-radius:8px;margin:12px 0}
+.note{background:#f1f5f9;border-left:5px solid #3b82f6;padding:12px 16px;border-radius:8px;margin:12px 0;display:flex;gap:12px;align-items:flex-start}
 .issue{border-radius:10px;padding:18px;margin:14px 0}
 .issue.c{background:#fdeef0;border-left:6px solid var(--crit)}
 .issue.h{background:#fff3e9;border-left:6px solid var(--high)}
@@ -58,16 +103,124 @@ tbody tr:hover{background:#f7f4ff}
 .issue h4{margin:0 0 6px}
 .heat td{text-align:center;font-weight:600;color:#fff;font-size:.8rem}
 .heat td.lbl{background:#fff;color:#2d3436;text-align:left;font-weight:600}
-.hero-head{background:var(--grad);color:#fff;border-radius:0 0 18px 18px;padding:30px 16px 36px}
-.brand{font-size:2rem;font-weight:800;letter-spacing:.5px}
-.brand span{opacity:.85;font-weight:400;font-size:1rem}
+
+/* ── Hero Header ─────────────────────────────────────────────────────────── */
+.hero-head{
+  position:relative;
+  color:#fff;
+  border-radius:0 0 18px 18px;
+  padding:32px 16px 40px;
+  overflow:hidden;
+  /* Base gradient */
+  background:
+    /* diagonal thin-line pattern — low opacity for depth */
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255,255,255,0) 0px,
+      rgba(255,255,255,0) 18px,
+      rgba(255,255,255,.045) 18px,
+      rgba(255,255,255,.045) 19px
+    ),
+    /* subtle dot-grid via radial */
+    radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    /* base navy to teal gradient */
+    linear-gradient(135deg,#0f1b3d 0%,#1a9e8f 100%);
+}
+
+/* ── Brand wordmark hierarchy ────────────────────────────────────────────── */
+.brand{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  line-height:1
+}
+.brand-wordmark{
+  font-size:2.15rem;
+  font-weight:900;
+  letter-spacing:-.5px;
+  display:flex;
+  align-items:center;
+  gap:10px
+}
+.brand-divider{
+  width:48px;
+  height:3px;
+  border-radius:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,.2));
+  margin:7px 0 6px
+}
+.brand-sub{
+  font-size:.95rem;
+  font-weight:300;
+  letter-spacing:2.5px;
+  text-transform:uppercase;
+  opacity:.82
+}
+.hero-ai-badge{
+  background:rgba(255,255,255,0.1);
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:12px;
+  padding:12px 16px;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:4px;
+}
+.hero-ai-badge-top{
+  font-size:0.95rem;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.hero-ai-badge-sub{
+  font-size:0.75rem;
+  opacity:0.8;
+  font-weight:400;
+}
+.hero-flex{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+}
+
+/* ── Accent bar between hero and card ────────────────────────────────────── */
+.hero-accent-bar{
+  height:5px;
+  background:var(--hero-accent);
+  /* No border-radius so it bridges flush between the rounded hero bottom
+     and the card top — visually seals the gap. */
+}
+
+/* ── Score gauge drop-shadow wrapper ─────────────────────────────────────── */
+.gauge-wrap{
+  display:inline-block;
+  filter:drop-shadow(0 8px 24px rgba(74,0,224,.35)) drop-shadow(0 2px 6px rgba(0,0,0,.18));
+}
+
 .enq-table td{font-size:.85rem}
-@media(max-width:760px){.grid2,.grid3,.gridkv{grid-template-columns:1fr}}
+
+@media(max-width:760px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  .gridkv{grid-template-columns:1fr}
+  .hero-gridkv{grid-template-columns:1fr; gap:16px 0}
+  .gridkv-divider{display:none}
+  .kv-left, .kv-right { grid-column: 1; grid-row: auto !important; }
+  .hero-flex{flex-direction:column; gap:16px}
+  .brand-wordmark{flex-wrap:wrap; font-size:1.6rem}
+  .hero-ai-badge{width:100%}
+  .acct-head{flex-direction:column; align-items:flex-start}
+}
 @media print{
- body{background:#fff}
- .card,.acct-card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
- .section-title{break-after:avoid}
- *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff}
+  .card,.acct-card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
+  .section-title{break-after:avoid}
+  .hero-head{
+    /* strip the pattern overlay for print — keeps bg solid purple */
+    background:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%) !important;
+  }
+  .gauge-wrap{filter:none !important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style>
 </head>
@@ -75,31 +228,193 @@ tbody tr:hover{background:#f7f4ff}
 
 <!-- ═══════════════════════ HERO HEADER ═══════════════════════ -->
 <div class="hero-head">
- <div class="container" style="padding-bottom:0">
-  <div class="brand">VerifyHub <span>Credit Analysis Report</span></div>
+<div class="container" style="padding-bottom:0">
+  <div class="hero-flex">
+   <div class="brand">
+    <div class="brand-wordmark">
+     <img src="<%- logoDataUri %>" alt="VerifyHub" style="height:75px;width:auto;margin-right:16px;">
+     <span style="font-size:1.5rem; letter-spacing:1px; text-transform:uppercase;">Credit Analysis Report</span>
+    </div>
+    <div class="brand-sub" style="margin-top:12px; display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0.5px; font-weight:400; font-size:0.9rem;">
+     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" fill="#facc15"/></svg>
+     AI-Powered | Data-Driven | Actionable Insights
+    </div>
+   </div>
+   <div class="hero-ai-badge">
+    <div class="hero-ai-badge-top">
+     <svg width="14" height="14" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="6" cy="6" r="5.5" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+      <polyline points="3.5,6.2 5.2,7.8 8.5,4.5" stroke="rgba(255,255,255,1)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+     </svg>
+     AI-Verified Analysis
+    </div>
+    <div class="hero-ai-badge-sub">Trusted. Secure. Confidential.</div>
+   </div>
+  </div>
  </div>
 </div>
 
+<!-- Gradient accent bar bridging hero → card -->
+<!-- <div class="hero-accent-bar"></div> -->
+
 <div class="container">
- <div class="card" style="margin-top:-26px">
+ <div class="card hero-card">
   <div class="grid2" style="align-items:center">
    <div>
-    <div class="gridkv">
-     <div class="kv"><b>Client Name</b><span><%- data.client_name || '—' %></span></div>
-     <div class="kv"><b>Report Date</b><span><%- data.report_date || '—' %></span></div>
-     <div class="kv"><b>PAN</b><span><%- data.pan || '—' %></span></div>
-     <div class="kv"><b>Date of Birth</b><span><%- data.dob || '—' %></span></div>
-     <div class="kv"><b>Bureau Control No</b><span><%- data.bureau_control_no || '—' %></span></div>
-     <div class="kv"><b>Score Band</b><span><%- data.score_band || '—' %></span></div>
+    <!-- Client detail grid with centre divider -->
+    <div class="hero-gridkv">
+     <!-- LEFT COLUMN HEADER -->
+     <div class="kv-left" style="grid-row: 1; display:flex; align-items:center; gap:8px; color:#4A00E0; font-weight:700; font-size:0.85rem; letter-spacing:0.5px; padding-bottom:8px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      CLIENT INFORMATION
+     </div>
+
+     <!-- LEFT COLUMN -->
+     <div class="kv kv-left" style="grid-row: 2;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="8" cy="5" r="3" stroke-width="1.5" fill="none"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Client Name</b>
+       <span><%- data.client_name || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-left" style="grid-row: 3;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="2" stroke-width="1.5" fill="none"/><line x1="5" y1="7" x2="11" y2="7" stroke-width="1.2" stroke-linecap="round"/><line x1="5" y1="9.5" x2="9" y2="9.5" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>PAN</b>
+       <span><%- data.pan || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-left" style="grid-row: 4;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><line x1="4" y1="3" x2="4" y2="13" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="3" x2="12" y2="13" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="6" x2="14" y2="6" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="10" x2="14" y2="10" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Bureau Control No</b>
+       <span><%- data.bureau_control_no || '—' %></span>
+      </div>
+     </div>
+
+     <!-- Centre divider -->
+     <div class="gridkv-divider" aria-hidden="true"></div>
+
+     <!-- RIGHT COLUMN HEADER -->
+     <div class="kv-right" style="grid-row: 1; display:flex; align-items:center; gap:8px; color:#4A00E0; font-weight:700; font-size:0.85rem; letter-spacing:0.5px; padding-bottom:8px; padding-top:16px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,12 6,7 9,10 14,4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><polyline points="10,4 14,4 14,8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      CREDIT SCORE OVERVIEW
+     </div>
+
+     <!-- RIGHT COLUMN -->
+     <div class="kv kv-right" style="grid-row: 2;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="3" width="14" height="12" rx="2" stroke-width="1.5" fill="none"/><line x1="1" y1="7" x2="15" y2="7" stroke-width="1.2"/><line x1="5" y1="1" x2="5" y2="5" stroke-width="1.5" stroke-linecap="round"/><line x1="11" y1="1" x2="11" y2="5" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Report Date</b>
+       <span><%- data.report_date || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-right" style="grid-row: 3;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="7" width="14" height="8" rx="1.5" stroke-width="1.5" fill="none"/><line x1="8" y1="7" x2="8" y2="15" stroke-width="1.2"/><path d="M4 7c0-2 2-4 4-4s4 2 4 4" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Date of Birth</b>
+       <span><%- data.dob || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-right" style="grid-row: 4;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M1 8.5L8.5 1H15v6.5L7.5 15 1 8.5z" stroke-width="1.5" stroke-linejoin="round" fill="none"/><circle cx="11.5" cy="4.5" r="1.5" fill="currentColor"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Score Band</b>
+       <span style="color:<%- data.score_band === 'Fair' ? '#d4980a' : (data.score_band === 'Good' || data.score_band === 'Excellent' ? '#1a7a32' : '#b02030') %>"><%- data.score_band || '—' %></span>
+      </div>
+     </div>
+
+    </div><!-- /gridkv -->
+    <div class="note" style="margin-top:16px">
+     <div style="background:#3b82f6; color:#fff; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px; flex-shrink:0;">i</div>
+     <div>This report is an educational analysis of the credit data provided. It highlights what is helping and hurting the score, and gives a 90-day plan to improve it.</div>
     </div>
-    <p class="note" style="margin-top:16px">This report is an educational analysis of the credit data provided. It highlights what is helping and hurting the score, and gives a 90-day plan to improve it.</p>
    </div>
+
+   <!-- Score gauge + badge -->
    <div style="text-align:center">
-    <img class="chartimg" src="<%- chartUrls.scoreGauge %>" alt="Credit Score Gauge" style="max-width:420px;margin:auto">
-    <h2 style="margin-top:10px">Current Score: <%- data.credit_score || '—' %> /900</h2>
-    <span class="badge" style="background:<% if((data.credit_score||0)>=750){%>#28a745<%}else if((data.credit_score||0)>=700){%>#ffc107<%}else{%>#dc3545<%}%>;font-size:.95rem;padding:6px 18px">
-     <%- data.score_band || '—' %>
+    <div class="gauge-wrap" style="display:inline-block">
+     <img class="chartimg" src="<%- chartUrls.scoreGauge %>" alt="Credit Score Gauge" style="max-width:420px;margin:auto">
+    </div>
+    <h2 style="margin-top:12px">Current Score: <%- data.credit_score || '—' %> /900</h2>
+    <!-- Gradient score-band badge with directional chevron -->
+    <% var _sc = data.credit_score || 0; var _sb = data.score_band || '—'; %>
+    <% var _bgGrad = _sc >= 750 ? 'linear-gradient(135deg,#28a745 0%,#1a7a32 100%)' : _sc >= 700 ? 'linear-gradient(135deg,#ffc107 0%,#d4980a 100%)' : 'linear-gradient(135deg,#dc3545 0%,#b02030 100%)'; %>
+    <% var _shadow = _sc >= 750 ? 'rgba(40,167,69,.45)' : _sc >= 700 ? 'rgba(255,193,7,.45)' : 'rgba(220,53,69,.45)'; %>
+    <% var _txtColor = _sc >= 700 && _sc < 750 ? '#5a4b00' : '#fff'; %>
+    <span class="badge score-badge" style="background:<%- _bgGrad %>;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 4px 14px <%- _shadow %>;color:<%- _txtColor %>">
+     <!-- Up chevron for Good/Excellent, sideways for Fair, down for Poor/Below Average -->
+     <% if(_sc >= 700){ %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,9 6,4 10,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } else if(_sc >= 600){ %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="3,6 9,6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="7,3 10,6 7,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } else { %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,3 6,8 10,3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } %>
+     <%- _sb %>
     </span>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ EXECUTIVE SUMMARY ═══════════════════════ -->
+<div class="container" style="padding-top:0; padding-bottom:0">
+ <div class="card" style="border-left:5px solid #8E2DE2; margin-top:0; margin-bottom:16px">
+  <div style="font-size:0.85rem; font-weight:700; color:#8E2DE2; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Executive Summary</div>
+  <p style="font-size:1.05rem; margin:0; line-height:1.6"><%- data.executive_summary || 'No executive summary available.' %></p>
+ </div>
+</div>
+
+<!-- ═══════════════════════ QUICK TAKEAWAYS ═══════════════════════ -->
+<div class="container" style="padding-top:0; padding-bottom:16px">
+ <div class="grid3">
+  <!-- What's Helping -->
+  <div style="background:#eafaef; border:1px solid #d1f4e0; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#28a745; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#1a7a32; font-size:0.95rem;">What's Helping</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.whats_helping || 'No positive factors found.' %></p>
+   </div>
+  </div>
+
+  <!-- What's Hurting -->
+  <div style="background:#fdeef0; border:1px solid #fad3d8; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#dc3545; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#b02030; font-size:0.95rem;">What's Hurting</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.whats_hurting || 'No negative factors found.' %></p>
+   </div>
+  </div>
+
+  <!-- Top Priority -->
+  <div style="background:#eff6ff; border:1px solid #dbeafe; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#3b82f6; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="6" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="#fff"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#1d4ed8; font-size:0.95rem;">Top Priority</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.top_priority || 'No priorities found.' %></p>
    </div>
   </div>
  </div>
@@ -158,7 +473,7 @@ tbody tr:hover{background:#f7f4ff}
 
   <div class="grid2">
    <div>
-    <h4 style="text-align:center">Portfolio Mix (Secured vs Unsecured)<%- chartUrls.portfolioMix && chartUrls.portfolioMix.isLifetimeView ? ' — Lifetime Sanctioned' : '' %></h4>
+    <h4 style="text-align:center">Portfolio Mix (Secured vs Unsecured)<%- chartUrls.portfolioMix && chartUrls.portfolioMix.isLifetimeView ? ' — Lifetime Sanctioned' : '' %> <span style="font-size:0.8rem; font-weight:normal; color:#666"><br>(in ₹ Thousands)</span></h4>
     <% if (chartUrls.portfolioMix) { %>
      <img class="chartimg" src="<%- chartUrls.portfolioMix.url %>" alt="Portfolio Mix">
     <% } else { %>
@@ -193,6 +508,16 @@ tbody tr:hover{background:#f7f4ff}
      </div>
     <% } %>
    </div>
+  </div>
+  <div style="margin-top:18px">
+   <h4 style="text-align:center">Enquiry Activity — Last 24 Months</h4>
+   <% if (chartUrls.enquiryTimeline) { %>
+    <img class="chartimg" src="<%- chartUrls.enquiryTimeline %>" alt="Enquiry Timeline" style="max-height:280px; width:auto; display:block; margin:0 auto;">
+   <% } else { %>
+    <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+     No credit enquiries on file in the last 24 months.
+    </div>
+   <% } %>
   </div>
  </div>
 </div>
@@ -243,7 +568,7 @@ tbody tr:hover{background:#f7f4ff}
   </div>
   <div class="grid2" style="margin-top:18px">
    <div>
-    <h4 style="text-align:center"><%- chartUrls.outstandingVsSanct && chartUrls.outstandingVsSanct.isLifetimeView ? 'Lifetime Sanctioned by Lender' : 'Outstanding / Loss vs Sanctioned' %></h4>
+    <h4 style="text-align:center"><%- chartUrls.outstandingVsSanct && chartUrls.outstandingVsSanct.isLifetimeView ? 'Lifetime Sanctioned by Lender' : 'Outstanding / Loss vs Sanctioned' %> <span style="font-size:0.8rem; font-weight:normal; color:#666"><br>(in ₹ Thousands)</span></h4>
     <% if (chartUrls.outstandingVsSanct) { %>
      <img class="chartimg" src="<%- chartUrls.outstandingVsSanct.url %>" alt="Outstanding vs Sanctioned">
     <% } else { %>

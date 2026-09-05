@@ -20,6 +20,7 @@ const {
 } = require('./creditClassifier');
 
 const charts = require('./chartBuilder');
+const { LOGO_DATA_URI } = require('./brandAssets');
 
 const TEMPLATE_PATH = path.join(__dirname, '../views/creditReport.ejs');
 
@@ -75,6 +76,7 @@ async function renderCreditReport(data) {
     outstandingVsSanct: charts.outstandingVsSanctionedUrl(accounts),
     riskMap:            charts.riskMapUrl(accounts),
     projectedScore:     charts.projectedScoreUrl(projectedScores),
+    enquiryTimeline:    charts.enquiryTimelineUrl(data.enquiries || [], data.report_date || null),
     dpdCharts,
   };
 
@@ -93,6 +95,7 @@ async function renderCreditReport(data) {
       projectedScores,
       dpdCodeToColor,
       formatINR,
+      logoDataUri: LOGO_DATA_URI,
     },
     { async: true }
   );

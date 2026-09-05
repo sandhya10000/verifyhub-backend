@@ -4,6 +4,7 @@ const mime = require('mime-types');
 const Anthropic = require('@anthropic-ai/sdk');
 const { PDFDocument } = require('pdf-lib');
 const AIAnalysis = require('../models/AIAnalysis');
+const CreditReport = require('../models/creditReport');
 const { logStep } = require('./logger');
 const { renderCreditReport } = require('./reportRenderer');
 
@@ -91,12 +92,13 @@ const ANALYSIS_TOOL = {
     type: 'object',
     required: [
       'client_name', 'credit_score', 'accounts', 'enquiries',
-      'risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
+      'executive_summary', 'risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
       'risk_concentration_paragraph', 'projection_assumptions', 'projected_scores',
-      'recommendation',
+      'recommendation', 'whats_helping', 'whats_hurting', 'top_priority',
     ],
     properties: {
       // Personal / Summary
+      executive_summary: { type: 'string' },
       client_name:       { type: 'string' },
       report_date:       { type: 'string' },
       pan:               { type: ['string', 'null'] },
@@ -170,6 +172,9 @@ const ANALYSIS_TOOL = {
           },
         },
       },
+      whats_helping:                { type: 'string' },
+      whats_hurting:                { type: 'string' },
+      top_priority:                 { type: 'string' },
       action_month_1:               { type: 'string' },
       action_month_2:               { type: 'string' },
       action_month_3:               { type: 'string' },
@@ -192,10 +197,11 @@ const QUALITATIVE_TOOL = {
   description: 'Submit the qualitative analysis fields derived from the structured credit data.',
   input_schema: {
     type: 'object',
-    required: ['risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
+    required: ['executive_summary', 'risk_factors', 'action_month_1', 'action_month_2', 'action_month_3',
                'risk_concentration_paragraph', 'projection_assumptions', 'projected_scores',
-               'recommendation'],
+               'recommendation', 'whats_helping', 'whats_hurting', 'top_priority'],
     properties: {
+      executive_summary:            { type: 'string' },
       foir_percent:                 { type: ['number', 'null'] },
       foir_rating:                  { type: ['string', 'null'] },
       max_eligible_amount:          { type: ['number', 'null'] },
@@ -211,6 +217,9 @@ const QUALITATIVE_TOOL = {
           },
         },
       },
+      whats_helping:                { type: 'string' },
+      whats_hurting:                { type: 'string' },
+      top_priority:                 { type: 'string' },
       action_month_1:               { type: 'string' },
       action_month_2:               { type: 'string' },
       action_month_3:               { type: 'string' },
@@ -512,11 +521,45 @@ async function synthesizeFinalResult(mergedData, analysisId) {
       risk_concentration_paragraph: '', projection_assumptions: '',
       projected_scores: [mergedData.credit_score || 0, 0, 0, 0],
       recommendation: '',
+      whats_helping: '', whats_hurting: '', top_priority: '',
     };
   }
 
   console.log(`[claudeService:${analysisId}] Qualitative synthesis complete.`);
   return toolBlock.input;
+}
+
+// ---------------------------------------------------------------------------
+// saveToCreditReport
+// Automatically creates a record in the CreditReport collection so it appears
+// in the Reports tab for the user, preventing duplicates via reportId.
+// ---------------------------------------------------------------------------
+async function saveToCreditReport(analysisId, userId, result) {
+  try {
+    const existing = await CreditReport.findOne({ reportId: analysisId.toString(), userId: userId });
+    if (existing) {
+      console.log(`[claudeService:${analysisId}] CreditReport already exists.`);
+      return;
+    }
+
+    await CreditReport.create({
+      userId: userId,
+      reportId: analysisId.toString(),
+      name: result.client_name || "Unknown Customer",
+      mobile: "0000000000", // Default as mobile is not extracted
+      pan: result.pan || "UNKNOWN",
+      reportType: "AI Analysis",
+      bureau: "CIBIL", // Assuming default or determined from data
+      score: result.credit_score || null,
+      status: "Success",
+      isPublic: false,
+      consent: "Y",
+      reportData: result
+    });
+    console.log(`[claudeService:${analysisId}] Saved AI analysis to CreditReport successfully.`);
+  } catch (err) {
+    console.error(`[claudeService:${analysisId}] Error saving to CreditReport:`, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -662,6 +705,10 @@ async function processAnalysisInBackground(analysisId) {
         (a) => (a.status || '').toLowerCase() === 'active'
       ).length;
       const hasOverdue = (result.accounts || []).some((a) => (a.overdue_amount || 0) > 0);
+
+      // Save to CreditReport collection
+      await saveToCreditReport(analysisId, analysis.userId, result);
+
       await AIAnalysis.findByIdAndUpdate(analysisId, {
         status:           'completed',
         isChunked:        false,
@@ -747,6 +794,10 @@ async function processAnalysisInBackground(analysisId) {
       (a) => (a.status || '').toLowerCase() === 'active'
     ).length;
     const hasOverdueChunked = (mergedData.accounts || []).some((a) => (a.overdue_amount || 0) > 0);
+
+    // Save to CreditReport collection
+    await saveToCreditReport(analysisId, analysis.userId, fullData);
+
     await AIAnalysis.findByIdAndUpdate(analysisId, {
       status:     'completed',
       isChunked:  true,
@@ -829,7 +880,7 @@ async function processHtmlGenerationInBackground(analysisId) {
   console.warn(`[processHtmlGenerationInBackground:${analysisId}] Deprecated — HTML is generated inline. No-op.`);
 }
 
-module.exports = { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground };
+module.exports = { processAnalysisInBackground, generateFullHtmlReport, ANALYSIS_TOOL, processHtmlGenerationInBackground };
 
 // ============================================================================
 // DEAD CODE BELOW — kept for reference, will be removed in next cleanup pass.

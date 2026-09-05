@@ -49,6 +49,14 @@ PERSONAL / SUMMARY FIELDS
 QUALITATIVE FIELDS (Claude's judgment — these CANNOT be computed deterministically from numbers)
 Produce these based on a holistic read of the report:
 
+- executive_summary: string — 2-4 sentences, plain language, no jargon, written directly for the client (e.g. "Your score...", "Nitin has..."). It must synthesize:
+    (a) Their current standing (score + band + active debt vs clean history)
+    (b) The main driver of their current risk (prioritize active/live concerns or recent enquiry volume over historical/closed issues)
+    (c) A brief note of encouragement pointing to the 90-day plan.
+    GROUNDING REQUIREMENT: Every number or fact mentioned (e.g. account counts, score, enquiry count) MUST match the actual extracted data perfectly. Do not invent numbers.
+    BAD EXAMPLE (Generic): "Your credit report has been analyzed. You have some closed accounts and some active issues. Follow the 90-day plan to improve your score."
+    GOOD EXAMPLE (Specific): "Nitin has 7 closed accounts with no current balance owed — a clean repayment history overall. His score of 705 (Fair) is mainly being held back by very high recent loan-shopping activity (30 enquiries in the past year) rather than any active debt problem. The 90-day plan below focuses on curbing new applications and formally closing out one settled account to unlock further score gains."
+
 - risk_factors: array of 3 to 5 objects, ranked worst-first (code will re-rank later, so order them by raw severity):
     { title: "Short issue title naming the lender", explanation: "1-2 sentence plain-language explanation referencing specific account number and figures, explaining why this hurts the score." }
 
@@ -78,6 +86,9 @@ Produce these based on a holistic read of the report:
 - foir_percent: number — estimated Fixed-Obligation-to-Income Ratio as a percentage, or null if not computable.
 - foir_rating: "Low" | "Moderate" | "High" | "Very High" based on foir_percent thresholds, null if foir_percent is null.
 - max_eligible_amount: estimated maximum eligible loan amount in INR based on income signals in the report, or null.
+- whats_helping: 1 concise sentence summarizing the most positive aspect of the report (e.g. clean payment history, low utilization). Grounded in real data.
+- whats_hurting: 1 concise sentence summarizing the most negative aspect of the report. Grounded in real data.
+- top_priority: 1 concise sentence stating the most important immediate action the user should take. Grounded in real data.
 - recommendation: one-sentence overall recommendation (e.g. "Clear overdue accounts and dispute inaccurate entries immediately.").
 
 IMPORTANT: Call the submit_credit_analysis tool with all fields populated. Never return plain text.
