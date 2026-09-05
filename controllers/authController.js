@@ -31,7 +31,12 @@ const register = async (req, res) => {
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -62,7 +67,12 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token: generateToken(user._id),
-      user,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      },
     });
   } catch (error) {
     res.status(500).json({
