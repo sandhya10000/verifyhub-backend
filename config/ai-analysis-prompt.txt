@@ -303,7 +303,7 @@ tbody tr:hover{background:#f7f4ff}
     <p>Empowering Financial Freedom</p>
     <p>
         Website: <a href="[VERIFYHUB_WEBSITE_URL]" style="color: #00cec9; text-decoration: none;">[VERIFYHUB_WEBSITE_DISPLAY]</a> |
-        Email: <a href="mailto:[VERIFYHUB_SUPPORT_EMAIL]" style="color: #00cec9; text-decoration: none;">[VERIFYHUB_SUPPORT_EMAIL]</a>
+        Email: <a href="mailto:info@verifyhub.in" style="color: #00cec9; text-decoration: none;">info@verifyhub.in</a>
     </p>
     <div style="margin-top: 15px;">
         <p>Follow us for daily tips:</p>

@@ -2,9 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const { PDFDocument } = require('pdf-lib');
 const AIAnalysis = require('../models/AIAnalysis');
-const { processAnalysisInBackground, generateFullHtmlReport } = require('../utils/claudeService');
+const { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground } = require('../utils/claudeService');
 
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
+const { logStep } = require('../utils/logger');
 
 
 exports.uploadReport = async (req, res) => {
@@ -50,11 +51,14 @@ exports.uploadReport = async (req, res) => {
       fileType: path.extname(req.file.originalname).replace('.', ''),
       status: 'uploaded',
     });
+    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
+    logStep(analysis._id, 'DB Record Created', { analysisId: analysis._id });
 
     console.log('[uploadReport] DB record created, analysisId:', analysis._id, '| filePath:', req.file.path);
     res.status(201).json({ success: true, analysisId: analysis._id, status: analysis.status });
 
     console.log('[uploadReport] Kicking off background Claude processing for analysisId:', analysis._id);
+    logStep(analysis._id, 'Trigger Background Processing');
     processAnalysisInBackground(analysis._id);
   } catch (err) {
     console.error('[uploadReport] Unhandled error:', err);
@@ -71,6 +75,8 @@ exports.getAnalysis = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
 
+    logStep(req.params.id, 'Frontend Polling Status', { status: analysis.status, htmlStatus: analysis.htmlStatus });
+
     const payload = {
       success: true,
       analysisId: analysis._id,
@@ -80,6 +86,7 @@ exports.getAnalysis = async (req, res) => {
       chunkCount: analysis.chunkCount,
       chunksCompleted: analysis.chunksCompleted,
       result: analysis.status === 'completed' ? analysis.result : null,
+      htmlStatus: analysis.htmlStatus,
     };
 
     // Expose the raw error details to the client in non-production so the
@@ -98,6 +105,7 @@ exports.getAnalysis = async (req, res) => {
 
 exports.downloadPdf = async (req, res) => {
   const { id } = req.params;
+  logStep(id, 'User Download Click Received');
   console.log(`[downloadPdf] Request for analysisId: ${id} | userId: ${req.user?._id}`);
 
   try {
@@ -112,53 +120,28 @@ exports.downloadPdf = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Analysis is not ready yet.' });
     }
 
-    // ── Path A: HTML already generated — reuse it (no second Claude call) ──
-    if (analysis.htmlReport) {
-      console.log(`[downloadPdf:${id}] htmlReport already stored (${analysis.htmlReport.length} chars) — reusing`);
-      return res.set({
-        'Content-Type':        'text/html',
-        'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
-      }).send(analysis.htmlReport);
-    }
-
-    // ── Path B: Generation already in-flight (concurrent request) ──
-    if (analysis.htmlGenerating) {
-      console.log(`[downloadPdf:${id}] htmlGenerating flag is true — another request is already generating`);
-      return res.status(202).json({
+    // htmlReport is always stored atomically during processAnalysisInBackground().
+    if (analysis.htmlStatus === 'failed' || !analysis.htmlReport) {
+      console.error(`[downloadPdf:${id}] htmlReport is missing or failed (status: ${analysis.htmlStatus}).`);
+      return res.status(422).json({
         success: false,
-        status:  'generating',
-        message: 'Report is being generated. Please try again in a few seconds.',
+        message: 'Report generation failed. Please try again or contact support.',
       });
     }
 
-    // ── Path C: Lazy generation — first time download is requested ──
-    console.log(`[downloadPdf:${id}] No htmlReport yet — starting full HTML generation via second Claude call`);
-    await AIAnalysis.findByIdAndUpdate(id, { htmlGenerating: true });
-
-    let htmlString;
-    try {
-      htmlString = await generateFullHtmlReport(id);
-    } catch (genErr) {
-      // Mark flag as cleared so user can retry
-      await AIAnalysis.findByIdAndUpdate(id, { htmlGenerating: false });
-      console.error(`[downloadPdf:${id}] generateFullHtmlReport FAILED:`, genErr.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Could not generate the full HTML report. ' + genErr.message,
-      });
-    }
-
-    console.log(`[downloadPdf:${id}] HTML generation complete (${htmlString.length} chars) — serving HTML directly`);
+    logStep(id, 'Download Serving htmlReport');
+    console.log(`[downloadPdf:${id}] Serving htmlReport (${analysis.htmlReport.length} chars)`);
     return res.set({
       'Content-Type':        'text/html',
       'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
-    }).send(htmlString);
+    }).send(analysis.htmlReport);
 
   } catch (err) {
     console.error(`[downloadPdf] Unhandled error for ${id}:`, err);
     res.status(500).json({ success: false, message: 'Could not generate PDF.' });
   }
 };
+
 
 
 exports.listAnalyses = async (req, res) => {

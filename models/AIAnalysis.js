@@ -35,6 +35,8 @@ const AIAnalysisSchema = new mongoose.Schema(
     // Full 8-section HTML report — generated lazily on first Download/Save action
     htmlReport:      { type: String,  default: null },
     htmlGenerating:  { type: Boolean, default: false },
+    htmlStatus:      { type: String, enum: ['generating', 'completed', 'failed'], default: null },
+    lastHtmlGenerationFailure: { type: Date, default: null },
 
     // Chunked-pipeline fields — only set for PDFs over 100 pages
     isChunked:       { type: Boolean, default: false },   // true when the chunked path was used

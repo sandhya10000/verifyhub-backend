@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Credit Analysis Report — <%- data.client_name || 'Client' %></title>
+<style>
+:root{
+  --grad:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%);
+  --crit:#dc3545;--high:#fd7e14;--med:#ffc107;--low:#28a745;
+  --bg:#f4f6f9;--card:#fff;--ink:#2d3436;--muted:#6b7280;
+  /* Hero accent bar shown between the purple banner and the white card */
+  --hero-accent:linear-gradient(90deg,#4A00E0 0%,#a855f7 40%,#8E2DE2 70%,#06b6d4 100%);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55}
+.container{max-width:1200px;margin:0 auto;padding:0 16px 60px}
+.card{background:var(--card);border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.1);
+  padding:26px;margin:22px 0}
+.hero-card{box-shadow:none;border-radius:0 0 12px 12px;margin-top:0;}
+h1,h2,h3,h4{margin:0 0 12px}
+.section-title{font-size:1.45rem;border-left:6px solid #8E2DE2;padding-left:12px;margin:34px 0 6px}
+.section-no{color:#8E2DE2;font-weight:700}
+.lead{color:var(--muted);margin:0 0 18px;padding-left:18px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.92rem}
+th{background:var(--grad);color:#fff;padding:11px 10px;text-align:left;font-weight:600}
+td{padding:10px;border-bottom:1px solid #eef0f4}
+tbody tr:hover{background:#f7f4ff}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;
+  border-radius:20px;color:#fff;font-size:.72rem;font-weight:700;
+  letter-spacing:.3px;border:none}
+/* Gradient fills + inset highlight for each severity */
+.b-CRITICAL{
+  background:linear-gradient(135deg,#dc3545 0%,#b02030 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(220,53,69,.4)}
+.b-HIGH{
+  background:linear-gradient(135deg,#fd7e14 0%,#d96209 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(253,126,20,.4)}
+.b-MEDIUM{
+  background:linear-gradient(135deg,#ffc107 0%,#d4980a 100%);color:#5a4b00;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 2px 6px rgba(255,193,7,.35)}
+.b-LOW{
+  background:linear-gradient(135deg,#28a745 0%,#1a7a32 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 2px 6px rgba(40,167,69,.4)}
+/* Score-band badge used in the hero — slightly larger */
+.score-badge{
+  font-size:.95rem;padding:7px 20px;border-radius:24px;
+  display:inline-flex;align-items:center;gap:6px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+
+.gridkv{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 26px;font-size:.9rem}
+
+/* ── Client detail grid — two columns with a centre divider ─────────────── */
+.hero-gridkv{
+  display:grid;
+  grid-template-columns:1fr 4px 1fr;   /* col | divider | col */
+  gap:8px 0;
+  font-size:.9rem}
+/* The centre divider cell */
+.gridkv-divider{
+  grid-column:2;
+  grid-row:2 / -1;
+  width:1px;
+  background:#e3e6ee;
+  margin:0 16px;
+  align-self:stretch}
+.kv-left { grid-column: 1; }
+.kv-right { grid-column: 3; }
+.kv{display:flex;align-items:center;gap:12px;border-bottom:1px dotted #e3e6ee;padding:12px 4px}
+.kv b{font-weight:600;display:block;color:#6b7280;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
+.kv-icon-wrap{width:36px;height:36px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.kv-icon{stroke:#3b82f6;}
+.kv-content{display:flex;flex-direction:column}
+.kv span{color:var(--ink);font-size:.95rem;font-weight:600;}
+
+.chartimg{width:100%;height:auto;border-radius:8px;display:block}
+.statbox{background:var(--grad);color:#fff;border-radius:12px;padding:18px;text-align:center}
+.statbox .n{font-size:1.7rem;font-weight:700}
+.statbox .l{font-size:.78rem;opacity:.9}
+.risk-item{display:flex;gap:14px;align-items:flex-start;padding:14px;border-radius:10px;
+  background:#faf9ff;margin:10px 0;border-left:5px solid #8E2DE2}
+.risk-item .rk{font-size:1.4rem;font-weight:800;color:#8E2DE2;min-width:34px}
+.acct-card{border:1px solid #ece8fb;border-radius:12px;margin:16px 0;overflow:hidden}
+.acct-head{background:var(--grad);color:#fff;padding:14px 18px;display:flex;
+  justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.acct-head .who{font-weight:700}
+.acct-body{padding:18px}
+.ph-grid{display:flex;flex-wrap:wrap;gap:3px;margin:10px 0}
+.ph-cell{width:34px;text-align:center;font-size:.62rem;border-radius:4px;padding:3px 0;color:#fff}
+.ph-cell small{display:block;font-size:.55rem;opacity:.85;color:#2d3436}
+.hbar{height:18px;border-radius:9px;background:#eee;overflow:hidden;margin:6px 0}
+.hbar>span{display:block;height:100%;border-radius:9px}
+.note{background:#f1f5f9;border-left:5px solid #3b82f6;padding:12px 16px;border-radius:8px;margin:12px 0;display:flex;gap:12px;align-items:flex-start}
+.issue{border-radius:10px;padding:18px;margin:14px 0}
+.issue.c{background:#fdeef0;border-left:6px solid var(--crit)}
+.issue.h{background:#fff3e9;border-left:6px solid var(--high)}
+.issue.m{background:#fffbe9;border-left:6px solid var(--med)}
+.issue h4{margin:0 0 6px}
+.heat td{text-align:center;font-weight:600;color:#fff;font-size:.8rem}
+.heat td.lbl{background:#fff;color:#2d3436;text-align:left;font-weight:600}
+
+/* ── Hero Header ─────────────────────────────────────────────────────────── */
+.hero-head{
+  position:relative;
+  color:#fff;
+  border-radius:0 0 18px 18px;
+  padding:32px 16px 40px;
+  overflow:hidden;
+  /* Base gradient */
+  background:
+    /* diagonal thin-line pattern — low opacity for depth */
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255,255,255,0) 0px,
+      rgba(255,255,255,0) 18px,
+      rgba(255,255,255,.045) 18px,
+      rgba(255,255,255,.045) 19px
+    ),
+    /* subtle dot-grid via radial */
+    radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    /* base navy to teal gradient */
+    linear-gradient(135deg,#0f1b3d 0%,#1a9e8f 100%);
+}
+
+/* ── Brand wordmark hierarchy ────────────────────────────────────────────── */
+.brand{
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  line-height:1
+}
+.brand-wordmark{
+  font-size:2.15rem;
+  font-weight:900;
+  letter-spacing:-.5px;
+  display:flex;
+  align-items:center;
+  gap:10px
+}
+.brand-divider{
+  width:48px;
+  height:3px;
+  border-radius:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,.9),rgba(255,255,255,.2));
+  margin:7px 0 6px
+}
+.brand-sub{
+  font-size:.95rem;
+  font-weight:300;
+  letter-spacing:2.5px;
+  text-transform:uppercase;
+  opacity:.82
+}
+.hero-ai-badge{
+  background:rgba(255,255,255,0.1);
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:12px;
+  padding:12px 16px;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:4px;
+}
+.hero-ai-badge-top{
+  font-size:0.95rem;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.hero-ai-badge-sub{
+  font-size:0.75rem;
+  opacity:0.8;
+  font-weight:400;
+}
+.hero-flex{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+}
+
+/* ── Accent bar between hero and card ────────────────────────────────────── */
+.hero-accent-bar{
+  height:5px;
+  background:var(--hero-accent);
+  /* No border-radius so it bridges flush between the rounded hero bottom
+     and the card top — visually seals the gap. */
+}
+
+/* ── Score gauge drop-shadow wrapper ─────────────────────────────────────── */
+.gauge-wrap{
+  display:inline-block;
+  filter:drop-shadow(0 8px 24px rgba(74,0,224,.35)) drop-shadow(0 2px 6px rgba(0,0,0,.18));
+}
+
+.enq-table td{font-size:.85rem}
+
+@media(max-width:760px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  .gridkv{grid-template-columns:1fr}
+  .hero-gridkv{grid-template-columns:1fr; gap:16px 0}
+  .gridkv-divider{display:none}
+  .kv-left, .kv-right { grid-column: 1; grid-row: auto !important; }
+  .hero-flex{flex-direction:column; gap:16px}
+  .brand-wordmark{flex-wrap:wrap; font-size:1.6rem}
+  .hero-ai-badge{width:100%}
+  .acct-head{flex-direction:column; align-items:flex-start}
+}
+@media print{
+  body{background:#fff}
+  .card,.acct-card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
+  .section-title{break-after:avoid}
+  .hero-head{
+    /* strip the pattern overlay for print — keeps bg solid purple */
+    background:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%) !important;
+  }
+  .gauge-wrap{filter:none !important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HERO HEADER ═══════════════════════ -->
+<div class="hero-head">
+<div class="container" style="padding-bottom:0">
+  <div class="hero-flex">
+   <div class="brand">
+    <div class="brand-wordmark">
+     <img src="<%- logoDataUri %>" alt="VerifyHub" style="height:75px;width:auto;margin-right:16px;">
+     <span style="font-size:1.5rem; letter-spacing:1px; text-transform:uppercase;">Credit Analysis Report</span>
+    </div>
+    <div class="brand-sub" style="margin-top:12px; display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0.5px; font-weight:400; font-size:0.9rem;">
+     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" fill="#facc15"/></svg>
+     AI-Powered | Data-Driven | Actionable Insights
+    </div>
+   </div>
+   <div class="hero-ai-badge">
+    <div class="hero-ai-badge-top">
+     <svg width="14" height="14" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="6" cy="6" r="5.5" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+      <polyline points="3.5,6.2 5.2,7.8 8.5,4.5" stroke="rgba(255,255,255,1)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+     </svg>
+     AI-Verified Analysis
+    </div>
+    <div class="hero-ai-badge-sub">Trusted. Secure. Confidential.</div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- Gradient accent bar bridging hero → card -->
+<!-- <div class="hero-accent-bar"></div> -->
+
+<div class="container">
+ <div class="card hero-card">
+  <div class="grid2" style="align-items:center">
+   <div>
+    <!-- Client detail grid with centre divider -->
+    <div class="hero-gridkv">
+     <!-- LEFT COLUMN HEADER -->
+     <div class="kv-left" style="grid-row: 1; display:flex; align-items:center; gap:8px; color:#4A00E0; font-weight:700; font-size:0.85rem; letter-spacing:0.5px; padding-bottom:8px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      CLIENT INFORMATION
+     </div>
+
+     <!-- LEFT COLUMN -->
+     <div class="kv kv-left" style="grid-row: 2;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="8" cy="5" r="3" stroke-width="1.5" fill="none"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Client Name</b>
+       <span><%- data.client_name || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-left" style="grid-row: 3;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="3" width="14" height="10" rx="2" stroke-width="1.5" fill="none"/><line x1="5" y1="7" x2="11" y2="7" stroke-width="1.2" stroke-linecap="round"/><line x1="5" y1="9.5" x2="9" y2="9.5" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>PAN</b>
+       <span><%- data.pan || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-left" style="grid-row: 4;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><line x1="4" y1="3" x2="4" y2="13" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="3" x2="12" y2="13" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="6" x2="14" y2="6" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="10" x2="14" y2="10" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Bureau Control No</b>
+       <span><%- data.bureau_control_no || '—' %></span>
+      </div>
+     </div>
+
+     <!-- Centre divider -->
+     <div class="gridkv-divider" aria-hidden="true"></div>
+
+     <!-- RIGHT COLUMN HEADER -->
+     <div class="kv-right" style="grid-row: 1; display:flex; align-items:center; gap:8px; color:#4A00E0; font-weight:700; font-size:0.85rem; letter-spacing:0.5px; padding-bottom:8px; padding-top:16px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,12 6,7 9,10 14,4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><polyline points="10,4 14,4 14,8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      CREDIT SCORE OVERVIEW
+     </div>
+
+     <!-- RIGHT COLUMN -->
+     <div class="kv kv-right" style="grid-row: 2;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="3" width="14" height="12" rx="2" stroke-width="1.5" fill="none"/><line x1="1" y1="7" x2="15" y2="7" stroke-width="1.2"/><line x1="5" y1="1" x2="5" y2="5" stroke-width="1.5" stroke-linecap="round"/><line x1="11" y1="1" x2="11" y2="5" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Report Date</b>
+       <span><%- data.report_date || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-right" style="grid-row: 3;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="1" y="7" width="14" height="8" rx="1.5" stroke-width="1.5" fill="none"/><line x1="8" y1="7" x2="8" y2="15" stroke-width="1.2"/><path d="M4 7c0-2 2-4 4-4s4 2 4 4" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Date of Birth</b>
+       <span><%- data.dob || '—' %></span>
+      </div>
+     </div>
+
+     <div class="kv kv-right" style="grid-row: 4;">
+      <div class="kv-icon-wrap">
+       <svg class="kv-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M1 8.5L8.5 1H15v6.5L7.5 15 1 8.5z" stroke-width="1.5" stroke-linejoin="round" fill="none"/><circle cx="11.5" cy="4.5" r="1.5" fill="currentColor"/></svg>
+      </div>
+      <div class="kv-content">
+       <b>Score Band</b>
+       <span style="color:<%- data.score_band === 'Fair' ? '#d4980a' : (data.score_band === 'Good' || data.score_band === 'Excellent' ? '#1a7a32' : '#b02030') %>"><%- data.score_band || '—' %></span>
+      </div>
+     </div>
+
+    </div><!-- /gridkv -->
+    <div class="note" style="margin-top:16px">
+     <div style="background:#3b82f6; color:#fff; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px; flex-shrink:0;">i</div>
+     <div>This report is an educational analysis of the credit data provided. It highlights what is helping and hurting the score, and gives a 90-day plan to improve it.</div>
+    </div>
+   </div>
+
+   <!-- Score gauge + badge -->
+   <div style="text-align:center">
+    <div class="gauge-wrap" style="display:inline-block">
+     <img class="chartimg" src="<%- chartUrls.scoreGauge %>" alt="Credit Score Gauge" style="max-width:420px;margin:auto">
+    </div>
+    <h2 style="margin-top:12px">Current Score: <%- data.credit_score || '—' %> /900</h2>
+    <!-- Gradient score-band badge with directional chevron -->
+    <% var _sc = data.credit_score || 0; var _sb = data.score_band || '—'; %>
+    <% var _bgGrad = _sc >= 750 ? 'linear-gradient(135deg,#28a745 0%,#1a7a32 100%)' : _sc >= 700 ? 'linear-gradient(135deg,#ffc107 0%,#d4980a 100%)' : 'linear-gradient(135deg,#dc3545 0%,#b02030 100%)'; %>
+    <% var _shadow = _sc >= 750 ? 'rgba(40,167,69,.45)' : _sc >= 700 ? 'rgba(255,193,7,.45)' : 'rgba(220,53,69,.45)'; %>
+    <% var _txtColor = _sc >= 700 && _sc < 750 ? '#5a4b00' : '#fff'; %>
+    <span class="badge score-badge" style="background:<%- _bgGrad %>;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 4px 14px <%- _shadow %>;color:<%- _txtColor %>">
+     <!-- Up chevron for Good/Excellent, sideways for Fair, down for Poor/Below Average -->
+     <% if(_sc >= 700){ %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,9 6,4 10,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } else if(_sc >= 600){ %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="3,6 9,6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="7,3 10,6 7,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } else { %>
+     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,3 6,8 10,3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+     <% } %>
+     <%- _sb %>
+    </span>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ EXECUTIVE SUMMARY ═══════════════════════ -->
+<div class="container" style="padding-top:0; padding-bottom:0">
+ <div class="card" style="border-left:5px solid #8E2DE2; margin-top:0; margin-bottom:16px">
+  <div style="font-size:0.85rem; font-weight:700; color:#8E2DE2; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Executive Summary</div>
+  <p style="font-size:1.05rem; margin:0; line-height:1.6"><%- data.executive_summary || 'No executive summary available.' %></p>
+ </div>
+</div>
+
+<!-- ═══════════════════════ QUICK TAKEAWAYS ═══════════════════════ -->
+<div class="container" style="padding-top:0; padding-bottom:16px">
+ <div class="grid3">
+  <!-- What's Helping -->
+  <div style="background:#eafaef; border:1px solid #d1f4e0; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#28a745; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#1a7a32; font-size:0.95rem;">What's Helping</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.whats_helping || 'No positive factors found.' %></p>
+   </div>
+  </div>
+
+  <!-- What's Hurting -->
+  <div style="background:#fdeef0; border:1px solid #fad3d8; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#dc3545; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#b02030; font-size:0.95rem;">What's Hurting</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.whats_hurting || 'No negative factors found.' %></p>
+   </div>
+  </div>
+
+  <!-- Top Priority -->
+  <div style="background:#eff6ff; border:1px solid #dbeafe; border-radius:10px; padding:16px; display:flex; gap:12px; align-items:flex-start;">
+   <div style="background:#3b82f6; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="6" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="#fff"/></svg>
+   </div>
+   <div>
+    <h4 style="margin:0 0 4px; color:#1d4ed8; font-size:0.95rem;">Top Priority</h4>
+    <p style="margin:0; font-size:0.9rem; color:#2d3436; line-height:1.4;"><%- data.top_priority || 'No priorities found.' %></p>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 01: Profile Snapshot ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">01</span> Profile Snapshot</h2>
+ <% if (profileNote) { %>
+ <p class="note" style="margin:8px 0 14px">
+  <strong>ℹ️ Portfolio context: </strong><%- profileNote %>
+ </p>
+ <% } %>
+ <div class="card">
+  <div class="grid3" style="margin-bottom:18px">
+   <div class="statbox"><div class="n"><%- stats.totalAccounts %></div><div class="l">Total Accounts</div></div>
+   <div class="statbox"><div class="n"><%- formatINR(stats.totalOutstanding) %></div><div class="l">Outstanding</div></div>
+   <div class="statbox"><div class="n"><%- formatINR(stats.totalOverdue) %></div><div class="l">Amount Overdue</div></div>
+   <div class="statbox"><div class="n"><%- stats.utilizationPct %>%</div><div class="l">Utilization</div></div>
+   <div class="statbox"><div class="n"><%- stats.oldestVintage || '—' %></div><div class="l">Oldest Vintage</div></div>
+   <div class="statbox"><div class="n"><%- enquiryCounts.enquiries_12m != null ? enquiryCounts.enquiries_12m : '—' %></div><div class="l">Enquiries (12m)</div></div>
+  </div>
+
+  <table>
+   <thead><tr><th>Metric</th><th>Value</th><th>Read</th></tr></thead>
+   <tbody>
+    <tr><td>Total sanctioned (lifetime)</td><td><%- formatINR(stats.totalSanctioned) %></td><td>Across all closed, settled, and active lines</td></tr>
+    <tr>
+     <td>Total written-off / loss</td>
+     <td style="color:#dc3545;font-weight:700"><%- formatINR(stats.totalWrittenOff) %></td>
+     <td><%- stats.totalWrittenOff > 0 ? accounts.filter(function(a){return (a.written_off_amount||0)>0}).map(function(a){return a.lender}).join(', ') : 'None' %></td>
+    </tr>
+     <tr><td>Secured exposure</td>
+      <% if (stats.hasActiveBalance) { %>
+      <td><%- formatINR(stats.securedOutstanding) %></td><td>Home, vehicle, gold, property loans</td>
+      <% } else { %>
+      <td><%- formatINR(stats.securedSanctioned) %></td><td>Lifetime sanctioned amount — no balance currently owed</td>
+      <% } %>
+     </tr>
+     <tr><td>Unsecured exposure</td>
+      <% if (stats.hasActiveBalance) { %>
+      <td><%- formatINR(stats.unsecuredOutstanding) %></td><td>Credit cards, personal loans, consumer credit</td>
+      <% } else { %>
+      <td><%- formatINR(stats.unsecuredSanctioned) %></td><td>Lifetime sanctioned amount — no balance currently owed</td>
+      <% } %>
+     </tr>
+    <tr><td>Active accounts</td><td><%- stats.activeAccounts %></td><td>Currently open and reporting</td></tr>
+    <% if(data.foir_percent != null){ %>
+    <tr><td>FOIR (Fixed Obligation Ratio)</td><td><%- data.foir_percent %>%</td><td><%- data.foir_rating || '—' %></td></tr>
+    <% } %>
+    <% if(data.max_eligible_amount){ %>
+    <tr><td>Max Eligible Loan Amount</td><td><%- formatINR(data.max_eligible_amount) %></td><td>Estimated based on income signals in report</td></tr>
+    <% } %>
+   </tbody>
+  </table>
+
+  <div class="grid2">
+   <div>
+    <h4 style="text-align:center">Portfolio Mix (Secured vs Unsecured)<%- chartUrls.portfolioMix && chartUrls.portfolioMix.isLifetimeView ? ' — Lifetime Sanctioned' : '' %> <span style="font-size:0.8rem; font-weight:normal; color:#666"><br>(in ₹ Thousands)</span></h4>
+    <% if (chartUrls.portfolioMix) { %>
+     <img class="chartimg" src="<%- chartUrls.portfolioMix.url %>" alt="Portfolio Mix">
+    <% } else { %>
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No active outstanding exposure to map.
+     </div>
+    <% } %>
+   </div>
+   <div>
+    <h4 style="text-align:center">Risk Severity Distribution</h4>
+    <img class="chartimg" src="<%- chartUrls.riskSeverity %>" alt="Risk Severity">
+   </div>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+   <div>
+    <h4 style="text-align:center">Accounts by Type</h4>
+    <% if (chartUrls.accountsByType) { %>
+     <img class="chartimg" src="<%- chartUrls.accountsByType %>" alt="Accounts by Type">
+    <% } else { %>
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No accounts on file to classify.
+     </div>
+    <% } %>
+   </div>
+   <div>
+    <h4 style="text-align:center">Accounts by Lender</h4>
+    <% if (chartUrls.accountsByLender) { %>
+     <img class="chartimg" src="<%- chartUrls.accountsByLender %>" alt="Accounts by Lender">
+    <% } else { %>
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No accounts on file to group.
+     </div>
+    <% } %>
+   </div>
+  </div>
+  <div style="margin-top:18px">
+   <h4 style="text-align:center">Enquiry Activity — Last 24 Months</h4>
+   <% if (chartUrls.enquiryTimeline) { %>
+    <img class="chartimg" src="<%- chartUrls.enquiryTimeline %>" alt="Enquiry Timeline" style="max-height:280px; width:auto; display:block; margin:0 auto;">
+   <% } else { %>
+    <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+     No credit enquiries on file in the last 24 months.
+    </div>
+   <% } %>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 02: Top Risk Factors ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">02</span> Top Risk Factors</h2>
+ <p class="lead">The negative items below are, in order, pulling the score down the most.</p>
+ <div class="card">
+  <% riskFactors.forEach(function(rf, i){ %>
+  <div class="risk-item" style="border-left-color:<%- rf._color %>">
+   <div class="rk"><%- i + 1 %></div>
+   <div>
+    <span class="badge b-<%- rf.severity %>"><%- rf.severity %></span>
+    <div style="font-weight:700;margin:6px 0 4px"><%- rf.title %></div>
+    <div style="color:#444;font-size:.9rem"><%- rf.explanation %></div>
+   </div>
+  </div>
+  <% }); %>
+  <% if(!riskFactors.length){ %><p style="color:var(--muted)">No significant risk factors identified.</p><% } %>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 03: Portfolio Analysis ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">03</span> Portfolio Analysis — All Accounts</h2>
+ <div class="card">
+  <div style="overflow-x:auto">
+   <table>
+    <thead>
+     <tr><th>Lender</th><th>Type</th><th>Sanctioned</th><th>Balance</th><th>Util %</th><th>Max DPD</th><th>Status</th><th>Risk</th></tr>
+    </thead>
+    <tbody>
+     <% accounts.forEach(function(acct){ %>
+     <tr>
+      <td><%- acct.lender %></td>
+      <td><%- acct.account_type %></td>
+      <td><%- formatINR(acct.sanctioned_amount) %></td>
+      <td><%- formatINR(acct.current_balance) %></td>
+      <td><%- acct._utilPct %>%</td>
+      <td><%- acct.max_dpd || 0 %></td>
+      <td><%- acct.status || '—' %></td>
+      <td><span class="badge b-<%- acct._severity %>"><%- acct._severity %></span></td>
+     </tr>
+     <% }); %>
+    </tbody>
+   </table>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+   <div>
+    <h4 style="text-align:center"><%- chartUrls.outstandingVsSanct && chartUrls.outstandingVsSanct.isLifetimeView ? 'Lifetime Sanctioned by Lender' : 'Outstanding / Loss vs Sanctioned' %> <span style="font-size:0.8rem; font-weight:normal; color:#666"><br>(in ₹ Thousands)</span></h4>
+    <% if (chartUrls.outstandingVsSanct) { %>
+     <img class="chartimg" src="<%- chartUrls.outstandingVsSanct.url %>" alt="Outstanding vs Sanctioned">
+    <% } else { %>
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No active outstanding or written-off balances.
+     </div>
+    <% } %>
+   </div>
+   <div>
+    <h4 style="text-align:center">Risk Map (DPD vs Account Health)</h4>
+    <img class="chartimg" src="<%- chartUrls.riskMap %>" alt="Risk Map">
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 04: Detailed Account Breakdown ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">04</span> Detailed Account Breakdown</h2>
+ <p class="lead">Every account on the report, with health score and month-by-month payment history.</p>
+ <div class="card">
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;margin:8px 0 16px">
+   <span><b style="color:#28a745">■</b> On-time (OK)</span>
+   <span><b style="color:#ffc107">■</b> 1–29 DPD</span>
+   <span><b style="color:#fd7e14">■</b> 30–89 DPD</span>
+   <span><b style="color:#dc3545">■</b> 90+ / SUB / SMA</span>
+   <span><b style="color:#adb5bd">■</b> Not reported (NR / XXX)</span>
+  </div>
+
+  <% accounts.forEach(function(acct){ %>
+  <div class="acct-card">
+   <div class="acct-head">
+    <div class="who"><%- acct.lender %> &nbsp;·&nbsp; <%- acct.account_type %></div>
+    <span class="badge b-<%- acct._severity %>"><%- acct._severity %></span>
+   </div>
+   <div class="acct-body">
+    <div class="gridkv">
+     <div class="kv"><b>Account No</b><span><%- acct.masked_account_number || '—' %></span></div>
+     <div class="kv"><b>Ownership</b><span><%- acct.ownership || '—' %></span></div>
+     <div class="kv"><b>Opened</b><span><%- acct.opened_date || '—' %></span></div>
+     <div class="kv"><b>Closed</b><span><%- acct.closed_date || 'Active' %></span></div>
+     <div class="kv"><b>Sanctioned</b><span><%- formatINR(acct.sanctioned_amount) %></span></div>
+     <div class="kv"><b>Balance</b><span><%- formatINR(acct.current_balance) %></span></div>
+     <div class="kv"><b>Overdue</b><span><%- formatINR(acct.overdue_amount) %></span></div>
+     <div class="kv"><b>Max DPD</b><span><%- acct.max_dpd || 0 %> days</span></div>
+     <% if((acct.written_off_amount||0) > 0){ %>
+     <div class="kv"><b>Written Off</b><span style="color:#dc3545;font-weight:700"><%- formatINR(acct.written_off_amount) %></span></div>
+     <% } %>
+     <% if(acct.suit_filed){ %>
+     <div class="kv"><b>Suit Filed</b><span style="color:#dc3545;font-weight:700">Yes</span></div>
+     <% } %>
+     <% if(acct.emi_amount){ %>
+     <div class="kv"><b>EMI</b><span><%- formatINR(acct.emi_amount) %>/mo</span></div>
+     <% } %>
+    </div>
+
+    <%# Health bar --%>
+    <div style="margin-top:14px">
+     <b style="font-size:.85rem">Account Health: <%- acct._healthScore %>/100</b>
+     <div class="hbar">
+      <span style="width:<%- acct._healthScore %>%;background:<%- acct._severityColor %>"></span>
+     </div>
+    </div>
+
+    <%# Payment history grid --%>
+    <% if(acct.dpd_history && acct.dpd_history.length > 0){ %>
+    <div style="margin-top:14px">
+     <b style="font-size:.85rem">Payment history (most recent first)</b>
+     <div class="ph-grid">
+      <% acct.dpd_history.forEach(function(h){ %>
+      <div class="ph-cell" style="background:<%- dpdCodeToColor(h.value) %>">
+       <small><%- h.month %></small><%- h.value %>
+      </div>
+      <% }); %>
+     </div>
+    </div>
+    <% } %>
+
+    <%# DPD history bar chart — only for delinquent accounts --%>
+    <% if((acct.max_dpd||0) > 0 && chartUrls.dpdCharts[acct.masked_account_number]){ %>
+    <h4 style="margin-top:16px">Days-Past-Due History</h4>
+    <img class="chartimg" src="<%- chartUrls.dpdCharts[acct.masked_account_number] %>" alt="DPD history for <%- acct.lender %>">
+    <% } %>
+   </div>
+  </div>
+  <% }); %>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 05: Strategic Analysis ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">05</span> Strategic Analysis</h2>
+ <div class="card">
+  <h4>Health Heatmap</h4>
+  <div style="overflow-x:auto">
+   <table class="heat">
+    <thead>
+     <tr>
+      <th style="background:var(--grad);color:#fff;text-align:left">Account</th>
+      <th style="background:var(--grad);color:#fff">Max DPD</th>
+      <th style="background:var(--grad);color:#fff">Health</th>
+      <th style="background:var(--grad);color:#fff">Written-off</th>
+      <th style="background:var(--grad);color:#fff">Overdue</th>
+     </tr>
+    </thead>
+    <tbody>
+     <% accounts.forEach(function(acct){ %>
+     <tr>
+      <td class="lbl"><%- acct.lender %> · <%- acct.account_type %></td>
+      <td style="background:<%- acct._severityColor %>"><%- acct.max_dpd || 0 %></td>
+      <td style="background:<%- acct._severityColor %>"><%- acct._healthScore %></td>
+      <td style="background:<%= (acct.written_off_amount||0)>0 ? '#dc3545' : '#28a745' %>"><%- (acct.written_off_amount||0) > 0 ? 'Yes' : 'No' %></td>
+      <td style="background:<%= (acct.overdue_amount||0)>0 ? '#dc3545' : '#28a745' %>"><%- (acct.overdue_amount||0) > 0 ? 'Yes' : 'No' %></td>
+     </tr>
+     <% }); %>
+    </tbody>
+   </table>
+  </div>
+
+  <h4 style="margin-top:24px">Risk Concentration</h4>
+  <p style="color:#444;line-height:1.7"><%- data.risk_concentration_paragraph || 'Analysis not available.' %></p>
+
+  <%# Enquiries table (if any) --%>
+  <% if(enquiries && enquiries.length > 0){ %>
+  <h4 style="margin-top:24px">Credit Enquiries (<%- enquiries.length %> total)</h4>
+  <div style="overflow-x:auto">
+   <table class="enq-table">
+    <thead><tr><th>Member</th><th>Date</th><th>Purpose</th><th>Amount</th></tr></thead>
+    <tbody>
+     <% enquiries.forEach(function(enq){ %>
+     <tr>
+      <td><%- enq.member || '—' %></td>
+      <td><%- enq.date || '—' %></td>
+      <td><%- enq.purpose || '—' %></td>
+      <td><%- enq.amount ? formatINR(enq.amount) : '—' %></td>
+     </tr>
+     <% }); %>
+    </tbody>
+   </table>
+  </div>
+  <% } %>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 06: 90-Day Action Plan ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">06</span> 90-Day Action Plan</h2>
+ <div class="card">
+  <div class="grid3">
+   <div class="issue c">
+    <h4>Month 1 — Immediate</h4>
+    <p><%- data.action_month_1 || 'Action steps not available.' %></p>
+   </div>
+   <div class="issue m">
+    <h4>Month 2 — Stabilize</h4>
+    <p><%- data.action_month_2 || 'Action steps not available.' %></p>
+   </div>
+   <div class="issue h" style="border-left-color:#28a745;background:#eafaef">
+    <h4>Month 3 — Accelerate</h4>
+    <p><%- data.action_month_3 || 'Action steps not available.' %></p>
+   </div>
+  </div>
+
+  <h4 style="margin-top:24px;text-align:center">Projected Score Trajectory</h4>
+  <img class="chartimg" src="<%- chartUrls.projectedScore %>" alt="Projected Score" style="max-width:640px;margin:auto;display:block">
+
+  <p class="note" style="margin-top:16px">
+   <%- data.projection_assumptions || 'Projection assumes timely payments, no new hard enquiries, and resolution of overdue accounts.' %>
+  </p>
+
+  <% if(data.recommendation){ %>
+  <div style="background:var(--grad);color:#fff;border-radius:10px;padding:18px;margin-top:18px;text-align:center">
+   <b style="font-size:1.05rem">📋 Overall Recommendation</b>
+   <p style="margin:8px 0 0;opacity:.95"><%- data.recommendation %></p>
+  </div>
+  <% } %>
+ </div>
+</div>
+
+<!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+<div class="container">
+ <div style="margin-top:50px;padding:30px;background:#2d3436;color:white;text-align:center;border-radius:12px 12px 0 0;">
+  <h3 style="margin:0 0 8px">Report Generated by VerifyHub</h3>
+  <p style="margin:0 0 12px;opacity:.85">Empowering Financial Freedom</p>
+  <p style="margin:0 0 8px">
+   Website: <a href="https://verifyhub.in" style="color:#00cec9;text-decoration:none">verifyhub.in</a> &nbsp;|&nbsp;
+   Email: <a href="mailto:info@verifyhub.in" style="color:#00cec9;text-decoration:none">info@verifyhub.in</a>
+  </p>
+  <p style="font-size:.8em;margin-top:20px;color:#b2bec3">
+   Disclaimer: This report is an educational analysis based on provided data. VerifyHub is not a credit bureau.
+   Score improvements are estimates and depend on lender reporting accuracy.
+  </p>
+ </div>
+</div>
+
+</body>
+</html>

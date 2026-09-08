@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Credit Analysis Report — Client</title>
+<style>
+:root{
+ --grad:linear-gradient(135deg,#4A00E0 0%,#8E2DE2 100%);
+ --crit:#dc3545;--high:#fd7e14;--med:#ffc107;--low:#28a745;
+ --bg:#f4f6f9;--card:#fff;--ink:#2d3436;--muted:#6b7280;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55}
+.container{max-width:1200px;margin:0 auto;padding:0 16px 60px}
+.card{background:var(--card);border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.1);
+ padding:26px;margin:22px 0}
+h1,h2,h3,h4{margin:0 0 12px}
+.section-title{font-size:1.45rem;border-left:6px solid #8E2DE2;padding-left:12px;margin:34px 0 6px}
+.section-no{color:#8E2DE2;font-weight:700}
+.lead{color:var(--muted);margin:0 0 18px;padding-left:18px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.92rem}
+th{background:var(--grad);color:#fff;padding:11px 10px;text-align:left;font-weight:600}
+td{padding:10px;border-bottom:1px solid #eef0f4}
+tbody tr:hover{background:#f7f4ff}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;color:#fff;font-size:.72rem;
+ font-weight:700;letter-spacing:.3px}
+.b-CRITICAL{background:var(--crit)}.b-HIGH{background:var(--high)}
+.b-MEDIUM{background:var(--med);color:#5a4b00}.b-LOW{background:var(--low)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.gridkv{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 26px;font-size:.9rem}
+.kv{display:flex;justify-content:space-between;border-bottom:1px dotted #e3e6ee;padding:5px 0}
+.kv b{font-weight:600}
+.chartimg{width:100%;height:auto;border-radius:8px;display:block}
+.statbox{background:var(--grad);color:#fff;border-radius:12px;padding:18px;text-align:center}
+.statbox .n{font-size:1.7rem;font-weight:700}
+.statbox .l{font-size:.78rem;opacity:.9}
+.risk-item{display:flex;gap:14px;align-items:flex-start;padding:14px;border-radius:10px;
+ background:#faf9ff;margin:10px 0;border-left:5px solid #8E2DE2}
+.risk-item .rk{font-size:1.4rem;font-weight:800;color:#8E2DE2;min-width:34px}
+.acct-card{border:1px solid #ece8fb;border-radius:12px;margin:16px 0;overflow:hidden}
+.acct-head{background:var(--grad);color:#fff;padding:14px 18px;display:flex;
+ justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.acct-head .who{font-weight:700}
+.acct-body{padding:18px}
+.ph-grid{display:flex;flex-wrap:wrap;gap:3px;margin:10px 0}
+.ph-cell{width:34px;text-align:center;font-size:.62rem;border-radius:4px;padding:3px 0;color:#fff}
+.ph-cell small{display:block;font-size:.55rem;opacity:.85;color:#2d3436}
+.hbar{height:18px;border-radius:9px;background:#eee;overflow:hidden;margin:6px 0}
+.hbar>span{display:block;height:100%;border-radius:9px}
+.note{background:#fff8e6;border-left:5px solid var(--med);padding:12px 16px;border-radius:8px;margin:12px 0}
+.issue{border-radius:10px;padding:18px;margin:14px 0}
+.issue.c{background:#fdeef0;border-left:6px solid var(--crit)}
+.issue.h{background:#fff3e9;border-left:6px solid var(--high)}
+.issue.m{background:#fffbe9;border-left:6px solid var(--med)}
+.issue h4{margin:0 0 6px}
+.heat td{text-align:center;font-weight:600;color:#fff;font-size:.8rem}
+.heat td.lbl{background:#fff;color:#2d3436;text-align:left;font-weight:600}
+.hero-head{background:var(--grad);color:#fff;border-radius:0 0 18px 18px;padding:30px 16px 36px}
+.brand{font-size:2rem;font-weight:800;letter-spacing:.5px}
+.brand span{opacity:.85;font-weight:400;font-size:1rem}
+.enq-table td{font-size:.85rem}
+@media(max-width:760px){.grid2,.grid3,.gridkv{grid-template-columns:1fr}}
+@media print{
+ body{background:#fff}
+ .card,.acct-card{box-shadow:none;border:1px solid #ddd;break-inside:avoid}
+ .section-title{break-after:avoid}
+ *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HERO HEADER ═══════════════════════ -->
+<div class="hero-head">
+ <div class="container" style="padding-bottom:0">
+  <div class="brand">VerifyHub <span>Credit Analysis Report</span></div>
+ </div>
+</div>
+
+<div class="container">
+ <div class="card" style="margin-top:-26px">
+  <div class="grid2" style="align-items:center">
+   <div>
+    <div class="gridkv">
+     <div class="kv"><b>Client Name</b><span>—</span></div>
+     <div class="kv"><b>Report Date</b><span>—</span></div>
+     <div class="kv"><b>PAN</b><span>—</span></div>
+     <div class="kv"><b>Date of Birth</b><span>—</span></div>
+     <div class="kv"><b>Bureau Control No</b><span>—</span></div>
+     <div class="kv"><b>Score Band</b><span>—</span></div>
+    </div>
+    <p class="note" style="margin-top:16px">This report is an educational analysis of the credit data provided. It highlights what is helping and hurting the score, and gives a 90-day plan to improve it.</p>
+   </div>
+   <div style="text-align:center">
+    <img class="chartimg" src="https://quickchart.io/chart?w=420&h=260&bkg=white&c=%7B%22type%22%3A%22radialGauge%22%2C%22data%22%3A%7B%22datasets%22%3A%5B%7B%22data%22%3A%5B0%5D%2C%22backgroundColor%22%3A%22%23dc3545%22%7D%5D%7D%2C%22options%22%3A%7B%22domain%22%3A%5B300%2C900%5D%2C%22trackColor%22%3A%22%23e9ecef%22%2C%22roundedCorners%22%3Atrue%2C%22centerPercentage%22%3A78%2C%22centerArea%22%3A%7B%22text%22%3A%220%22%2C%22fontSize%22%3A46%2C%22fontColor%22%3A%22%232d3436%22%7D%7D%7D" alt="Credit Score Gauge" style="max-width:420px;margin:auto">
+    <h2 style="margin-top:10px">Current Score: — /900</h2>
+    <span class="badge" style="background:#dc3545;font-size:.95rem;padding:6px 18px">
+     —
+    </span>
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ EXECUTIVE SUMMARY ═══════════════════════ -->
+<div class="container" style="padding-top:0; padding-bottom:0">
+ <div class="card" style="border-left:5px solid #8E2DE2; margin-top:0; margin-bottom:12px">
+  <div style="font-size:0.85rem; font-weight:700; color:#8E2DE2; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Executive Summary</div>
+  <p style="font-size:1.05rem; margin:0; line-height:1.6">No executive summary available.</p>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 01: Profile Snapshot ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">01</span> Profile Snapshot</h2>
+ 
+ <p class="note" style="margin:8px 0 14px">
+  <strong>ℹ️ Portfolio context: </strong>This client currently has no active credit lines — all accounts below are historical records, fully closed with zero balance owed today. Exposure figures reflect lifetime sanctioned amounts, not current obligations.
+ </p>
+ 
+ <div class="card">
+  <div class="grid3" style="margin-bottom:18px">
+   <div class="statbox"><div class="n">0</div><div class="l">Total Accounts</div></div>
+   <div class="statbox"><div class="n">₹0</div><div class="l">Outstanding</div></div>
+   <div class="statbox"><div class="n">₹0</div><div class="l">Amount Overdue</div></div>
+   <div class="statbox"><div class="n">0%</div><div class="l">Utilization</div></div>
+   <div class="statbox"><div class="n">—</div><div class="l">Oldest Vintage</div></div>
+   <div class="statbox"><div class="n">0</div><div class="l">Enquiries (12m)</div></div>
+  </div>
+
+  <table>
+   <thead><tr><th>Metric</th><th>Value</th><th>Read</th></tr></thead>
+   <tbody>
+    <tr><td>Total sanctioned (lifetime)</td><td>₹0</td><td>Across all closed, settled, and active lines</td></tr>
+    <tr>
+     <td>Total written-off / loss</td>
+     <td style="color:#dc3545;font-weight:700">₹0</td>
+     <td>None</td>
+    </tr>
+     <tr><td>Secured exposure</td>
+      
+      <td>₹0</td><td>Lifetime sanctioned amount — no balance currently owed</td>
+      
+     </tr>
+     <tr><td>Unsecured exposure</td>
+      
+      <td>₹0</td><td>Lifetime sanctioned amount — no balance currently owed</td>
+      
+     </tr>
+    <tr><td>Active accounts</td><td>0</td><td>Currently open and reporting</td></tr>
+    
+    
+   </tbody>
+  </table>
+
+  <div class="grid2">
+   <div>
+    <h4 style="text-align:center">Portfolio Mix (Secured vs Unsecured)</h4>
+    
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No active outstanding exposure to map.
+     </div>
+    
+   </div>
+   <div>
+    <h4 style="text-align:center">Risk Severity Distribution</h4>
+    <img class="chartimg" src="https://quickchart.io/chart?w=420&h=300&bkg=white&c=%7B%22type%22%3A%22bar%22%2C%22data%22%3A%7B%22labels%22%3A%5B%22Critical%22%2C%22High%22%2C%22Medium%22%2C%22Low%22%5D%2C%22datasets%22%3A%5B%7B%22data%22%3A%5B0%2C0%2C0%2C0%5D%2C%22backgroundColor%22%3A%5B%22%23dc3545%22%2C%22%23fd7e14%22%2C%22%23ffc107%22%2C%22%2328a745%22%5D%7D%5D%7D%2C%22options%22%3A%7B%22plugins%22%3A%7B%22legend%22%3A%7B%22display%22%3Afalse%7D%7D%2C%22scales%22%3A%7B%22y%22%3A%7B%22beginAtZero%22%3Atrue%2C%22ticks%22%3A%7B%22stepSize%22%3A1%7D%7D%7D%7D%7D" alt="Risk Severity">
+   </div>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+   <div>
+    <h4 style="text-align:center">Accounts by Type</h4>
+    
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No accounts on file to classify.
+     </div>
+    
+   </div>
+   <div>
+    <h4 style="text-align:center">Accounts by Lender</h4>
+    
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No accounts on file to group.
+     </div>
+    
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 02: Top Risk Factors ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">02</span> Top Risk Factors</h2>
+ <p class="lead">The negative items below are, in order, pulling the score down the most.</p>
+ <div class="card">
+  
+  <p style="color:var(--muted)">No significant risk factors identified.</p>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 03: Portfolio Analysis ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">03</span> Portfolio Analysis — All Accounts</h2>
+ <div class="card">
+  <div style="overflow-x:auto">
+   <table>
+    <thead>
+     <tr><th>Lender</th><th>Type</th><th>Sanctioned</th><th>Balance</th><th>Util %</th><th>Max DPD</th><th>Status</th><th>Risk</th></tr>
+    </thead>
+    <tbody>
+     
+    </tbody>
+   </table>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+   <div>
+    <h4 style="text-align:center">Outstanding / Loss vs Sanctioned</h4>
+    
+     <div style="background:#faf9ff; border:1px solid #ece8fb; border-radius:8px; padding:30px; text-align:center; color:var(--muted); font-size:.9rem; min-height:180px; display:flex; align-items:center; justify-content:center;">
+      No active outstanding or written-off balances.
+     </div>
+    
+   </div>
+   <div>
+    <h4 style="text-align:center">Risk Map (DPD vs Account Health)</h4>
+    <img class="chartimg" src="https://quickchart.io/chart?w=560&h=360&bkg=white&c=%7B%22type%22%3A%22bubble%22%2C%22data%22%3A%7B%22datasets%22%3A%5B%7B%22label%22%3A%22No%20data%22%2C%22data%22%3A%5B%7B%22x%22%3A0%2C%22y%22%3A100%2C%22r%22%3A5%7D%5D%2C%22backgroundColor%22%3A%22%2328a745%22%7D%5D%7D%2C%22options%22%3A%7B%22plugins%22%3A%7B%22legend%22%3A%7B%22position%22%3A%22bottom%22%7D%7D%2C%22scales%22%3A%7B%22x%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22Max%20DPD%20(days)%22%7D%2C%22beginAtZero%22%3Atrue%7D%2C%22y%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22Account%20Health%20(0-100)%22%7D%2C%22min%22%3A0%2C%22max%22%3A105%7D%7D%7D%7D" alt="Risk Map">
+   </div>
+  </div>
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 04: Detailed Account Breakdown ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">04</span> Detailed Account Breakdown</h2>
+ <p class="lead">Every account on the report, with health score and month-by-month payment history.</p>
+ <div class="card">
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;margin:8px 0 16px">
+   <span><b style="color:#28a745">■</b> On-time (OK)</span>
+   <span><b style="color:#ffc107">■</b> 1–29 DPD</span>
+   <span><b style="color:#fd7e14">■</b> 30–89 DPD</span>
+   <span><b style="color:#dc3545">■</b> 90+ / SUB / SMA</span>
+   <span><b style="color:#adb5bd">■</b> Not reported (NR / XXX)</span>
+  </div>
+
+  
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 05: Strategic Analysis ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">05</span> Strategic Analysis</h2>
+ <div class="card">
+  <h4>Health Heatmap</h4>
+  <div style="overflow-x:auto">
+   <table class="heat">
+    <thead>
+     <tr>
+      <th style="background:var(--grad);color:#fff;text-align:left">Account</th>
+      <th style="background:var(--grad);color:#fff">Max DPD</th>
+      <th style="background:var(--grad);color:#fff">Health</th>
+      <th style="background:var(--grad);color:#fff">Written-off</th>
+      <th style="background:var(--grad);color:#fff">Overdue</th>
+     </tr>
+    </thead>
+    <tbody>
+     
+    </tbody>
+   </table>
+  </div>
+
+  <h4 style="margin-top:24px">Risk Concentration</h4>
+  <p style="color:#444;line-height:1.7">Analysis not available.</p>
+
+    
+ </div>
+</div>
+
+<!-- ═══════════════════════ SECTION 06: 90-Day Action Plan ═══════════════════════ -->
+<div class="container">
+ <h2 class="section-title"><span class="section-no">06</span> 90-Day Action Plan</h2>
+ <div class="card">
+  <div class="grid3">
+   <div class="issue c">
+    <h4>Month 1 — Immediate</h4>
+    <p>Action steps not available.</p>
+   </div>
+   <div class="issue m">
+    <h4>Month 2 — Stabilize</h4>
+    <p>Action steps not available.</p>
+   </div>
+   <div class="issue h" style="border-left-color:#28a745;background:#eafaef">
+    <h4>Month 3 — Accelerate</h4>
+    <p>Action steps not available.</p>
+   </div>
+  </div>
+
+  <h4 style="margin-top:24px;text-align:center">Projected Score Trajectory</h4>
+  <img class="chartimg" src="https://quickchart.io/chart?w=620&h=300&bkg=white&c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%22Now%22%2C%22Month%201%22%2C%22Month%202%22%2C%22Month%203%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22Projected%20Score%22%2C%22borderColor%22%3A%22%2328a745%22%2C%22backgroundColor%22%3A%22rgba(40%2C167%2C69%2C.15)%22%2C%22fill%22%3Atrue%2C%22tension%22%3A0.3%2C%22data%22%3A%5B700%2C710%2C720%2C730%5D%7D%2C%7B%22label%22%3A%22Target%20Band%22%2C%22borderColor%22%3A%22%234A00E0%22%2C%22borderDash%22%3A%5B6%2C4%5D%2C%22fill%22%3Afalse%2C%22data%22%3A%5B750%2C750%2C750%2C750%5D%7D%5D%7D%2C%22options%22%3A%7B%22plugins%22%3A%7B%22legend%22%3A%7B%22position%22%3A%22bottom%22%7D%7D%2C%22scales%22%3A%7B%22y%22%3A%7B%22min%22%3A670%2C%22max%22%3A760%7D%7D%7D%7D" alt="Projected Score" style="max-width:640px;margin:auto;display:block">
+
+  <p class="note" style="margin-top:16px">
+   Projection assumes timely payments, no new hard enquiries, and resolution of overdue accounts.
+  </p>
+
+  
+ </div>
+</div>
+
+<!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+<div class="container">
+ <div style="margin-top:50px;padding:30px;background:#2d3436;color:white;text-align:center;border-radius:12px 12px 0 0;">
+  <h3 style="margin:0 0 8px">Report Generated by VerifyHub</h3>
+  <p style="margin:0 0 12px;opacity:.85">Empowering Financial Freedom</p>
+  <p style="margin:0 0 8px">
+   Website: <a href="https://verifyhub.in" style="color:#00cec9;text-decoration:none">verifyhub.in</a> &nbsp;|&nbsp;
+   Email: <a href="mailto:info@verifyhub.in" style="color:#00cec9;text-decoration:none">info@verifyhub.in</a>
+  </p>
+  <p style="font-size:.8em;margin-top:20px;color:#b2bec3">
+   Disclaimer: This report is an educational analysis based on provided data. VerifyHub is not a credit bureau.
+   Score improvements are estimates and depend on lender reporting accuracy.
+  </p>
+ </div>
+</div>
+
+</body>
+</html>
