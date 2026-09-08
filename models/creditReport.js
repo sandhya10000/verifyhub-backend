@@ -47,6 +47,9 @@ const creditReportSchema = new mongoose.Schema(
       type: String,
       enum: ["Male", "Female", "Other"],
     },
+    email: {
+      type: String,
+    },
 
     // =========================
     // REPORT DETAILS

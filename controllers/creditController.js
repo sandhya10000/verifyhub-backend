@@ -2,11 +2,14 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
+const User = require("../models/user");
 const config = require("../config/bureau.config");
 
 const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
 const generateExperianPdf = require("../services/experianPdf.service");
+const generateCrifPdf = require("../templates/generateCrifPdf");
+
 const CibilReportFromDigi = async (req, res) => {
   let creditReport = null;
 
@@ -1117,11 +1120,11 @@ const CrifReport = async (req, res) => {
     let score = null;
 
     if (
-      apiData.score !== undefined &&
-      apiData.score !== null &&
-      apiData.score !== ""
+      apiData?.data?.score !== undefined &&
+      apiData?.data?.score !== null &&
+      apiData?.data?.score !== ""
     ) {
-      const parsedScore = Number(apiData.score);
+      const parsedScore = Number(apiData.data.score);
 
       if (!Number.isNaN(parsedScore)) {
         score = parsedScore;
@@ -1140,24 +1143,17 @@ const CrifReport = async (req, res) => {
       null;
 
     // ============================================================
-    // STEP 17: SAVE REPORT LOCALLY
+    // STEP 17: GENERATE PDF FROM JSON RESPONSE
     // ============================================================
 
     let localPath = null;
 
-    if (reportUrl) {
-      try {
-        localPath = await saveCreditReportLocally(
-          reportUrl,
-          creditReport._id.toString(),
-          "crif",
-          "pdf",
-        );
+    try {
+      localPath = await generateCrifPdf(apiData, creditReport._id.toString());
 
-        console.log("[CRIF] Report saved locally:", localPath);
-      } catch (fileError) {
-        console.error("[CRIF] Local report save failed:", fileError.message);
-      }
+      console.log("[CRIF] PDF generated successfully:", localPath);
+    } catch (pdfError) {
+      console.error("[CRIF] PDF generation failed:", pdfError.message);
     }
 
     // ============================================================
@@ -1975,11 +1971,15 @@ const EquifaxReport = async (req, res) => {
     const { name, panNumber, mobile, gender, consent, orderId } = req.body;
 
     // ==========================================
-    // 3. CONFIG VALIDATION
+    // 3. ENV VALIDATION
     // ==========================================
 
-    if (!SUREPASS_CONFIG.baseUrl || !SUREPASS_CONFIG.apiToken) {
-      console.error("[EQUIFAX] Surepass configuration missing");
+    if (
+      !process.env.SUREPASS_BASE_URL ||
+      !process.env.SUREPASS_API_TOKEN ||
+      !process.env.SUREPASS_EQUIFAX_ENDPOINT
+    ) {
+      console.error("[EQUIFAX] Surepass environment variables are missing");
 
       return res.status(500).json({
         success: false,
@@ -2089,30 +2089,54 @@ const EquifaxReport = async (req, res) => {
     console.log("[EQUIFAX] Pending Report Created:", creditReport._id);
 
     // ==========================================
-    // 9. API URL
+    // 9. SUREPASS API URL
     // ==========================================
 
-    const apiUrl = `${SUREPASS_CONFIG.baseUrl}${SUREPASS_CONFIG.equifaxEndpoint}`;
+    const baseUrl = String(process.env.SUREPASS_BASE_URL).trim();
+
+    const equifaxEndpoint = String(
+      process.env.SUREPASS_EQUIFAX_ENDPOINT,
+    ).trim();
+
+    const apiUrl = `${baseUrl}${equifaxEndpoint}`;
 
     console.log("[EQUIFAX] API URL:", apiUrl);
 
     // ==========================================
-    // 10. HEADERS
+    // 10. SUREPASS TOKEN
+    // ==========================================
+
+    const token = String(process.env.SUREPASS_API_TOKEN).trim();
+
+    console.log("[EQUIFAX] Token Loaded:", !!token);
+
+    console.log("[EQUIFAX] Token Length:", token.length);
+
+    // IMPORTANT:
+    // Actual token is NEVER printed in logs.
+    console.log(
+      "[EQUIFAX] Token Preview:",
+      token ? `${token.substring(0, 6)}******${token.slice(-4)}` : "NOT_FOUND",
+    );
+
+    // ==========================================
+    // 11. HEADERS
     // ==========================================
 
     const headers = {
       "Content-Type": "application/json",
-
-      Authorization: `Bearer ${SUREPASS_CONFIG.apiToken}`,
+      Authorization: `Bearer ${token}`,
     };
 
     // ==========================================
-    // 11. CALL SUREPASS
+    // 12. CALL SUREPASS
     // ==========================================
+
+    console.log("[EQUIFAX] Sending request to Surepass...");
 
     const response = await axios.post(apiUrl, payload, {
       headers,
-      timeout: SUREPASS_CONFIG.timeout,
+      timeout: 30000,
     });
 
     const apiData = response.data;
@@ -2120,7 +2144,7 @@ const EquifaxReport = async (req, res) => {
     console.log("[EQUIFAX] Response:", JSON.stringify(apiData, null, 2));
 
     // ==========================================
-    // 12. CHECK API SUCCESS
+    // 13. CHECK API SUCCESS
     // ==========================================
 
     if (apiData?.success === false || apiData?.status === false) {
@@ -2132,6 +2156,7 @@ const EquifaxReport = async (req, res) => {
 
       return res.status(400).json({
         success: false,
+
         message: apiData?.message || "Equifax credit report request failed",
 
         creditReportId: creditReport._id,
@@ -2145,7 +2170,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // ==========================================
-    // 13. GET REPORT URL
+    // 14. GET REPORT URL
     // ==========================================
 
     const reportUrl =
@@ -2160,7 +2185,7 @@ const EquifaxReport = async (req, res) => {
     console.log("[EQUIFAX] Report URL:", reportUrl);
 
     // ==========================================
-    // 14. GET SCORE
+    // 15. GET SCORE
     // ==========================================
 
     let score = null;
@@ -2184,7 +2209,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // ==========================================
-    // 15. GET REPORT ID
+    // 16. GET REPORT ID
     // ==========================================
 
     const reportId =
@@ -2197,7 +2222,7 @@ const EquifaxReport = async (req, res) => {
       null;
 
     // ==========================================
-    // 16. SAVE REPORT LOCALLY
+    // 17. SAVE REPORT LOCALLY
     // ==========================================
 
     let localPath = null;
@@ -2206,11 +2231,8 @@ const EquifaxReport = async (req, res) => {
       try {
         localPath = await saveCreditReportLocally(
           reportUrl,
-
           creditReport._id.toString(),
-
           "equifax",
-
           "pdf",
         );
 
@@ -2218,16 +2240,15 @@ const EquifaxReport = async (req, res) => {
       } catch (fileError) {
         console.error("[EQUIFAX] Local report save failed:", fileError.message);
 
-        // File save fail hone par API request ko
-        // failed nahi karenge.
-        // Report DB me rahegi but localPath null rahega.
+        // API successful hone par sirf file
+        // save fail ki wajah se report fail nahi hogi.
       }
     } else {
       console.log("[EQUIFAX] No report URL received from API");
     }
 
     // ==========================================
-    // 17. UPDATE CREDIT REPORT
+    // 18. UPDATE CREDIT REPORT
     // ==========================================
 
     creditReport.reportId = reportId;
@@ -2247,7 +2268,7 @@ const EquifaxReport = async (req, res) => {
     console.log("[EQUIFAX] Credit Report Updated:", creditReport._id);
 
     // ==========================================
-    // 18. FINAL RESPONSE
+    // 19. FINAL RESPONSE
     // ==========================================
 
     return res.status(200).json({
@@ -2275,7 +2296,7 @@ const EquifaxReport = async (req, res) => {
     });
   } catch (error) {
     // ==========================================
-    // 19. ERROR
+    // 20. ERROR
     // ==========================================
 
     console.error("[EQUIFAX] Error:", error.message);
@@ -2302,7 +2323,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // ==========================================
-    // 20. API RESPONSE ERROR
+    // API RESPONSE ERROR
     // ==========================================
 
     if (error.response) {
@@ -2329,7 +2350,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // ==========================================
-    // 21. NO RESPONSE
+    // NO RESPONSE
     // ==========================================
 
     if (error.request) {
@@ -2351,7 +2372,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // ==========================================
-    // 22. INTERNAL ERROR
+    // INTERNAL ERROR
     // ==========================================
 
     return res.status(500).json({
@@ -2438,10 +2459,91 @@ const getAllCreditReports = async (req, res) => {
   }
 };
 
+const getCreditBureauDetails = async (req, res) => {
+  try {
+    // ==========================================
+    // 1. GET LOGGED-IN USER ID
+    // ==========================================
+
+    const userId = req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    // ==========================================
+    // 2. GET CREDIT REPORT
+    // ==========================================
+
+    const creditReport = await CreditReport.findOne({
+      userId,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!creditReport) {
+      return res.status(404).json({
+        success: false,
+        message: "Credit bureau details not found",
+      });
+    }
+
+    // ==========================================
+    // 3. GET USER DETAILS
+    // ==========================================
+
+    const user = await User.findById(userId)
+      .select("name email mobile userId")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User details not found",
+      });
+    }
+
+    // ==========================================
+    // 4. FINAL RESPONSE
+    // ==========================================
+
+    return res.status(200).json({
+      success: true,
+      message: "Credit bureau details fetched successfully",
+
+      data: {
+        userId: user._id,
+
+        name: user.name || creditReport.name || null,
+
+        mobile: user.mobile || creditReport.mobile || null,
+
+        email: user.email || null,
+
+        pan: creditReport.pan || null,
+
+        partnerId: user.partnerId || null,
+      },
+    });
+  } catch (error) {
+    console.error("[CREDIT BUREAU DETAILS] Error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch credit bureau details",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   CibilReportFromDigi,
   CrifReport,
   ExperianReport,
   EquifaxReport,
   getAllCreditReports,
+  getCreditBureauDetails,
 };

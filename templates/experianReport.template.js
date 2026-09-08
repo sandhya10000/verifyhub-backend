@@ -1481,7 +1481,7 @@ tbody tr:last-child td {
     <div>
 
       <div class="brand">
-        Verify<span>hub</span>
+        <span>Experian</span>
       </div>
 
       <div class="report-type">
