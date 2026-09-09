@@ -156,6 +156,93 @@ exports.listAnalyses = async (req, res) => {
   }
 };
 
+// ─── Dashboard report stats ────────────────────────────────────────────────────
+// GET /api/ai-analyzer/stats
+// Returns todayCount, monthCount, and 7-day daily trend arrays (completed
+// analyses only) scoped to the authenticated user.
+exports.getReportStats = async (req, res) => {
+  try {
+    const now = new Date();
+
+    // ── Window boundaries (UTC) ──────────────────────────────────────────────
+    const todayStart = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()
+    ));
+    const monthStart = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), 1
+    ));
+    // 7 full days ago (inclusive of today = last 7 days)
+    const sevenDaysAgo = new Date(todayStart);
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+
+    const userId = req.user._id;
+    const baseMatch = { userId, status: 'completed' };
+
+    // ── Run all three counts in parallel ────────────────────────────────────
+    const [todayCount, monthCount, dailyDocs] = await Promise.all([
+      // Today
+      AIAnalysis.countDocuments({
+        ...baseMatch,
+        createdAt: { $gte: todayStart },
+      }),
+
+      // This calendar month
+      AIAnalysis.countDocuments({
+        ...baseMatch,
+        createdAt: { $gte: monthStart },
+      }),
+
+      // Last 7 days — grouped by calendar date (YYYY-MM-DD)
+      AIAnalysis.aggregate([
+        {
+          $match: {
+            ...baseMatch,
+            createdAt: { $gte: sevenDaysAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    // ── Build a dense 7-element trend array (fill missing days with 0) ───────
+    // Index by date string for O(1) lookup
+    const dailyMap = {};
+    for (const doc of dailyDocs) {
+      dailyMap[doc._id] = doc.count;
+    }
+
+    const trend = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgo);
+      d.setUTCDate(d.getUTCDate() + i);
+      const dateStr = d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+      trend.push({ date: dateStr, count: dailyMap[dateStr] || 0 });
+    }
+
+    res.json({
+      success: true,
+      todayCount,
+      monthCount,
+      // todayTrend = same 7-day window (useful for the purple sparkline)
+      todayTrend: trend,
+      // monthTrend = same 7-day window (useful for the green sparkline)
+      // A richer month-level trend (30 days) can be added later if needed.
+      monthTrend: trend,
+    });
+  } catch (err) {
+    console.error('getReportStats error:', err);
+    res.status(500).json({ success: false, message: 'Could not fetch report stats.' });
+  }
+};
+
 async function isPdfEncrypted(filePath) {
   try {
     const bytes = fs.readFileSync(filePath);
