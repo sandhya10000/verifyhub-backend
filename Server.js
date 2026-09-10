@@ -1,6 +1,9 @@
 const dotenv = require("dotenv");
 dotenv.config(); // MUST be first — env vars must be available before any other module reads them
 
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
