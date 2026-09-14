@@ -7,6 +7,16 @@ const AIAnalysisSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    // Optional: links this AI analysis to the source CreditReport record
+    // (set when the CIBIL PDF that was uploaded here was pulled via VerifyHub).
+    // Used by the Reports page to deduplicate — the raw credit-report row is
+    // suppressed in favour of the richer AI Credit Analysis row.
+    creditReportId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CreditReport',
+      default: null,
+      index: true,
+    },
     fileName: { type: String, required: true },
     filePath: { type: String, required: true },
     fileType: { type: String, enum: ['pdf', 'json'], required: true },
