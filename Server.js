@@ -20,6 +20,8 @@ const creditRoutes = require("./routes/credit");
 const paymentRoutes = require("./routes/payment");
 
 const aiAnalyzerRoutes = require("./routes/aiAnalyzerRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const ticketRoutes = require("./routes/ticketRoutes");
 
 // Connect Database
 connectDB();
@@ -27,14 +29,6 @@ connectDB();
 const app = express();
 
 // Middleware
-app.use(
-  cors({
-    origin: "http://localhost:5173",
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
@@ -89,6 +83,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/credit", creditRoutes);
 app.use("/api", paymentRoutes);
 app.use("/api/ai-analyzer", aiAnalyzerRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/tickets", ticketRoutes);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

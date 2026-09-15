@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { PDFDocument } = require('pdf-lib');
 const AIAnalysis = require('../models/AIAnalysis');
+const CreditReport = require('../models/creditReport');
 const { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground } = require('../utils/claudeService');
 
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
@@ -158,8 +159,13 @@ exports.listAnalyses = async (req, res) => {
 
 // ─── Dashboard report stats ────────────────────────────────────────────────────
 // GET /api/ai-analyzer/stats
-// Returns todayCount, monthCount, and 7-day daily trend arrays (completed
-// analyses only) scoped to the authenticated user.
+//
+// Returns combined counts across both collections:
+//   totalToday / totalMonth  — all reports (AI analyses + bureau pulls), deduped:
+//     a CIBIL CreditReport that was consumed by an AI analysis is only counted once
+//     (as the AI analysis), so a single underlying pull never inflates the count by 2.
+//   aiToday  / aiMonth       — AI Credit Analyses only (for the sparkline trend).
+//   todayTrend / monthTrend  — 7-day daily trend based on AI analyses.
 exports.getReportStats = async (req, res) => {
   try {
     const now = new Date();
@@ -171,51 +177,95 @@ exports.getReportStats = async (req, res) => {
     const monthStart = new Date(Date.UTC(
       now.getUTCFullYear(), now.getUTCMonth(), 1
     ));
-    // 7 full days ago (inclusive of today = last 7 days)
+    // 7 full days ago (inclusive of today)
     const sevenDaysAgo = new Date(todayStart);
     sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
     const userId = req.user._id;
-    const baseMatch = { userId, status: 'completed' };
+    const aiBaseMatch   = { userId, status: 'completed' };
+    const crBaseMatch   = { userId, status: 'Success' };
 
-    // ── Run all three counts in parallel ────────────────────────────────────
-    const [todayCount, monthCount, dailyDocs] = await Promise.all([
-      // Today
-      AIAnalysis.countDocuments({
-        ...baseMatch,
-        createdAt: { $gte: todayStart },
-      }),
+    // ── Fetch all needed data in parallel ────────────────────────────────────
+    const [
+      // AI analyses — counts
+      aiTodayCount,
+      aiMonthCount,
+      // AI analyses — 7-day daily trend
+      aiDailyDocs,
+      // AI analyses — full list (need creditReportId for dedup)
+      aiAnalysesRaw,
+      // Bureau credit reports — today
+      crTodayDocs,
+      // Bureau credit reports — this month
+      crMonthDocs,
+    ] = await Promise.all([
+      AIAnalysis.countDocuments({ ...aiBaseMatch, createdAt: { $gte: todayStart } }),
+      AIAnalysis.countDocuments({ ...aiBaseMatch, createdAt: { $gte: monthStart } }),
 
-      // This calendar month
-      AIAnalysis.countDocuments({
-        ...baseMatch,
-        createdAt: { $gte: monthStart },
-      }),
-
-      // Last 7 days — grouped by calendar date (YYYY-MM-DD)
       AIAnalysis.aggregate([
-        {
-          $match: {
-            ...baseMatch,
-            createdAt: { $gte: sevenDaysAgo },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
-            },
-            count: { $sum: 1 },
-          },
-        },
+        { $match: { ...aiBaseMatch, createdAt: { $gte: sevenDaysAgo } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
+
+      // Only need _id, creditReportId, result.score, createdAt for dedup
+      AIAnalysis.find(
+        { ...aiBaseMatch, createdAt: { $gte: monthStart } },
+        { creditReportId: 1, 'result.score': 1, createdAt: 1 }
+      ).lean(),
+
+      CreditReport.find(
+        { ...crBaseMatch, createdAt: { $gte: todayStart } },
+        { _id: 1, bureau: 1, score: 1, createdAt: 1 }
+      ).lean(),
+
+      CreditReport.find(
+        { ...crBaseMatch, createdAt: { $gte: monthStart } },
+        { _id: 1, bureau: 1, score: 1, createdAt: 1 }
+      ).lean(),
     ]);
 
+    // ── Build set of CreditReport _ids that are already counted via an AI analysis
+    // (so we don't double-count them as bureau pulls too)
+    //
+    // Two dedup strategies, same as the frontend:
+    //  1. Hard reference: AIAnalysis.creditReportId (new records)
+    //  2. Heuristic:      CIBIL + same numeric score + same calendar day (legacy)
+    const suppressedCrIds = new Set();
+
+    for (const ai of aiAnalysesRaw) {
+      // 1. Explicit reference
+      if (ai.creditReportId) {
+        suppressedCrIds.add(String(ai.creditReportId));
+        continue;
+      }
+
+      // 2. Heuristic — only applicable to CIBIL rows
+      const aiScore = typeof ai.result?.score === 'number' ? ai.result.score : null;
+      const aiDay   = ai.createdAt ? new Date(ai.createdAt).toDateString() : null;
+
+      if (aiScore !== null && aiDay) {
+        for (const cr of crMonthDocs) {
+          if (cr.bureau?.toUpperCase() !== 'CIBIL') continue;
+          const crScore = typeof cr.score === 'number' ? cr.score : null;
+          const crDay   = cr.createdAt ? new Date(cr.createdAt).toDateString() : null;
+          if (crScore !== null && crScore === aiScore && crDay === aiDay) {
+            suppressedCrIds.add(String(cr._id));
+          }
+        }
+      }
+    }
+
+    // ── Combined totals (AI analyses + non-suppressed bureau pulls) ──────────
+    const crTodayUnique  = crTodayDocs.filter(cr => !suppressedCrIds.has(String(cr._id))).length;
+    const crMonthUnique  = crMonthDocs.filter(cr => !suppressedCrIds.has(String(cr._id))).length;
+
+    const totalToday  = aiTodayCount  + crTodayUnique;
+    const totalMonth  = aiMonthCount  + crMonthUnique;
+
     // ── Build a dense 7-element trend array (fill missing days with 0) ───────
-    // Index by date string for O(1) lookup
     const dailyMap = {};
-    for (const doc of dailyDocs) {
+    for (const doc of aiDailyDocs) {
       dailyMap[doc._id] = doc.count;
     }
 
@@ -223,19 +273,24 @@ exports.getReportStats = async (req, res) => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(sevenDaysAgo);
       d.setUTCDate(d.getUTCDate() + i);
-      const dateStr = d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+      const dateStr = d.toISOString().slice(0, 10);
       trend.push({ date: dateStr, count: dailyMap[dateStr] || 0 });
     }
 
     res.json({
       success: true,
-      todayCount,
-      monthCount,
-      // todayTrend = same 7-day window (useful for the purple sparkline)
+      // Combined (all bureau types, deduplicated)
+      totalToday,
+      totalMonth,
+      // AI-only (for sparklines and the AI-specific subtitle)
+      aiToday:    aiTodayCount,
+      aiMonth:    aiMonthCount,
+      // Sparkline trends (AI-based; bureau-level daily breakdown not needed)
       todayTrend: trend,
-      // monthTrend = same 7-day window (useful for the green sparkline)
-      // A richer month-level trend (30 days) can be added later if needed.
       monthTrend: trend,
+      // Legacy keys kept for backwards compatibility
+      todayCount: totalToday,
+      monthCount: totalMonth,
     });
   } catch (err) {
     console.error('getReportStats error:', err);
