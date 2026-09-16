@@ -41,6 +41,12 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Tracks when this admin last opened the Support Tickets page.
+    // Used to compute the "new tickets since last visit" badge count.
+    supportLastSeenAt: {
+      type: Date,
+      default: null,
+    },
   },
 
   {

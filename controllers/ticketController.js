@@ -149,10 +149,25 @@ exports.updateTicket = async (req, res) => {
 
 exports.getUnreadCount = async (req, res) => {
   try {
-    const count = await Ticket.countDocuments({ status: 'open' });
+    // Count tickets created AFTER this admin last viewed the Support page.
+    // If they've never visited, use epoch 0 so all existing tickets count.
+    const since = req.user.supportLastSeenAt || new Date(0);
+    const count = await Ticket.countDocuments({ createdAt: { $gt: since } });
     res.json({ success: true, count });
   } catch (error) {
     console.error('getUnreadCount Error:', error);
     res.status(500).json({ success: false, message: 'Failed to get unread count' });
+  }
+};
+
+// Stamps the current time as the admin's last-viewed timestamp for support tickets.
+// Called by the frontend when the admin opens /admin/support.
+exports.markTicketsSeen = async (req, res) => {
+  try {
+    await req.user.updateOne({ supportLastSeenAt: new Date() });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('markTicketsSeen Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to mark tickets seen' });
   }
 };
