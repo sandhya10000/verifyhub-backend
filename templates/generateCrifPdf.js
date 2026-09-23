@@ -269,32 +269,69 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   // 5. BASIC PERSONAL DETAILS
   // ============================================================
 
-  const name =
-    getValue(request, "NAME", "FULL-NAME") ||
-    getValue(personalInfo, "NAME", "FULL-NAME") ||
-    "-";
+  const name = getValue(request, "NAME", "FULL-NAME") || "-";
 
-  const firstName = getValue(personalInfo, "FIRST-NAME", "FIRST_NAME") || "-";
+  // ------------------------------------------------------------
+  // FIRST NAME / LAST NAME
+  // CRIF response me FIRST-NAME / LAST-NAME nahi hai.
+  // NAME = "Sandhya Kumari" ko split kar rahe hain.
+  // ------------------------------------------------------------
 
-  const lastName = getValue(personalInfo, "LAST-NAME", "LAST_NAME") || "-";
+  const nameParts = String(name).trim().split(/\s+/).filter(Boolean);
+
+  const firstName = nameParts.length > 0 ? nameParts[0] : "-";
+
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
+
+  // ------------------------------------------------------------
+  // DATE OF BIRTH
+  // Actual response:
+  // REQUEST.DOB = "31-12-1999"
+  // ------------------------------------------------------------
 
   const dob =
-    getValue(request, "DOB", "DATE-OF-BIRTH") ||
+    getValue(request, "DOB") ||
     getValue(personalInfo, "DOB", "DATE-OF-BIRTH") ||
     "-";
 
+  // ------------------------------------------------------------
+  // GENDER
+  // Tumhare provided CRIF response me GENDER field nahi hai.
+  // Isliye "-" aayega.
+  // ------------------------------------------------------------
+
   const gender =
-    getValue(request, "GENDER") || getValue(personalInfo, "GENDER") || "-";
+    getValue(request, "GENDER", "SEX") ||
+    getValue(personalInfo, "GENDER", "SEX") ||
+    "-";
+
+  // ------------------------------------------------------------
+  // MOBILE
+  // Actual response:
+  // REQUEST.PHONE-1 = "9065856630"
+  // ------------------------------------------------------------
 
   const mobile =
-    getValue(request, "MOBILE", "MOBILE-NUMBER", "PHONE") ||
-    getValue(contactInfo, "MOBILE", "MOBILE-NUMBER", "PHONE") ||
+    getValue(request, "PHONE-1", "MOBILE", "MOBILE-NUMBER", "PHONE") ||
+    getValue(contactInfo, "PHONE-1", "MOBILE", "MOBILE-NUMBER", "PHONE") ||
     "-";
 
+  // ------------------------------------------------------------
+  // EMAIL
+  // Actual response:
+  // REQUEST.EMAIL-1 = "sandhyadhan02@gmail.com"
+  // ------------------------------------------------------------
+
   const email =
-    getValue(request, "EMAIL", "EMAIL-ID", "EMAIL-ADDRESS") ||
-    getValue(contactInfo, "EMAIL", "EMAIL-ID", "EMAIL-ADDRESS") ||
+    getValue(request, "EMAIL-1", "EMAIL", "EMAIL-ID", "EMAIL-ADDRESS") ||
+    getValue(contactInfo, "EMAIL-1", "EMAIL", "EMAIL-ID", "EMAIL-ADDRESS") ||
     "-";
+
+  // ------------------------------------------------------------
+  // PAN
+  // Actual response:
+  // REQUEST.PAN = "CPUPG8008K"
+  // ------------------------------------------------------------
 
   const pan =
     getValue(request, "PAN", "PAN-NUMBER") ||
