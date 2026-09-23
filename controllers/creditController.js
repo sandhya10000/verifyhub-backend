@@ -583,6 +583,8 @@ const CibilReportFromDigi = async (req, res) => {
     return res.status(200).json({
       success: true,
 
+      status: "success",
+
       message: digiMessage || "CIBIL report retrieved successfully from DIGI",
 
       statusCode,
@@ -687,13 +689,13 @@ const CibilReportFromDigi = async (req, res) => {
       return res.status(error.response.status || 500).json({
         success: false,
 
+        status: "failed",
+
         message: "CIBIL API request failed",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
 
         error: error.response.data,
       });
@@ -707,13 +709,13 @@ const CibilReportFromDigi = async (req, res) => {
       return res.status(504).json({
         success: false,
 
+        status: "failed",
+
         message: "CIBIL API did not respond",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
 
         errorCode: error.code,
 
@@ -728,13 +730,13 @@ const CibilReportFromDigi = async (req, res) => {
     return res.status(500).json({
       success: false,
 
+      status: "failed",
+
       message: "Server error",
 
       creditReportId: creditReport?._id || null,
 
       userId: creditReport?.userId || null,
-
-      status: creditReport?.status || "Failed",
 
       error: error.message,
     });
@@ -928,6 +930,7 @@ const CrifReport = async (req, res) => {
 
       return res.status(200).json({
         success: true,
+        status: "success",
         message: "CRIF report fetched successfully",
 
         creditReportId: creditReport._id,
@@ -936,7 +939,6 @@ const CrifReport = async (req, res) => {
         orderId: creditReport.orderId,
 
         score: creditReport.score,
-        status: creditReport.status,
 
         reportUrl: creditReport.reportUrl,
         localPath: creditReport.localPath,
@@ -1166,7 +1168,11 @@ const CrifReport = async (req, res) => {
 
     creditReport.reportUrl = reportUrl;
 
-    creditReport.localPath = localPath;
+    const pdfUrl = localPath
+      ? `/uploads/credit-reports/crif/crif-${creditReport._id}.pdf`
+      : null;
+
+    creditReport.localPath = pdfUrl;
 
     creditReport.reportData = apiData;
 
@@ -1181,6 +1187,8 @@ const CrifReport = async (req, res) => {
     return res.status(200).json({
       success: true,
 
+      status: "success",
+
       message: "CRIF report fetched successfully",
 
       creditReportId: creditReport._id,
@@ -1192,8 +1200,6 @@ const CrifReport = async (req, res) => {
       orderId: creditReport.orderId,
 
       score: creditReport.score,
-
-      status: creditReport.status,
 
       reportUrl: creditReport.reportUrl,
 
@@ -1240,11 +1246,11 @@ const CrifReport = async (req, res) => {
       return res.status(error.response.status || 500).json({
         success: false,
 
+        status: "failed",
+
         message: "CRIF API request failed",
 
         creditReportId: creditReport?._id || null,
-
-        status: creditReport?.status || "Failed",
 
         error: error.response.data,
       });
@@ -1258,11 +1264,11 @@ const CrifReport = async (req, res) => {
       return res.status(504).json({
         success: false,
 
+        status: "failed",
+
         message: "CRIF API did not respond",
 
         creditReportId: creditReport?._id || null,
-
-        status: creditReport?.status || "Failed",
       });
     }
 
@@ -1273,11 +1279,11 @@ const CrifReport = async (req, res) => {
     return res.status(500).json({
       success: false,
 
+      status: "failed",
+
       message: "Internal server error",
 
       creditReportId: creditReport?._id || null,
-
-      status: creditReport?.status || "Failed",
 
       error: error.message,
     });
@@ -1811,6 +1817,8 @@ const ExperianReport = async (req, res) => {
     return res.status(200).json({
       success: true,
 
+      status: "success",
+
       message: verify.message || "Experian report generated successfully",
 
       creditReportId: creditReport._id,
@@ -1895,13 +1903,13 @@ const ExperianReport = async (req, res) => {
       return res.status(error.response.status || 500).json({
         success: false,
 
+        status: "failed",
+
         message: "Service Unavailable",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
 
         error: error.response.data,
       });
@@ -1915,13 +1923,13 @@ const ExperianReport = async (req, res) => {
       return res.status(504).json({
         success: false,
 
+        status: "failed",
+
         message: "Experian API did not respond",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
       });
     }
 
@@ -1932,13 +1940,13 @@ const ExperianReport = async (req, res) => {
     return res.status(500).json({
       success: false,
 
+      status: "failed",
+
       message: "Internal server error",
 
       creditReportId: creditReport?._id || null,
 
       userId: creditReport?.userId || null,
-
-      status: creditReport?.status || "Failed",
 
       error: error.message,
     });
@@ -2274,6 +2282,8 @@ const EquifaxReport = async (req, res) => {
     return res.status(200).json({
       success: true,
 
+      status: "success",
+
       message: "Equifax credit report fetched successfully",
 
       creditReportId: creditReport._id,
@@ -2285,8 +2295,6 @@ const EquifaxReport = async (req, res) => {
       orderId: creditReport.orderId,
 
       score: creditReport.score,
-
-      status: creditReport.status,
 
       reportUrl: creditReport.reportUrl,
 
@@ -2337,13 +2345,13 @@ const EquifaxReport = async (req, res) => {
       return res.status(error.response.status || 500).json({
         success: false,
 
+        status: "failed",
+
         message: "Equifax API request failed",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
 
         error: error.response.data,
       });
@@ -2357,13 +2365,13 @@ const EquifaxReport = async (req, res) => {
       return res.status(504).json({
         success: false,
 
+        status: "failed",
+
         message: "Equifax API did not respond",
 
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
-
-        status: creditReport?.status || "Failed",
 
         errorCode: error.code,
 
@@ -2378,13 +2386,13 @@ const EquifaxReport = async (req, res) => {
     return res.status(500).json({
       success: false,
 
+      status: "failed",
+
       message: "Internal server error",
 
       creditReportId: creditReport?._id || null,
 
       userId: creditReport?.userId || null,
-
-      status: creditReport?.status || "Failed",
 
       error: error.message,
     });

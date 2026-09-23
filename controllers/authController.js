@@ -36,6 +36,7 @@ const register = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        partner_id: user.partner_id
       },
     });
   } catch (error) {
@@ -45,6 +46,7 @@ const register = async (req, res) => {
     });
   }
 };
+
 
 const login = async (req, res) => {
   try {
@@ -72,7 +74,8 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        role:user.role
+        role: user.role,
+        partner_id: user.partner_id
       },
     });
   } catch (error) {

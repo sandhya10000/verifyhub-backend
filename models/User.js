@@ -1,7 +1,14 @@
 const mongoose = require("mongoose");
+const Counter = require("./counter.model");
 
 const userSchema = new mongoose.Schema(
   {
+    
+    partner_id: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     name: {
       type: String,
       required: true,
@@ -53,5 +60,18 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+// Generate partner_id before saving a new user
+userSchema.pre("save", async function () {
+  if (this.isNew && !this.partner_id) {
+    const counter = await Counter.findByIdAndUpdate(
+      "partner_id",
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true },
+    );
+
+    this.partner_id = "VH" + String(counter.seq).padStart(3, "0");
+  }
+});
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);
