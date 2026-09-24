@@ -403,3 +403,56 @@
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:38.306Z] STEP="Frontend Polling Status" elapsed_step=950ms elapsed_total=63060ms details={"status":"completed","htmlStatus":"completed"}
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:44.909Z] STEP="User Download Click Received" elapsed_step=6603ms elapsed_total=69663ms
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:44.916Z] STEP="Download Serving htmlReport" elapsed_step=7ms elapsed_total=69670ms
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:12.795Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6a9a8830063c438d85aa1552_GAURAVk.pdf","sizeBytes":2177625}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:12.802Z] STEP="DB Record Created" elapsed_step=7ms elapsed_total=7ms details={"analysisId":"6ab3e1fc8d75431faab6aa0c"}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:12.873Z] STEP="Trigger Background Processing" elapsed_step=71ms elapsed_total=78ms
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:12.920Z] STEP="File Parsing Start" elapsed_step=47ms elapsed_total=125ms
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:14.254Z] STEP="File Parsing Complete" elapsed_step=1334ms elapsed_total=1459ms details={"mediaType":"application/pdf","fileSizeKB":"2126.6","pageCount":25}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:28:14.262Z] STEP="Analysis API Call Start" elapsed_step=8ms elapsed_total=1467ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:29:15.407Z] STEP="Analysis API Call Complete" elapsed_step=61145ms elapsed_total=62612ms details={"usage":{"input_tokens":56970,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":12000,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:29:15.412Z] STEP="HTML Template Render Start" elapsed_step=5ms elapsed_total=62617ms
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:29:15.494Z] STEP="HTML Template Render Complete" elapsed_step=82ms elapsed_total=62699ms details={"durationMs":82,"lengthChars":154838}
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:29:15.495Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=62700ms
+[ANALYSIS 6ab3e1fc8d75431faab6aa0c] [2026-09-23T14:29:15.515Z] STEP="Result Persistence Complete" elapsed_step=20ms elapsed_total=62720ms details={"htmlStored":true}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:06.915Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6a9a8830063c438d85aa1552_GAURAVk.pdf","sizeBytes":2177625}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:06.918Z] STEP="DB Record Created" elapsed_step=3ms elapsed_total=3ms details={"analysisId":"6ab3e26e8d75431faab6aa0e"}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:06.946Z] STEP="Trigger Background Processing" elapsed_step=28ms elapsed_total=31ms
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:07.001Z] STEP="File Parsing Start" elapsed_step=55ms elapsed_total=86ms
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:08.320Z] STEP="File Parsing Complete" elapsed_step=1319ms elapsed_total=1405ms details={"mediaType":"application/pdf","fileSizeKB":"2126.6","pageCount":25}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:30:08.326Z] STEP="Analysis API Call Start" elapsed_step=6ms elapsed_total=1411ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:31:06.782Z] STEP="Analysis API Call Complete" elapsed_step=58456ms elapsed_total=59867ms details={"usage":{"input_tokens":56970,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":12000,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:31:06.789Z] STEP="HTML Template Render Start" elapsed_step=7ms elapsed_total=59874ms
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:31:06.796Z] STEP="HTML Template Render Complete" elapsed_step=7ms elapsed_total=59881ms details={"durationMs":7,"lengthChars":154838}
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:31:06.800Z] STEP="Result Persistence Start" elapsed_step=4ms elapsed_total=59885ms
+[ANALYSIS 6ab3e26e8d75431faab6aa0e] [2026-09-23T14:31:06.831Z] STEP="Result Persistence Complete" elapsed_step=31ms elapsed_total=59916ms details={"htmlStored":true}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:34.096Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6a9a8830063c438d85aa1552_GAURAVk.pdf","sizeBytes":2177625}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:34.098Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6ab3e37a8d75431faab6aa10"}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:34.104Z] STEP="Trigger Background Processing" elapsed_step=6ms elapsed_total=8ms
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:34.161Z] STEP="File Parsing Start" elapsed_step=57ms elapsed_total=65ms
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:35.545Z] STEP="File Parsing Complete" elapsed_step=1384ms elapsed_total=1449ms details={"mediaType":"application/pdf","fileSizeKB":"2126.6","pageCount":25}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:35.552Z] STEP="Analysis API Call Start" elapsed_step=7ms elapsed_total=1456ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:37.295Z] STEP="Frontend Polling Status" elapsed_step=1743ms elapsed_total=3199ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:40.223Z] STEP="Frontend Polling Status" elapsed_step=2928ms elapsed_total=6127ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:43.816Z] STEP="Frontend Polling Status" elapsed_step=3593ms elapsed_total=9720ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:46.813Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=12717ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:49.809Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=15713ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:52.801Z] STEP="Frontend Polling Status" elapsed_step=2992ms elapsed_total=18705ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:55.817Z] STEP="Frontend Polling Status" elapsed_step=3016ms elapsed_total=21721ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:34:58.802Z] STEP="Frontend Polling Status" elapsed_step=2985ms elapsed_total=24706ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:01.798Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=27702ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:04.836Z] STEP="Frontend Polling Status" elapsed_step=3038ms elapsed_total=30740ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:07.815Z] STEP="Frontend Polling Status" elapsed_step=2979ms elapsed_total=33719ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:10.824Z] STEP="Frontend Polling Status" elapsed_step=3009ms elapsed_total=36728ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:13.858Z] STEP="Frontend Polling Status" elapsed_step=3034ms elapsed_total=39762ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:16.801Z] STEP="Frontend Polling Status" elapsed_step=2943ms elapsed_total=42705ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:19.805Z] STEP="Frontend Polling Status" elapsed_step=3004ms elapsed_total=45709ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:22.804Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=48708ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:25.806Z] STEP="Frontend Polling Status" elapsed_step=3002ms elapsed_total=51710ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:28.812Z] STEP="Frontend Polling Status" elapsed_step=3006ms elapsed_total=54716ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:31.809Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=57713ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:33.540Z] STEP="Analysis API Call Complete" elapsed_step=1731ms elapsed_total=59444ms details={"usage":{"input_tokens":56970,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":12000,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:33.554Z] STEP="HTML Template Render Start" elapsed_step=14ms elapsed_total=59458ms
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:33.576Z] STEP="HTML Template Render Complete" elapsed_step=22ms elapsed_total=59480ms details={"durationMs":21,"lengthChars":154838}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:33.587Z] STEP="Result Persistence Start" elapsed_step=11ms elapsed_total=59491ms
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:33.633Z] STEP="Result Persistence Complete" elapsed_step=46ms elapsed_total=59537ms details={"htmlStored":true}
+[ANALYSIS 6ab3e37a8d75431faab6aa10] [2026-09-23T14:35:34.817Z] STEP="Frontend Polling Status" elapsed_step=1184ms elapsed_total=60721ms details={"status":"completed","htmlStatus":"completed"}
