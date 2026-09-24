@@ -2,7 +2,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
-const User = require("../models/user");
+const User = require("../models/User");
 const config = require("../config/bureau.config");
 
 const SUREPASS_CONFIG = require("../config/surepass");
