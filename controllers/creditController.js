@@ -2,7 +2,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
-const User = require("../models/user");
+const User = require("../models/User");
 const config = require("../config/bureau.config");
 
 const SUREPASS_CONFIG = require("../config/surepass");
@@ -2483,28 +2483,11 @@ const getCreditBureauDetails = async (req, res) => {
     }
 
     // ==========================================
-    // 2. GET CREDIT REPORT
-    // ==========================================
-
-    const creditReport = await CreditReport.findOne({
-      userId,
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    if (!creditReport) {
-      return res.status(404).json({
-        success: false,
-        message: "Credit bureau details not found",
-      });
-    }
-
-    // ==========================================
-    // 3. GET USER DETAILS
+    // 2. GET USER DETAILS
     // ==========================================
 
     const user = await User.findById(userId)
-      .select("name email mobile userId")
+      .select("_id name email phone partner_id")
       .lean();
 
     if (!user) {
@@ -2515,7 +2498,7 @@ const getCreditBureauDetails = async (req, res) => {
     }
 
     // ==========================================
-    // 4. FINAL RESPONSE
+    // 3. FINAL RESPONSE
     // ==========================================
 
     return res.status(200).json({
@@ -2524,16 +2507,10 @@ const getCreditBureauDetails = async (req, res) => {
 
       data: {
         userId: user._id,
-
-        name: user.name || creditReport.name || null,
-
-        mobile: user.mobile || creditReport.mobile || null,
-
+        name: user.name || null,
+        mobile: user.phone || null,
         email: user.email || null,
-
-        pan: creditReport.pan || null,
-
-        partnerId: user.partnerId || null,
+        partnerId: user.partner_id || null,
       },
     });
   } catch (error) {
