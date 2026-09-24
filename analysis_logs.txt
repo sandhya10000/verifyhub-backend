@@ -403,3 +403,26 @@
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:38.306Z] STEP="Frontend Polling Status" elapsed_step=950ms elapsed_total=63060ms details={"status":"completed","htmlStatus":"completed"}
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:44.909Z] STEP="User Download Click Received" elapsed_step=6603ms elapsed_total=69663ms
 [ANALYSIS 6a9bab177441e2ae53d8fc96] [2026-09-05T05:40:44.916Z] STEP="Download Serving htmlReport" elapsed_step=7ms elapsed_total=69670ms
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.499Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6ab52fdab6e84258a6c3f4d1.pdf","sizeBytes":339872}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.501Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6ab546f1a0302bb383cf5302"}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.504Z] STEP="Trigger Background Processing" elapsed_step=3ms elapsed_total=5ms
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.747Z] STEP="File Parsing Start" elapsed_step=243ms elapsed_total=248ms
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.853Z] STEP="File Parsing Complete" elapsed_step=106ms elapsed_total=354ms details={"mediaType":"application/pdf","fileSizeKB":"331.9","pageCount":4}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:13.859Z] STEP="Analysis API Call Start" elapsed_step=6ms elapsed_total=360ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:16.720Z] STEP="Frontend Polling Status" elapsed_step=2861ms elapsed_total=3221ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:20.179Z] STEP="Frontend Polling Status" elapsed_step=3459ms elapsed_total=6680ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:23.252Z] STEP="Frontend Polling Status" elapsed_step=3073ms elapsed_total=9753ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:26.231Z] STEP="Frontend Polling Status" elapsed_step=2979ms elapsed_total=12732ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:28.738Z] STEP="Frontend Polling Status" elapsed_step=2507ms elapsed_total=15239ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:31.751Z] STEP="Frontend Polling Status" elapsed_step=3013ms elapsed_total=18252ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:35.128Z] STEP="Frontend Polling Status" elapsed_step=3377ms elapsed_total=21629ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:37.791Z] STEP="Frontend Polling Status" elapsed_step=2663ms elapsed_total=24292ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:40.761Z] STEP="Frontend Polling Status" elapsed_step=2970ms elapsed_total=27262ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:43.834Z] STEP="Frontend Polling Status" elapsed_step=3073ms elapsed_total=30335ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:47.423Z] STEP="Analysis API Call Complete" elapsed_step=3589ms elapsed_total=33924ms details={"usage":{"input_tokens":11607,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3408,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:47.425Z] STEP="HTML Template Render Start" elapsed_step=2ms elapsed_total=33926ms
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:47.440Z] STEP="HTML Template Render Complete" elapsed_step=15ms elapsed_total=33941ms details={"durationMs":15,"lengthChars":176389}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:47.441Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=33942ms
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:47.454Z] STEP="Frontend Polling Status" elapsed_step=13ms elapsed_total=33955ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:48.168Z] STEP="Result Persistence Complete" elapsed_step=714ms elapsed_total=34669ms details={"htmlStored":true}
+[ANALYSIS 6ab546f1a0302bb383cf5302] [2026-09-24T15:51:50.799Z] STEP="Frontend Polling Status" elapsed_step=2631ms elapsed_total=37300ms details={"status":"completed","htmlStatus":"completed"}

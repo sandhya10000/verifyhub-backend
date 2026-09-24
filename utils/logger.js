@@ -1,9 +1,9 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-
-// Write to analysis_logs.txt in the backend root directory
 const LOG_FILE = path.join(__dirname, '../analysis_logs.txt');
+
+
 
 // Track timers per analysis ID in memory: Map<string, { startTime, lastStepTime }>
 const timers = new Map();
