@@ -16,5 +16,6 @@ router.post('/tickets/mark-seen', auth, isAdmin, ticketController.markTicketsSee
 router.get('/tickets', auth, isAdmin, ticketController.getAllTickets);
 router.get('/tickets/:id', auth, isAdmin, ticketController.getTicketById);
 router.patch('/tickets/:id', auth, isAdmin, ticketController.updateTicket);
+router.post('/tickets/:id/messages', auth, isAdmin, ticketController.addMessage);
 
 module.exports = router;

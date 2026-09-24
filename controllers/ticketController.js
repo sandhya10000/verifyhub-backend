@@ -30,12 +30,79 @@ exports.createTicket = async (req, res) => {
 exports.getMyTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find({ partnerId: req.user._id })
-      .sort({ createdAt: -1 });
+      .populate('messages.sender', 'name role')
+      .sort({ updatedAt: -1 });
 
     res.json({ success: true, data: tickets });
   } catch (error) {
     console.error('getMyTickets Error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch tickets' });
+  }
+};
+
+exports.getMyTicketById = async (req, res) => {
+  try {
+    const ticket = await Ticket.findOne({ _id: req.params.id, partnerId: req.user._id })
+      .populate('messages.sender', 'name role');
+
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    res.json({ success: true, data: ticket });
+  } catch (error) {
+    console.error('getMyTicketById Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket' });
+  }
+};
+
+exports.addMessage = async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ success: false, message: 'Message text is required' });
+    }
+    if (String(text).trim().length > 2000) {
+      return res.status(400).json({ success: false, message: 'Message too long (max 2000 chars)' });
+    }
+
+    const ticket = await Ticket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const isAdmin = req.user.role === 'admin';
+
+    // Partner: own tickets only, cannot reply once resolved
+    if (!isAdmin) {
+      if (String(ticket.partnerId) !== String(req.user._id)) {
+        return res.status(403).json({ success: false, message: 'Not authorized' });
+      }
+      if (ticket.status === 'resolved') {
+        return res.status(400).json({ success: false, message: 'Ticket is resolved. Please raise a new ticket.' });
+      }
+    }
+
+    ticket.messages.push({
+      sender: req.user._id,
+      senderRole: isAdmin ? 'admin' : 'user',
+      text: String(text).trim(),
+    });
+    ticket.lastReplyAt = new Date();
+    // Admin replying to an open ticket moves it to in-progress
+    if (isAdmin && ticket.status === 'open') {
+      ticket.status = 'in-progress';
+    }
+    if (!ticket.assignedAdminId && isAdmin) {
+      ticket.assignedAdminId = req.user._id;
+    }
+    await ticket.save();
+    await ticket.populate('messages.sender', 'name role');
+
+    res.json({ success: true, data: ticket, message: 'Reply added' });
+  } catch (error) {
+    console.error('addMessage Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add reply' });
   }
 };
 
@@ -77,7 +144,8 @@ exports.getAllTickets = async (req, res) => {
     const tickets = await Ticket.find(query)
       .populate('partnerId', 'name email phone')
       .populate('assignedAdminId', 'name email')
-      .sort({ createdAt: -1 })
+      .populate('messages.sender', 'name role')
+      .sort({ updatedAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
@@ -98,7 +166,8 @@ exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
       .populate('partnerId', 'name email phone')
-      .populate('assignedAdminId', 'name email');
+      .populate('assignedAdminId', 'name email')
+      .populate('messages.sender', 'name role');
 
     if (!ticket) {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
