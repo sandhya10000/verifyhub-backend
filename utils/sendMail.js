@@ -4,16 +4,22 @@ let transporter = null;
 
 function getTransporter() {
   if (transporter) return transporter;
+  const port = Number(process.env.SMTP_PORT || 587);
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: false,
+    port,
+    secure: port === 465, // SSL on 465 (Hostinger), STARTTLS on 587 (Gmail/Hostinger)
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
   });
   return transporter;
+}
+
+// For tests / env switches (e.g. Gmail -> Hostinger) without process restart
+function resetTransporter() {
+  transporter = null;
 }
 
 function otpHtml(otp, purpose) {
@@ -44,4 +50,4 @@ async function sendOtpMail(to, otp, purpose = "signup") {
   return { mocked: false };
 }
 
-module.exports = { sendOtpMail };
+module.exports = { sendOtpMail, getTransporter, resetTransporter };
