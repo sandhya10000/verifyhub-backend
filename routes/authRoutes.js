@@ -8,20 +8,14 @@ const {
   forgotPassword,
   requestPasswordReset,
   resetPassword,
+  sendSignupOtp,
+  verifySignupOtp,
   logout,
 } = require("../controllers/authController");
 const auth = require("../middleware/auth");
 
-console.log({
-  register,
-  login,
-  forgotPassword,
-  requestPasswordReset,
-  resetPassword,
-  logout,
-});
 // @route   POST /api/auth/register
-// @desc    Register user
+// @desc    Register user (requires verified signup OTP)
 // @access  Public
 router.post("/register", register);
 
@@ -29,18 +23,23 @@ router.post("/register", register);
 // @desc    Login user
 // @access  Public
 router.post("/login", login);
+
+// OTP verification for signup
+router.post("/send-signup-otp", sendSignupOtp);
+router.post("/verify-signup-otp", verifySignupOtp);
+
 // @route   POST /api/auth/forgot-password
-// @desc    Request password reset (legacy)
+// @desc    Request password reset OTP (legacy alias)
 // @access  Public
 router.post("/forgot-password", forgotPassword);
 
 // @route   POST /api/auth/request-password-reset
-// @desc    Request password reset with token
+// @desc    Request password reset OTP
 // @access  Public
-///router.post("/request-password-reset", requestPasswordReset);
+router.post("/request-password-reset", requestPasswordReset);
 
 // @route   POST /api/auth/reset-password
-// @desc    Reset password with token
+// @desc    Reset password with OTP { email, otp, password }
 // @access  Public
 router.post("/reset-password", resetPassword);
 
