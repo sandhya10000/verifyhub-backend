@@ -61,10 +61,16 @@ async function checkCooldown(email, purpose) {
 
 const register = async (req, res) => {
   try {
-    const { name, email, phone, password, otp } = req.body;
+    const { name, email, phone, password, otp, state, city, pincode } = req.body;
     const em = normEmail(email);
     const ph = normPhone(phone);
     if (!em || !password) return res.status(400).json({ success: false, message: "Email and password required" });
+    const st = String(state || "").trim();
+    const ct = String(city || "").trim();
+    const pc = String(pincode || "").trim();
+    if (!st) return res.status(400).json({ success: false, field: "state", message: "State is required" });
+    if (!ct) return res.status(400).json({ success: false, field: "city", message: "City is required" });
+    if (!/^\d{6}$/.test(pc)) return res.status(400).json({ success: false, field: "pincode", message: "Pincode must be 6 digits" });
 
     const emailTaken = await User.findOne({ email: em });
     if (emailTaken) return res.status(400).json({ success: false, field: "email", message: "Email already registered. Please log in." });
@@ -83,14 +89,14 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword });
+    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword, state: st, city: ct, pincode: pc });
     await Otp.deleteMany({ email: em, purpose: "signup" });
 
     res.status(201).json({
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
     });
   } catch (error) {
     // Race-condition safety: unique index violation on email/phone
@@ -115,7 +121,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
