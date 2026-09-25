@@ -2487,7 +2487,7 @@ const getCreditBureauDetails = async (req, res) => {
     // ==========================================
 
     const user = await User.findById(userId)
-      .select("_id name email phone partner_id")
+      .select("_id name email phone partner_id state city pincode")
       .lean();
 
     if (!user) {
@@ -2511,6 +2511,9 @@ const getCreditBureauDetails = async (req, res) => {
         mobile: user.phone || null,
         email: user.email || null,
         partnerId: user.partner_id || null,
+        state: user.state || null,
+        city: user.city || null,
+        pincode: user.pincode || null,
       },
     });
   } catch (error) {
