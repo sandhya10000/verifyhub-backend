@@ -114,7 +114,8 @@ exports.downloadPdf = async (req, res) => {
     if (!analysis) {
       return res.status(404).json({ success: false, message: 'Analysis not found.' });
     }
-    if (String(analysis.userId) !== String(req.user._id)) {
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin && String(analysis.userId) !== String(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Not authorized.' });
     }
     if (analysis.status !== 'completed') {
