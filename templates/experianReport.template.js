@@ -367,6 +367,46 @@ const experianReportTemplate = (result) => {
     ? cais.CAIS_Account_DETAILS
     : [];
 
+  const holderAddresses = Array.from(
+    new Map(
+      accounts
+        .flatMap((account) =>
+          Array.isArray(account?.CAIS_Holder_Address_Details)
+            ? account.CAIS_Holder_Address_Details
+            : [],
+        )
+        .map((address) => {
+          const addressParts = [
+            address?.First_Line_Of_Address_non_normalized,
+            address?.Second_Line_Of_Address_non_normalized,
+            address?.Third_Line_Of_Address_non_normalized,
+            address?.City_non_normalized,
+            address?.Fifth_Line_Of_Address_non_normalized,
+            address?.State_non_normalized,
+            address?.ZIP_Postal_Code_non_normalized,
+          ]
+            .filter(
+              (value) =>
+                value !== null &&
+                value !== undefined &&
+                String(value).trim() !== "",
+            )
+            .map((value) => String(value).trim());
+
+          const fullAddress = addressParts.join(", ");
+
+          return [
+            fullAddress,
+            {
+              ...address,
+              fullAddress,
+            },
+          ];
+        })
+        .filter(([key]) => key),
+    ).values(),
+  );
+
   const caps = result?.CAPS || {};
 
   const capsSummary = caps?.CAPS_Summary || {};
@@ -1422,7 +1462,7 @@ tbody tr:last-child td {
 
 
 /* =========================================================
-   GENERATED FROM VERIFYHUB
+   GENERATED FROM Experian
 ========================================================= */
 
 .generated-from {
@@ -1601,7 +1641,99 @@ tbody tr:last-child td {
   </div>
 
 </div>
+<!-- ======================================================
+     CURRENT APPLICATION
+====================================================== -->
 
+<div class="section">
+
+  <div class="section-title">
+    Current Application
+  </div>
+
+
+  <div class="grid">
+
+
+    <div class="card">
+
+      <div class="label">
+        Applicant Name
+      </div>
+
+      <div class="value">
+
+        ${escapeHtml(
+          currentApplication?.Current_Application_Details
+            ?.Current_Applicant_Details?.First_Name || "",
+        )}
+
+        ${escapeHtml(
+          currentApplication?.Current_Application_Details
+            ?.Current_Applicant_Details?.Last_Name || "",
+        )}
+
+      </div>
+
+    </div>
+
+
+    <div class="card">
+
+      <div class="label">
+        PAN
+      </div>
+
+      <div class="value">
+
+        ${escapeHtml(
+          currentApplication?.Current_Application_Details
+            ?.Current_Applicant_Details?.IncomeTaxPan || "-",
+        )}
+
+      </div>
+
+    </div>
+
+
+    <div class="card">
+
+      <div class="label">
+        Mobile
+      </div>
+
+      <div class="value">
+
+        ${escapeHtml(
+          currentApplication?.Current_Application_Details
+            ?.Current_Applicant_Details?.MobilePhoneNumber || "-",
+        )}
+
+      </div>
+
+    </div>
+
+
+    <div class="card">
+
+      <div class="label">
+        Enquiry Reason
+      </div>
+
+      <div class="value">
+
+        ${escapeHtml(
+          currentApplication?.Current_Application_Details
+            ?.enquiryReasonDescription || "-",
+        )}
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
 <!-- ======================================================
      REPORT DETAILS
@@ -1666,18 +1798,7 @@ tbody tr:last-child td {
 
     </div>
 
-
-    <div class="card">
-
-      <div class="label">
-        Exact Match
-      </div>
-
-      <div class="value">
-        ${escapeHtml(exactMatch)}
-      </div>
-
-    </div>
+ 
 
   </div>
 
@@ -2205,98 +2326,212 @@ ${capsApplications
 
 </div>
 
-
 <!-- ======================================================
-     CURRENT APPLICATION
+     HOLDER ADDRESSES
 ====================================================== -->
 
 <div class="section">
 
   <div class="section-title">
-    Current Application
+    Holder Addresses
   </div>
 
+  ${
+    holderAddresses.length
+      ? `
+        <div style="
+          width:100%;
+          border:1px solid #d9dee7;
+          border-radius:6px;
+          overflow:hidden;
+          margin-top:10px;
+        ">
 
-  <div class="grid">
+          ${holderAddresses
+            .map(
+              (address, index) => `
+                <div style="
+                  width:100%;
+                  border-bottom:${
+                    index === holderAddresses.length - 1
+                      ? "none"
+                      : "1px solid #e1e5eb"
+                  };
+                  padding:12px 14px;
+                  box-sizing:border-box;
+                ">
 
+                  <!-- Address Row -->
+                  <div style="
+                    display:flex;
+                    width:100%;
+                    align-items:flex-start;
+                  ">
 
-    <div class="card">
+                    <!-- Sr No -->
+                    <div style="
+                      width:45px;
+                      min-width:45px;
+                      font-size:10px;
+                      color:#666;
+                      font-weight:600;
+                    ">
+                      ${index + 1}
+                    </div>
 
-      <div class="label">
-        Applicant Name
-      </div>
+                    <!-- Address -->
+                    <div style="
+                      flex:1;
+                      padding-right:15px;
+                    ">
 
-      <div class="value">
+                      <div style="
+                        font-size:9px;
+                        color:#777;
+                        text-transform:uppercase;
+                        margin-bottom:4px;
+                        font-weight:600;
+                      ">
+                        Address
+                      </div>
 
-        ${escapeHtml(
-          currentApplication?.Current_Application_Details
-            ?.Current_Applicant_Details?.First_Name || "",
-        )}
+                      <div style="
+                        font-size:11px;
+                        color:#222;
+                        line-height:1.5;
+                        font-weight:500;
+                        word-break:break-word;
+                      ">
+                        ${escapeHtml(address.fullAddress || "-")}
+                      </div>
 
-        ${escapeHtml(
-          currentApplication?.Current_Application_Details
-            ?.Current_Applicant_Details?.Last_Name || "",
-        )}
+                    </div>
 
-      </div>
+                    <!-- PIN -->
+                    <div style="
+                      width:80px;
+                      min-width:80px;
+                      padding-left:10px;
+                    ">
 
-    </div>
+                      <div style="
+                        font-size:9px;
+                        color:#777;
+                        margin-bottom:4px;
+                        font-weight:600;
+                      ">
+                        PIN Code
+                      </div>
 
+                      <div style="
+                        font-size:11px;
+                        color:#222;
+                        font-weight:500;
+                      ">
+                        ${escapeHtml(
+                          address?.ZIP_Postal_Code_non_normalized ?? "-",
+                        )}
+                      </div>
 
-    <div class="card">
+                    </div>
 
-      <div class="label">
-        PAN
-      </div>
+                    <!-- State -->
+                    <div style="
+                      width:90px;
+                      min-width:90px;
+                      padding-left:10px;
+                    ">
 
-      <div class="value">
+                      <div style="
+                        font-size:9px;
+                        color:#777;
+                        margin-bottom:4px;
+                        font-weight:600;
+                      ">
+                        State
+                      </div>
 
-        ${escapeHtml(
-          currentApplication?.Current_Application_Details
-            ?.Current_Applicant_Details?.IncomeTaxPan || "-",
-        )}
+                      <div style="
+                        font-size:11px;
+                        color:#222;
+                        font-weight:500;
+                      ">
+                        ${escapeHtml(address?.State_non_normalized ?? "-")}
+                      </div>
 
-      </div>
+                    </div>
 
-    </div>
+                    <!-- Country -->
+                    <div style="
+                      width:70px;
+                      min-width:70px;
+                      padding-left:10px;
+                    ">
 
+                      <div style="
+                        font-size:9px;
+                        color:#777;
+                        margin-bottom:4px;
+                        font-weight:600;
+                      ">
+                        Country
+                      </div>
 
-    <div class="card">
+                      <div style="
+                        font-size:11px;
+                        color:#222;
+                        font-weight:500;
+                      ">
+                        ${escapeHtml(
+                          address?.CountryCode_non_normalized || "-",
+                        )}
+                      </div>
 
-      <div class="label">
-        Mobile
-      </div>
+                    </div>
 
-      <div class="value">
+                    <!-- Indicator -->
+                    <div style="
+                      width:80px;
+                      min-width:80px;
+                      padding-left:10px;
+                    ">
 
-        ${escapeHtml(
-          currentApplication?.Current_Application_Details
-            ?.Current_Applicant_Details?.MobilePhoneNumber || "-",
-        )}
+                      <div style="
+                        font-size:9px;
+                        color:#777;
+                        margin-bottom:4px;
+                        font-weight:600;
+                      ">
+                        Indicator
+                      </div>
 
-      </div>
+                      <div style="
+                        font-size:11px;
+                        color:#222;
+                        font-weight:500;
+                      ">
+                        ${escapeHtml(
+                          address?.Address_indicator_non_normalized ?? "-",
+                        )}
+                      </div>
 
-    </div>
+                    </div>
 
+                  </div>
 
-    <div class="card">
+                </div>
+              `,
+            )
+            .join("")}
 
-      <div class="label">
-        Enquiry Reason
-      </div>
-
-      <div class="value">
-
-        ${escapeHtml(
-          currentApplication?.Current_Application_Details
-            ?.enquiryReasonDescription || "-",
-        )}
-
-      </div>
-
-    </div>
-
-  </div>
+        </div>
+      `
+      : `
+        <div class="empty">
+          No address details found.
+        </div>
+      `
+  }
 
 </div>
 
@@ -2310,7 +2545,7 @@ ${capsApplications
   <div class="footer-left">
 
     <div class="generated-from">
-      Generated from <strong>VerifyHub</strong>
+      Generated from <strong>Experian</strong>
     </div>
 
     <div class="footer-description">
@@ -2326,7 +2561,7 @@ ${capsApplications
 
   <div class="footer-right">
 
-    <strong>VerifyHub</strong><br />
+    <strong>Experian</strong><br />
 
     Experian Credit Report
 

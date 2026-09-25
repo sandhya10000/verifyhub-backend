@@ -480,35 +480,33 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     let text = String(raw);
 
     /*
-      CRIF sometimes breaks the string in the middle because
-      of formatting:
+    CRIF examples:
 
-      "Dec:2022,513/ST D"
-      "Mar:2022,481/S TD"
-      "Jun:2021,268/ STD"
-      "Sep:2020,X XX/XXX"
+    Aug:2023,000/STD
+    Jul:2023,329/STD
+    Sep:2020,XXX/XXX
+    Feb:2018,XXX/STD
+  */
 
-      Remove whitespace that occurs INSIDE payment history.
-    */
-
-    text = text.replace(/\r?\n/g, "").trim();
-
-    // Remove spaces around separators
     text = text
-      .replace(/\s*\|\s*/g, "|")
+      .replace(/\r?\n/g, "")
       .replace(/\s*:\s*/g, ":")
       .replace(/\s*,\s*/g, ",")
       .replace(/\s*\/\s*/g, "/");
 
-    // Fix CRIF OCR/formatting spaces inside status and amount.
-    text = text
-      .replace(/\b(\d{3})\s+([A-Za-z]{2,3})\b/g, "$1$2")
-      .replace(/\b(ST|STD|SUB|DBT|LSS|SMA|DA|XXX)\s+/gi, "$1");
+    /*
+    Remove unwanted spaces inside payment status.
 
-    // Specific common CRIF broken patterns.
+    Example:
+    513 / STD  -> 513/STD
+    XXX / STD  -> XXX/STD
+    X XX / XXX -> XXX/XXX
+  */
+
+    text = text.replace(/\s+/g, " ").trim();
+
     text = text
-      .replace(/X\s+XX/g, "XXX")
-      .replace(/S\s+TD/gi, "STD")
+      .replace(/X\s+XX/gi, "XXX")
       .replace(/S\s+TD/gi, "STD")
       .replace(/S\s+UB/gi, "SUB")
       .replace(/D\s+BT/gi, "DBT")
@@ -519,18 +517,23 @@ const generateCrifPdf = async (apiData, creditReportId) => {
       return [];
     }
 
+    /*
+    IMPORTANT:
+    Some CRIF data can contain | between records.
+  */
+
     return text
       .split("|")
       .map((entry) => entry.trim())
       .filter(Boolean)
       .map((entry) => {
         /*
-          Expected:
+        Expected:
 
-          Aug:2023,000/STD
-          Jul:2023,329/STD
-          Sep:2020,XXX/XXX
-        */
+        Aug:2023,000/STD
+        Jul:2023,329/STD
+        Sep:2020,XXX/XXX
+      */
 
         const match = entry.match(
           /^([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([^|]+)$/i,
@@ -548,8 +551,9 @@ const generateCrifPdf = async (apiData, creditReportId) => {
         return {
           month: match[1],
           year: match[2],
-          amount: match[3].replace(/\s+/g, "").trim(),
-          status: match[4].replace(/\s+/g, "").trim().toUpperCase(),
+          amount: String(match[3]).replace(/\s+/g, "").trim(),
+
+          status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
         };
       });
   };
@@ -579,56 +583,222 @@ const generateCrifPdf = async (apiData, creditReportId) => {
 
     if (!history.length) {
       return `
-        <div class="payment-empty">
-          No payment history available
-        </div>
-      `;
+      <div class="payment-empty">
+        No payment history available
+      </div>
+    `;
     }
 
+    // ==========================================================
+    // MONTH ORDER
+    // ==========================================================
+
+    const months = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+
+    const monthMap = {
+      Jan: "January",
+      Feb: "February",
+      Mar: "March",
+      Apr: "April",
+      May: "May",
+      Jun: "June",
+      Jul: "July",
+      Aug: "August",
+      Sep: "September",
+      Oct: "October",
+      Nov: "November",
+      Dec: "December",
+    };
+
+    // ==========================================================
+    // GROUP PAYMENT HISTORY BY YEAR
+    // ==========================================================
+
+    const yearMap = {};
+
+    history.forEach((item) => {
+      const year = String(item.year || "").trim();
+
+      if (!year || year === "-") {
+        return;
+      }
+
+      if (!yearMap[year]) {
+        yearMap[year] = {};
+      }
+
+      const fullMonth = monthMap[item.month] || item.month;
+
+      if (!fullMonth) {
+        return;
+      }
+
+      // Example:
+      // 2018 -> February -> XXX/STD
+      yearMap[year][fullMonth] = {
+        amount: item.amount || "-",
+        status: item.status || "-",
+      };
+    });
+
+    // ==========================================================
+    // SORT YEARS
+    // ==========================================================
+
+    const years = Object.keys(yearMap).sort((a, b) => Number(a) - Number(b));
+
+    // ==========================================================
+    // STATUS CLASS
+    // ==========================================================
+
+    const getCellClass = (status) => {
+      const s = String(status || "")
+        .trim()
+        .toUpperCase();
+
+      if (s === "STD") {
+        return "payment-history-cell std";
+      }
+
+      if (s === "XXX") {
+        return "payment-history-cell xxx";
+      }
+
+      if (/SUB|DBT|LSS|SMA|DA/.test(s)) {
+        return "payment-history-cell alert";
+      }
+
+      return "payment-history-cell";
+    };
+
+    // ==========================================================
+    // PAYMENT VALUE
+    // ==========================================================
+
+    const getPaymentDisplay = (payment) => {
+      if (!payment) {
+        return "-";
+      }
+
+      const amount = String(payment.amount || "").trim();
+      const status = String(payment.status || "").trim();
+
+      if ((!amount || amount === "-") && (!status || status === "-")) {
+        return "-";
+      }
+
+      if (!amount || amount === "-") {
+        return status || "-";
+      }
+
+      if (!status || status === "-") {
+        return amount;
+      }
+
+      return `${amount}/${status}`;
+    };
+
+    // ==========================================================
+    // BUILD TABLE
+    // ==========================================================
+
     return `
-      <div class="payment-table-wrap">
-        <table class="payment-table">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th>Year</th>
-              <th>Amount</th>
-              <th>Status</th>
-            </tr>
-          </thead>
+    <div class="payment-history-container">
 
-          <tbody>
-            ${history
+      <div class="payment-history-caption">
+        Payment History/Asset Classification:
+      </div>
+
+      <table class="payment-history-table">
+
+        <thead>
+
+          <tr>
+
+            <th class="year-header">
+              Year
+            </th>
+
+            ${months
               .map(
-                (row) => `
-                  <tr>
-                    <td>
-                      ${escapeHtml(row.month)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(row.year)}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(row.amount)}
-                    </td>
-
-                    <td>
-                      <span class="${paymentStatusClass(row.status)}">
-                        ${escapeHtml(row.status)}
-                      </span>
-                    </td>
-                  </tr>
+                (month) => `
+                  <th>
+                    ${escapeHtml(month)}
+                  </th>
                 `,
               )
               .join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
-  };
 
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          ${years
+            .map((year) => {
+              const yearPayments = yearMap[year];
+
+              return `
+                <tr>
+
+                  <td class="year-cell">
+                    ${escapeHtml(year)}
+                  </td>
+
+                  ${months
+                    .map((month) => {
+                      const payment = yearPayments[month];
+
+                      if (!payment) {
+                        return `
+                          <td>
+                            <span class="payment-history-cell empty">
+                              -
+                            </span>
+                          </td>
+                        `;
+                      }
+
+                      const displayValue = getPaymentDisplay(payment);
+
+                      const cellClass = getCellClass(payment.status);
+
+                      return `
+                        <td>
+                          <span class="${cellClass}">
+                            ${escapeHtml(displayValue)}
+                          </span>
+                        </td>
+                      `;
+                    })
+                    .join("")}
+
+                </tr>
+              `;
+            })
+            .join("")}
+
+        </tbody>
+
+      </table>
+
+    </div>
+  `;
+  };
   // ============================================================
   // 12. ACCOUNT HTML
   // ============================================================
@@ -1428,176 +1598,115 @@ body {
   overflow-wrap: anywhere;
 
   word-break: break-word;
-}
-
-/* ============================================================
-   PAYMENT HISTORY
+}/* ============================================================
+   PAYMENT HISTORY - CRIF MONTHLY GRID
 ============================================================ */
 
 .payment-box {
-  padding: 10px;
-
-  background: #f7fbfe;
-
-  border:
-    1px solid
-    #dce9f2;
-
-  border-radius: 9px;
-
-  margin-top: 10px;
-
-  page-break-inside: auto;
-
-  break-inside: auto;
+  margin-top: 12px;
+  border-top: 1px solid #dce7ef;
+  padding-top: 10px;
 }
 
 .payment-title {
-  color: #234e70;
-
-  font-size: 8px;
-
+  font-size: 9px;
   font-weight: 800;
-
-  margin-bottom: 7px;
-
-  text-transform: uppercase;
+  color: #18324b;
+  margin-bottom: 8px;
 }
 
-.payment-table-wrap,
-.address-table-wrap {
+.payment-history-container {
   width: 100%;
-
+  border: 1px solid #cfd8e3;
+  background: #ffffff;
   overflow: hidden;
-}
-
-.payment-table,
-.address-table {
-  width: 100%;
-
-  border-collapse: collapse;
-
-  table-layout: fixed;
-
-  font-size: 7.5px;
-}
-
-.payment-table th,
-.payment-table td,
-.address-table th,
-.address-table td {
-  border:
-    1px solid
-    #dce7ef;
-
-  padding: 5px 6px;
-
-  text-align: left;
-
-  vertical-align: top;
-
-  overflow-wrap: anywhere;
-
-  word-break: break-word;
-}
-
-.payment-table th,
-.address-table th {
-  background: #eaf4fb;
-
-  color: #315a78;
-
-  font-weight: 800;
-
-  text-transform: uppercase;
-}
-
-.payment-table th:nth-child(1),
-.payment-table td:nth-child(1) {
-  width: 22%;
-}
-
-.payment-table th:nth-child(2),
-.payment-table td:nth-child(2) {
-  width: 18%;
-}
-
-.payment-table th:nth-child(3),
-.payment-table td:nth-child(3) {
-  width: 30%;
-}
-
-.payment-table th:nth-child(4),
-.payment-table td:nth-child(4) {
-  width: 30%;
-}
-
-.address-table th:nth-child(1),
-.address-table td:nth-child(1) {
-  width: 75%;
-}
-
-.address-table th:nth-child(2),
-.address-table td:nth-child(2) {
-  width: 25%;
-}
-
-.payment-table tbody tr:nth-child(even),
-.address-table tbody tr:nth-child(even) {
-  background: #fbfdff;
-}
-
-.payment-table thead,
-.address-table thead {
-  display: table-header-group;
-}
-
-.payment-table tr,
-.address-table tr {
   page-break-inside: avoid;
-
   break-inside: avoid;
 }
 
-.payment-status {
-  display: inline-block;
+.payment-history-caption {
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #18324b;
+  padding: 8px 0;
+}
 
-  padding: 2px 5px;
+.payment-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: Arial, Helvetica, sans-serif;
+}
 
-  border-radius: 4px;
+.payment-history-table th,
+.payment-history-table td {
+  border: 1px solid #cfd8e3;
+  text-align: center;
+  vertical-align: middle;
+  padding: 5px 3px;
+  height: 25px;
+}
 
+.payment-history-table thead th {
+  background: #e5e9f7;
+  color: #164878;
   font-size: 7px;
-
   font-weight: 800;
 }
 
-.payment-status-std {
-  background: #e8f7ee;
-
-  color: #237548;
+.payment-history-table th.year-header {
+  width: 32px;
 }
 
-.payment-status-xxx {
-  background: #eef1f4;
-
-  color: #667786;
+.payment-history-table tbody td {
+  font-size: 7.5px;
+  color: #18324b;
+  font-weight: 600;
+  background: #ffffff;
 }
 
-.payment-status-alert {
-  background: #fff0f0;
+.payment-history-table tbody td.year-cell {
+  background: #f2f2f2;
+  font-weight: 800;
+  color: #18324b;
+}
 
+.payment-history-table tbody tr:nth-child(even) td:not(.year-cell) {
+  background: #fbfdff;
+}
+
+.payment-history-cell {
+  white-space: nowrap;
+  font-size: 7px;
+  font-weight: 700;
+  color: #18324b;
+}
+
+.payment-history-cell.std {
+  color: #18324b;
+}
+
+.payment-history-cell.xxx {
+  color: #18324b;
+}
+
+.payment-history-cell.alert {
   color: #a33a3a;
+  font-weight: 800;
 }
 
-.payment-empty,
-.no-data {
+.payment-history-cell.empty {
+  color: #777777;
+  font-weight: 400;
+}
+
+.payment-empty {
   color: #7b8e9e;
-
   font-size: 8px;
-
-  padding: 7px 0;
+  padding: 10px;
+  text-align: center;
+  border: 1px solid #dce7ef;
 }
-
 /* ============================================================
    JSON
 ============================================================ */
