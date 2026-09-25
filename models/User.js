@@ -30,6 +30,22 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    state: {
+      type: String,
+      trim: true,
+    },
+
+    city: {
+      type: String,
+      trim: true,
+    },
+
+    pincode: {
+      type: String,
+      trim: true,
+      match: [/^\d{6}$/, "Pincode must be 6 digits"],
+    },
+
     password: {
       type: String,
       required: true,
