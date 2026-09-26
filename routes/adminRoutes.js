@@ -6,6 +6,11 @@ const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/adminMiddleware');
 
 router.get('/overview/summary', auth, isAdmin, adminController.getOverviewSummary);
+router.get('/overview/timeseries', auth, isAdmin, adminController.getTimeseries);
+router.get('/overview/bureau-split', auth, isAdmin, adminController.getBureauSplit);
+router.get('/overview/score-distribution', auth, isAdmin, adminController.getScoreDistribution);
+router.get('/overview/top-partners', auth, isAdmin, adminController.getTopPartners);
+router.get('/overview/recent-activity', auth, isAdmin, adminController.getRecentActivity);
 router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalyses);
 router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCreditReports);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
