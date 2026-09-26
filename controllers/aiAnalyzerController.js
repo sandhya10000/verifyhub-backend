@@ -5,7 +5,7 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground } = require('../utils/claudeService');
 
-const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
+// const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
 const { logStep } = require('../utils/logger');
 
 
