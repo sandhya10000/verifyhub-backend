@@ -22,6 +22,7 @@ const paymentRoutes = require("./routes/payment");
 const aiAnalyzerRoutes = require("./routes/aiAnalyzerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
+const partnerRoutes = require("./routes/partnerRoutes");
 
 // Connect Database
 connectDB();
@@ -86,6 +87,7 @@ app.use("/api", paymentRoutes);
 app.use("/api/ai-analyzer", aiAnalyzerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
+app.use("/api/partner", partnerRoutes);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

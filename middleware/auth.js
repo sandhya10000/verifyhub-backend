@@ -15,6 +15,16 @@ const auth = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = await User.findById(decoded.id).select("-password");
 
+    // Token is valid but the account no longer exists (deleted user, wrong
+    // database, or stale token). Fail fast with 401 instead of letting
+    // every controller crash on `req.user._id`.
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Account no longer exists. Please log in again.",
+      });
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({
