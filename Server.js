@@ -40,6 +40,7 @@ const corsOptions = {
       // VerifyHub frontend
       "https://verifyhub.in",
       "https://www.verifyhub.in",
+"https://staging.verifyhub.in"
     ];
 
     if (allowedOrigins.includes(origin)) {
