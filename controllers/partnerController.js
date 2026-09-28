@@ -3,6 +3,8 @@ const CreditReport = require('../models/creditReport');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
+const Pricing = require('../models/Pricing');
+const { PLAN_KEYS, quoteForProduct } = require('../models/Pricing');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
@@ -196,5 +198,92 @@ exports.getRecent = async (req, res) => {
   } catch (err) {
     console.error('partner getRecent Error:', err);
     res.status(500).json({ success: false, message: 'Could not fetch recent activity' });
+  }
+};
+
+// GET /api/partner/prefill?mobile=XXXXXXXXXX
+// Returns the partner's most recent customer record for that mobile so
+// report forms can prefill. Strictly scoped to the requester — a partner
+// can never see another partner's customers.
+exports.getPrefill = async (req, res) => {
+  try {
+    const mobile = String(req.query.mobile || "").replace(/\D/g, "");
+    if (!/^\d{10}$/.test(mobile)) {
+      return res.status(400).json({ success: false, message: "Valid 10-digit mobile number required" });
+    }
+
+    const record =
+      (await CreditReport.findOne({ userId: req.user._id, mobile, status: "Success" })
+        .sort({ createdAt: -1 })
+        .select("name mobile pan gender email bureau createdAt")
+        .lean()) ||
+      (await CreditReport.findOne({ userId: req.user._id, mobile })
+        .sort({ createdAt: -1 })
+        .select("name mobile pan gender email bureau createdAt")
+        .lean());
+
+    if (!record) {
+      return res.json({ success: true, found: false });
+    }
+
+    const parts = String(record.name || "").trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || "";
+    const lastName = parts.slice(1).join(" ");
+
+    res.json({
+      success: true,
+      found: true,
+      data: {
+        firstName,
+        lastName,
+        mobile: record.mobile,
+        pan: record.pan || "",
+        gender: record.gender || "",
+        email: record.email || "",
+        bureau: record.bureau || "",
+        pulledAt: record.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error("partner getPrefill Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch prefill data" });
+  }
+};
+// GET /api/partner/pricing/plans � PUBLIC price list for the Plans page.
+// Computed totals only; the frontend never does money math. Falls back to
+// the founder table when the Pricing doc is missing.
+exports.getPublicPlans = async (req, res) => {
+  try {
+    const pricing = await Pricing.findOne({ key: "default" }).lean();
+    const plans = {};
+    for (const plan of PLAN_KEYS) {
+      const row = pricing?.plans?.[plan] || {};
+      plans[plan] = {
+        recharge: row.recharge ?? 0,
+        cibil: row.cibil ?? 0,
+        experian: row.experian ?? 0,
+        crif: row.crif ?? 0,
+        equifax: row.equifax ?? 0,
+        cibilFailed: row.cibilFailed ?? 0,
+      };
+    }
+    const ai = pricing
+      ? quoteForProduct(pricing, "ai", "starter", "success")
+      : { base: 100, gstRate: 18, gstAmount: 18, total: 118 };
+    const otherFailed = pricing
+      ? quoteForProduct(pricing, "experian", "starter", "fail")
+      : { base: 30, gstRate: 0, gstAmount: 0, total: 30 };
+    res.json({
+      success: true,
+      data: {
+        plans,
+        ai: { base: ai.base, gstRate: ai.gstRate, total: ai.total },
+        otherFailedCharge: otherFailed.total,
+        minRecharge: pricing?.minRecharge ?? 100,
+      },
+    });
+  } catch (err) {
+    console.error("partner getPublicPlans Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch plans" });
   }
 };

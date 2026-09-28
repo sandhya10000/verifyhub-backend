@@ -1,6 +1,7 @@
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const Transaction = require("../models/Transaction");
+const User = require("../models/User");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -13,11 +14,12 @@ const createWalletRechargeOrder = async (req, res) => {
     const { amount } = req.body;
     const userId = req.user.id;
 
-    // 1. Validate amount
-    if (!amount || Number(amount) <= 0) {
+    // 1. Validate amount (floor moves to Pricing config later)
+    const MIN_RECHARGE = 100;
+    if (!amount || Number(amount) < MIN_RECHARGE) {
       return res.status(400).json({
         success: false,
-        message: "Valid recharge amount is required",
+        message: `Minimum recharge amount is ₹${MIN_RECHARGE}`,
       });
     }
 
@@ -60,8 +62,6 @@ const createWalletRechargeOrder = async (req, res) => {
     const transaction = new Transaction({
       userId: user._id,
 
-      packageId: null,
-
       orderId: order.id,
 
       amount: baseAmount,
@@ -72,20 +72,24 @@ const createWalletRechargeOrder = async (req, res) => {
 
       currency: "INR",
 
+      type: "CREDIT",
+
       purpose: "WALLET_RECHARGE",
 
-      status: "created",
+      status: "PENDING",
 
       gateway: "RAZORPAY",
     });
 
     await transaction.save();
 
-    // 6. Response
+    // 6. Response (keyId is public — the frontend needs it for Checkout.js)
     return res.status(200).json({
       success: true,
 
       orderId: order.id,
+
+      keyId: process.env.RAZORPAY_KEY_ID,
 
       amount: order.amount,
 
@@ -172,11 +176,27 @@ const verifyPayment = async (req, res) => {
 
     // 7. Wallet recharge
     if (transaction.purpose === "WALLET_RECHARGE") {
+      // Plan tier from the recharge slab (floor-mapped). Sticky: a small
+      // top-up never downgrades an existing higher tier.
+      const { tierForAmount, PLAN_KEYS } = require("../models/Pricing");
+      const newPlan = tierForAmount(transaction.amount);
+      const current = await User.findById(transaction.userId).select("activePlan").lean();
+      const keepPlan =
+        current &&
+        PLAN_KEYS.indexOf(current.activePlan || "starter") >= PLAN_KEYS.indexOf(newPlan)
+          ? current.activePlan
+          : newPlan;
+      // Stamp the purchased tier on the ledger row for per-tier revenue
+      transaction.planTier = newPlan;
+      await transaction.save();
       const updatedUser = await User.findByIdAndUpdate(
         transaction.userId,
         {
           $inc: {
             walletBalance: transaction.amount,
+          },
+          $set: {
+            activePlan: keepPlan,
           },
         },
         {
@@ -196,6 +216,7 @@ const verifyPayment = async (req, res) => {
         message: "Wallet recharged successfully",
         transaction,
         walletBalance: updatedUser.walletBalance,
+        activePlan: updatedUser.activePlan,
       });
     }
 

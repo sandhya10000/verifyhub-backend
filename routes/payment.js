@@ -2,6 +2,8 @@ const express = require("express");
 
 const router = express.Router();
 
+const auth = require("../middleware/auth");
+
 const {
   createWalletRechargeOrder,
   verifyPayment,
@@ -12,11 +14,11 @@ const {
 // @route   POST /api/wallet-recharge/payment
 // @desc    post wallet payment
 // @access  Private/User
-router.post("/wallet-recharge/payment", createWalletRechargeOrder);
+router.post("/wallet-recharge/payment", auth, createWalletRechargeOrder);
 
 //API route for payment verify
 // @route   POST /api/verify/payment
 // @desc    post verify payment
 // @access  Private/User
-router.post("/verify/payment", verifyPayment);
+router.post("/verify/payment", auth, verifyPayment);
 module.exports = router;

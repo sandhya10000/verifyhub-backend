@@ -14,6 +14,22 @@ const transactionSchema = new mongoose.Schema(
       unique: true,
     },
 
+    // Set on report-charge debits — unique so a report can never be
+    // charged twice (recharge rows leave this null; the sparse index
+    // allows unlimited nulls).
+    reportId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+
+    // Pricing tier active at transaction time (recharges: tier purchased;
+    // debits: tier charged at). Powers per-tier revenue reporting.
+    planTier: {
+      type: String,
+      enum: ["starter", "growth", "pro", "enterprise"],
+      default: null,
+    },
+
     paymentId: {
       type: String,
       default: null,
@@ -22,6 +38,17 @@ const transactionSchema = new mongoose.Schema(
     amount: {
       type: Number,
       required: true,
+    },
+
+    // GST split (ex-GST value in `amount`; total = amount + gstAmount)
+    gstAmount: {
+      type: Number,
+      default: 0,
+    },
+
+    totalAmount: {
+      type: Number,
+      default: null,
     },
 
     currency: {
@@ -37,7 +64,7 @@ const transactionSchema = new mongoose.Schema(
 
     purpose: {
       type: String,
-      enum: ["ADD_FUNDS", "PACKAGE_PURCHASE", "REFUND"],
+      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE"],
       required: true,
     },
 
@@ -50,11 +77,6 @@ const transactionSchema = new mongoose.Schema(
     gateway: {
       type: String,
       default: "RAZORPAY",
-    },
-    purpose: {
-      type: String,
-      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE"],
-      required: true,
     },
 
     signature: {
@@ -71,5 +93,7 @@ const transactionSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+transactionSchema.index({ reportId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

@@ -60,6 +60,14 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Pricing tier: starter | growth | pro | enterprise. Set from the
+    // recharge slab at payment verification; sticky upgrades, v1 never
+    // auto-downgrades.
+    activePlan: {
+      type: String,
+      enum: ["starter", "growth", "pro", "enterprise"],
+      default: "starter",
+    },
     isActive: {
       type: Boolean,
       default: true,
