@@ -417,7 +417,7 @@ exports.getPlanDistribution = async (req, res) => {
         { $group: { _id: { tier: "$planTier", type: "$type" }, total: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", "$totalAmount"] } } } },
       ]),
     ]);
-    const tiers = ["starter", "growth", "pro", "enterprise"];
+    const tiers = ["startup", "starter", "growth", "pro", "enterprise"];
     const pMap = Object.fromEntries(partners.map((p) => [p._id || "starter", p]));
     const collected = {}, consumed = {};
     money.forEach((m) => {
