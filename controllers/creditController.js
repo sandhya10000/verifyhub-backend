@@ -9,7 +9,12 @@ const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
 const generateExperianPdf = require("../services/experianPdf.service");
 const generateCrifPdf = require("../templates/generateCrifPdf");
-const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
+const {
+  canAfford,
+  chargeForReport,
+  chargeFailedReport,
+} = require("../utils/wallet");
+const { generateCibilPdf } = require("../services/cibilPdf.service");
 
 // Wallet affordability gate — run after input validation, before any paid
 // bureau call. Sends 402 when the partner cannot cover one pull.
@@ -30,7 +35,10 @@ const affordOr402 = async (req, res, productKey) => {
     }
     return true;
   } catch (err) {
-    console.error(`[wallet] affordability check failed (${productKey}):`, err.message);
+    console.error(
+      `[wallet] affordability check failed (${productKey}):`,
+      err.message,
+    );
     return true; // fail-open: never block delivery on a pricing hiccup
   }
 };
@@ -39,15 +47,27 @@ const affordOr402 = async (req, res, productKey) => {
 // delivery can never break because of a ledger problem.
 const debitReportPull = async (creditReport, productKey, bureauLabel) => {
   try {
-    const charge = await chargeForReport(creditReport.userId, creditReport._id, productKey, bureauLabel);
+    const charge = await chargeForReport(
+      creditReport.userId,
+      creditReport._id,
+      productKey,
+      bureauLabel,
+    );
     if (!charge.ok) {
-      console.warn(`[wallet] charge skipped (${charge.reason}) for ${bureauLabel} report ${creditReport._id}`);
+      console.warn(
+        `[wallet] charge skipped (${charge.reason}) for ${bureauLabel} report ${creditReport._id}`,
+      );
     } else {
-      console.log(`[wallet] charged ₹${charge.total} for ${bureauLabel} report ${creditReport._id} (balance ₹${charge.balance})`);
+      console.log(
+        `[wallet] charged ₹${charge.total} for ${bureauLabel} report ${creditReport._id} (balance ₹${charge.balance})`,
+      );
     }
     return charge;
   } catch (err) {
-    console.error(`[wallet] charge error for ${bureauLabel} report ${creditReport._id}:`, err.message);
+    console.error(
+      `[wallet] charge error for ${bureauLabel} report ${creditReport._id}:`,
+      err.message,
+    );
     return { ok: false, reason: "error" };
   }
 };
@@ -55,780 +75,182 @@ const debitReportPull = async (creditReport, productKey, bureauLabel) => {
 // Post-failure debit — same guards as success. CIBIL is mismatch-gated
 // (matched inputs fail free); every other product bills the flat fallback.
 // Never throws; returns the charge result for response transparency.
-const debitFailedPull = async (creditReport, productKey, bureauLabel, mismatched = true) => {
-  if (!creditReport?._id || !creditReport?.userId) return { ok: false, reason: "no-report" };
+const debitFailedPull = async (
+  creditReport,
+  productKey,
+  bureauLabel,
+  mismatched = true,
+) => {
+  if (!creditReport?._id || !creditReport?.userId)
+    return { ok: false, reason: "no-report" };
   try {
-    const charge = await chargeFailedReport(creditReport.userId, creditReport._id, productKey, bureauLabel, mismatched);
+    const charge = await chargeFailedReport(
+      creditReport.userId,
+      creditReport._id,
+      productKey,
+      bureauLabel,
+      mismatched,
+    );
     if (charge.free) {
-      console.log(`[wallet] ${bureauLabel} fail free (inputs matched) for report ${creditReport._id}`);
+      console.log(
+        `[wallet] ${bureauLabel} fail free (inputs matched) for report ${creditReport._id}`,
+      );
     } else if (charge.ok) {
-      console.log(`[wallet] charged ₹${charge.total} ${bureauLabel} fail fee for report ${creditReport._id} (balance ₹${charge.balance})`);
+      console.log(
+        `[wallet] charged ₹${charge.total} ${bureauLabel} fail fee for report ${creditReport._id} (balance ₹${charge.balance})`,
+      );
     } else {
-      console.warn(`[wallet] ${bureauLabel} fail charge skipped (${charge.reason}) for report ${creditReport._id}`);
+      console.warn(
+        `[wallet] ${bureauLabel} fail charge skipped (${charge.reason}) for report ${creditReport._id}`,
+      );
     }
     return charge;
   } catch (err) {
-    console.error(`[wallet] fail-charge error for ${bureauLabel} report ${creditReport._id}:`, err.message);
+    console.error(
+      `[wallet] fail-charge error for ${bureauLabel} report ${creditReport._id}:`,
+      err.message,
+    );
     return { ok: false, reason: "error" };
   }
 };
+//logic for cibil report from digi
 
 const CibilReportFromDigi = async (req, res) => {
-  let creditReport = null;
-
   try {
-    // ============================================
-    // STEP 1: AUTHENTICATED USER
-    // ============================================
+    console.log("[CIBIL] Starting CIBIL V7 report generation...");
+    const baseUrl = process.env.DIGI_BASE_URL;
+    const jwtToken = process.env.DIGI_API_TOKEN;
 
-    const userId = req.user?._id;
-
-    if (!userId) {
-      return res.status(401).json({
+    if (!baseUrl) {
+      return res.status(500).json({
         success: false,
-        message: "User authentication required",
+        message: "DIGI_BASE_URL is not configured",
       });
     }
 
-    console.log("[CIBIL] Authenticated User:", userId);
+    if (!jwtToken) {
+      return res.status(500).json({
+        success: false,
+        message: "DIGI_API_TOKEN is not configured",
+      });
+    }
 
-    // ============================================
-    // STEP 2: FRONTEND REQUEST
-    // ============================================
+    const { fullname, firstName, lastName, mobile, pan, consent } = req.body;
 
-    const {
-      firstName,
-      lastName,
-      mobile,
-      pan,
-      gender,
-      reportType,
-      consent,
-      orderId,
-    } = req.body;
-
-    console.log("[CIBIL] Frontend Request:", {
-      firstName,
-      lastName,
-      mobile,
-      pan,
-      gender,
-      reportType,
-      consent,
-      orderId,
-    });
-
-    // ============================================
-    // STEP 3: VALIDATION
-    // ============================================
-
-    if (!firstName?.trim()) {
+    const customerName =
+      fullname || `${firstName || ""} ${lastName || ""}`.trim();
+    if (!customerName) {
       return res.status(400).json({
         success: false,
-        message: "First name is required",
+        message: "Full name is required",
       });
     }
 
-    if (!lastName?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Last name is required",
-      });
-    }
-
-    if (!mobile?.toString().trim()) {
+    if (!mobile) {
       return res.status(400).json({
         success: false,
         message: "Mobile number is required",
       });
     }
 
-    if (!pan?.trim()) {
+    if (!pan) {
       return res.status(400).json({
         success: false,
-        message: "PAN is required",
+        message: "PAN number is required",
       });
     }
 
-    // ============================================
-    // STEP 4: NORMALIZE DATA
-    // ============================================
-
-    const cleanFirstName = String(firstName).trim();
-    const cleanLastName = String(lastName).trim();
-    const cleanMobile = String(mobile).trim();
-    const cleanPan = String(pan).trim().toUpperCase();
-
-    const name = `${cleanFirstName} ${cleanLastName}`;
-
-    // Mismatch signal for failure billing: partner-altered mobile vs the
-    // phone on their own account. (PAN has no DB reference to compare.)
-    const inputMismatched =
-      cleanMobile !== String(req.user?.phone || "").trim();
-
-    // ============================================
-    // STEP 5: CONSENT
-    // ============================================
-
-    const finalConsent =
-      consent === true ||
-      consent === "true" ||
-      consent === "Y" ||
-      consent === "y"
-        ? "Y"
-        : "N";
-
-    if (finalConsent !== "Y") {
+    if (consent !== "Y") {
       return res.status(400).json({
         success: false,
         message: "Customer consent is required",
-        error: "LEGAL_COPY_NOT_FOUND",
       });
     }
 
-    // Wallet gate (CIBIL = ₹50 + GST) — before any paid bureau call
-    if (!(await affordOr402(req, res, "cibil"))) return;
-
-    // ============================================
-    // STEP 6: DIGI V7 PAYLOAD
-    // ============================================
-
     const digiPayload = {
+      fullname: customerName,
+      mobile: mobile.toString().trim(),
+      pan: pan.toString().trim().toUpperCase(),
       consent: "Y",
     };
 
-    console.log(
-      "[DIGI] CIBIL V7 Payload:",
-      JSON.stringify(digiPayload, null, 2),
-    );
-
-    // ============================================
-    // STEP 7: DIGI URL
-    // ============================================
-
-    const digiBaseUrl = process.env.DIGI_BASE_URL?.trim();
-
-    if (!digiBaseUrl) {
-      return res.status(500).json({
-        success: false,
-        message: "DIGI_BASE_URL is missing",
-        error: "DIGI_BASE_URL_MISSING",
-      });
-    }
-
-    const digiUrl = `${digiBaseUrl}/api/v7/cibil-bureau-report`;
-
-    console.log("[DIGI] API URL:", digiUrl);
-
-    // ============================================
-    // STEP 8: DIGI TOKEN
-    // ============================================
-
-    const digiToken = process.env.DIGI_API_TOKEN?.trim();
-
-    console.log("[DIGI] Token Status:", digiToken ? "FOUND" : "MISSING");
-
-    console.log("[DIGI] Token Length:", digiToken?.length || 0);
-
-    if (!digiToken) {
-      return res.status(500).json({
-        success: false,
-        message: "DIGI API token is missing",
-        error: "DIGI_TOKEN_MISSING",
-      });
-    }
-
-    // ============================================
-    // STEP 9: CREATE PENDING CREDIT REPORT
-    // ============================================
-
-    creditReport = await CreditReport.create({
-      userId,
-
-      orderId: orderId ? String(orderId).trim() : null,
-
-      name,
-
-      firstName: cleanFirstName,
-
-      lastName: cleanLastName,
-
-      mobile: cleanMobile,
-
-      pan: cleanPan,
-
-      gender: gender || null,
-
-      reportType: reportType || "cibil",
-
-      score: null,
-
-      bureau: "cibil",
-
-      consent: "Y",
-
-      status: "Pending",
-
-      reportUrl: null,
-
-      localPath: null,
-
-      reportData: null,
-
-      isPublic: false,
+    console.log("[CIBIL] Digi Payload:", {
+      ...digiPayload,
+      pan: "********",
+      mobile: "********",
     });
 
-    console.log("[DIGI] Pending Credit Report Created:", creditReport._id);
+    console.log("[CIBIL] Calling Digi CIBIL V7 API...");
 
-    // ============================================
-    // STEP 10: CALL DIGI V7 API
-    // ============================================
-
-    let digiResponse;
-
-    try {
-      digiResponse = await axios.post(digiUrl, digiPayload, {
+    const response = await axios.post(
+      `${baseUrl}/api/v7/cibil-bureau-report`,
+      digiPayload,
+      {
         headers: {
-          Accept: "application/json",
+          accept: "application/json",
           "Content-Type": "application/json",
-
-          Authorization: `Bearer ${digiToken}`,
+          "jwt-token": jwtToken,
         },
 
-        timeout: 60000,
-      });
+        timeout: 120000,
+      },
+    );
 
-      console.log(
-        "[DIGI] API SUCCESS:",
-        JSON.stringify(digiResponse.data, null, 2),
-      );
-    } catch (apiError) {
-      const httpStatus = apiError.response?.status || null;
+    const apiData = response.data;
 
-      const digiError = apiError.response?.data || null;
+    console.log("[CIBIL] Digi API response received");
 
-      console.error("[DIGI] HTTP STATUS:", httpStatus);
+    console.log("[CIBIL] Digi API success:", apiData?.success);
 
-      console.error(
-        "[DIGI] API ERROR:",
-        JSON.stringify(digiError || apiError.message, null, 2),
-      );
+    const cibilData = apiData?.data?.cibilData;
 
-      // ==========================================
-      // UPDATE PENDING -> FAILED
-      // ==========================================
+    if (!cibilData) {
+      console.error("[CIBIL] cibilData not found in Digi response");
 
-      creditReport.status = "Failed";
-
-      creditReport.reportData = {
-        error: digiError || apiError.message,
-      };
-
-      await creditReport.save();
-
-      // ==========================================
-      // INVALID TOKEN
-      // ==========================================
-
-      const errorMessage =
-        typeof digiError?.message === "string"
-          ? digiError.message.toLowerCase()
-          : "";
-
-      if (
-        httpStatus === 401 ||
-        errorMessage.includes("invalid token") ||
-        errorMessage.includes("unauthorized")
-      ) {
-        return res.status(401).json({
-          success: false,
-
-          message: "DIGI authentication failed",
-
-          error: digiError?.message || "Invalid DIGI API token",
-
-          creditReportId: creditReport._id,
-
-          userId: creditReport.userId,
-
-          status: creditReport.status,
-
-          digiResponse: digiError,
-        });
-      }
-
-      // ==========================================
-      // TIMEOUT
-      // ==========================================
-
-      if (apiError.code === "ECONNABORTED" || apiError.code === "ETIMEDOUT") {
-        // Bureau was hit (request left our server) — mismatch-gated fail fee
-        const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
-        return res.status(504).json({
-          success: false,
-
-          message: "DIGI CIBIL request timed out",
-
-          error: "TIMEOUT",
-
-          creditReportId: creditReport._id,
-
-          userId: creditReport.userId,
-
-          status: creditReport.status,
-
-          failureCharge: failCharge.ok ? failCharge.total : 0,
-        });
-      }
-
-      // ==========================================
-      // NETWORK ERROR
-      // ==========================================
-
-      if (apiError.code === "ENOTFOUND" || apiError.code === "ECONNREFUSED") {
-        return res.status(503).json({
-          success: false,
-
-          message: "Unable to connect to DIGI CIBIL API",
-
-          error: "NETWORK_ERROR",
-
-          creditReportId: creditReport._id,
-
-          userId: creditReport.userId,
-
-          status: creditReport.status,
-        });
-      }
-
-      // ==========================================
-      // OTHER DIGI ERROR
-      // ==========================================
-
-      // Bureau answered with an error — mismatch-gated fail fee
-      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
-      return res.status(httpStatus || 502).json({
-        success: false,
-
-        message: "DIGI CIBIL API request failed",
-
-        creditReportId: creditReport._id,
-
-        userId: creditReport.userId,
-
-        status: creditReport.status,
-
-        error: digiError || apiError.message,
-
-        failureCharge: failCharge.ok ? failCharge.total : 0,
-      });
-    }
-
-    // ============================================
-    // STEP 11: DIGI RESPONSE
-    // ============================================
-
-    const apiData = digiResponse?.data;
-
-    console.log("[DIGI] CIBIL Response:", JSON.stringify(apiData, null, 2));
-
-    if (!apiData) {
-      creditReport.status = "Failed";
-
-      creditReport.reportData = {
-        error: "EMPTY_DIGI_RESPONSE",
-      };
-
-      await creditReport.save();
-
-      // Empty bureau answer after a paid call — mismatch-gated fail fee
-      const emptyCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
-      return res.status(502).json({
-        success: false,
-
-        message: "Empty response received from DIGI",
-
-        error: "EMPTY_DIGI_RESPONSE",
-
-        creditReportId: creditReport._id,
-
-        userId: creditReport.userId,
-
-        failureCharge: emptyCharge.ok ? emptyCharge.total : 0,
-      });
-    }
-
-    // ============================================
-    // STEP 12: BASIC RESPONSE
-    // ============================================
-
-    const digiStatus = apiData?.status ?? false;
-
-    const digiMessage = apiData?.message || null;
-
-    const statusCode = apiData?.status_code || null;
-
-    // ============================================
-    // STEP 13: CIBIL RESPONSE
-    // ============================================
-
-    const cibilResponse = apiData?.data?.GetCustomerAssetsResponse || null;
-
-    const cibilSuccess = cibilResponse?.GetCustomerAssetsSuccess || null;
-
-    // ============================================
-    // STEP 14: RESPONSE DETAILS
-    // ============================================
-
-    const responseStatus = cibilResponse?.ResponseStatus || null;
-
-    const responseKey = cibilResponse?.ResponseKey || null;
-
-    // ============================================
-    // STEP 15: ASSET
-    // ============================================
-
-    const assetId = cibilSuccess?.AssetId || null;
-
-    const asset = cibilSuccess?.Asset || null;
-
-    const assetStatus = asset?.Status || null;
-
-    const creationDate = asset?.CreationDate || null;
-
-    const expirationDate = asset?.ExpirationDate || null;
-
-    const safetyCheckFailure = asset?.SafetyCheckFailure ?? null;
-
-    // ============================================
-    // STEP 16: CREDIT SUMMARY
-    // ============================================
-
-    const creditSummary = cibilSuccess?.CreditSummaryData || null;
-
-    const oldestCreditAccountPeriod =
-      creditSummary?.OldestCreditAccountPeriod || null;
-
-    const inquiries = creditSummary?.Inquires || null;
-
-    const onTimePaymentHistory = creditSummary?.OnTimePaymentHistory || null;
-
-    const creditCardUtilization = creditSummary?.CreditCardUtilization || null;
-
-    const creditMix = creditSummary?.CreditMix || null;
-
-    // ============================================
-    // STEP 17: SCORE
-    // ============================================
-
-    let score = null;
-
-    const possibleScore =
-      apiData?.credit_score ??
-      apiData?.data?.credit_score ??
-      apiData?.data?.score ??
-      apiData?.data?.CreditScore ??
-      cibilSuccess?.CreditScore ??
-      null;
-
-    if (
-      possibleScore !== null &&
-      possibleScore !== undefined &&
-      possibleScore !== ""
-    ) {
-      const numericScore = Number(possibleScore);
-
-      if (!Number.isNaN(numericScore)) {
-        score = numericScore;
-      }
-    }
-
-    // ============================================
-    // STEP 18: REPORT URL
-    // ============================================
-
-    const reportUrl =
-      apiData?.data?.htmlLink ||
-      apiData?.reportUrl ||
-      apiData?.pdfUrl ||
-      apiData?.data?.reportUrl ||
-      apiData?.data?.pdfUrl ||
-      null;
-
-    // ============================================
-    // STEP 19: LOG DATA
-    // ============================================
-
-    console.log("[DIGI] Status:", digiStatus);
-
-    console.log("[DIGI] Status Code:", statusCode);
-
-    console.log("[DIGI] Message:", digiMessage);
-
-    console.log("[DIGI] Response Status:", responseStatus);
-
-    console.log("[DIGI] Response Key:", responseKey);
-
-    console.log("[DIGI] Asset ID:", assetId);
-
-    console.log("[DIGI] Score:", score);
-
-    console.log("[DIGI] Report URL:", reportUrl);
-
-    // ============================================
-    // STEP 20: SUCCESS CHECK
-    // ============================================
-
-    if (digiStatus !== true || responseStatus !== "Success") {
-      creditReport.status = "Failed";
-
-      creditReport.reportData = apiData;
-
-      creditReport.reportUrl = reportUrl || null;
-
-      await creditReport.save();
-
-      // Definitive bureau rejection — mismatch-gated fail fee
-      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
       return res.status(400).json({
         success: false,
-
-        message: digiMessage || "CIBIL report generation failed",
-
-        error: "CIBIL_REPORT_FAILED",
-
-        statusCode,
-
-        responseStatus,
-
-        responseKey,
-
-        creditReportId: creditReport._id,
-
-        userId: creditReport.userId,
-
-        status: creditReport.status,
-
-        failureCharge: failCharge.ok ? failCharge.total : 0,
+        message: "CIBIL data not found in Digi API response",
+        data: apiData,
       });
     }
 
-    // ============================================
-    // STEP 21: SAVE REPORT LOCALLY
-    // ============================================
+    const creditReportId = req.body?.creditReportId || `CIBIL-${Date.now()}`;
 
-    let localPath = null;
+    console.log("[CIBIL] Sending Digi response to PDF service...");
 
-    if (reportUrl) {
-      try {
-        localPath = await saveCreditReportLocally(
-          reportUrl,
-
-          creditReport._id.toString(),
-
-          "cibil",
-
-          "pdf",
-        );
-
-        console.log("[DIGI] CIBIL Report saved locally:", localPath);
-      } catch (fileError) {
-        console.error("[DIGI] Local report save failed:", fileError.message);
-
-        // File save fail hone par API report
-        // ko Failed nahi karenge.
-        // localPath null rahega.
-      }
-    } else {
-      console.log("[DIGI] No report URL received");
-    }
-
-    // ============================================
-    // STEP 22: UPDATE CREDIT REPORT
-    // ============================================
-
-    creditReport.score = score;
-
-    creditReport.bureau = "cibil";
-
-    creditReport.reportUrl = reportUrl;
-
-    creditReport.localPath = localPath;
-
-    creditReport.reportData = apiData;
-
-    creditReport.status = "Success";
-
-    await creditReport.save();
-
-    console.log("[DIGI] Credit Report Updated:", creditReport._id);
-
-    // Wallet debit (CIBIL = ₹50 + GST) — post-success only
-    await debitReportPull(creditReport, "cibil", "CIBIL");
-
-    // ============================================
-    // STEP 23: SUCCESS RESPONSE
-    // ============================================
+    const pdf = await generateCibilPdf(apiData, creditReportId);
 
     return res.status(200).json({
       success: true,
 
-      status: "success",
+      message: "CIBIL report generated successfully",
 
-      message: digiMessage || "CIBIL report retrieved successfully from DIGI",
+      data: {
+        creditReportId,
 
-      statusCode,
+        fileName: pdf.fileName,
 
-      responseStatus,
+        pdfUrl: pdf.relativePath,
 
-      creditReport: {
-        id: creditReport._id,
-
-        creditReportId: creditReport._id,
-
-        userId: creditReport.userId,
-
-        orderId: creditReport.orderId,
-
-        name: creditReport.name,
-
-        firstName: creditReport.firstName,
-
-        lastName: creditReport.lastName,
-
-        mobile: creditReport.mobile,
-
-        pan: creditReport.pan,
-
-        gender: creditReport.gender,
-
-        reportType: creditReport.reportType,
-
-        score: creditReport.score,
-
-        bureau: creditReport.bureau,
-
-        status: creditReport.status,
-
-        reportId: creditReport.reportId || null,
-
-        reportUrl: creditReport.reportUrl,
-
-        localPath: creditReport.localPath || null,
-
-        responseKey,
-
-        assetId,
-
-        assetStatus,
-
-        creationDate,
-
-        expirationDate,
-
-        safetyCheckFailure,
-
-        creditSummary: {
-          oldestCreditAccountPeriod,
-
-          inquiries,
-
-          onTimePaymentHistory,
-
-          creditCardUtilization,
-
-          creditMix,
-        },
-
-        createdAt: creditReport.createdAt,
+        filePath: pdf.filePath,
       },
     });
   } catch (error) {
-    // ============================================
-    // STEP 24: UNKNOWN ERROR
-    // ============================================
-
-    console.error("[CIBIL] Controller Error:", error.message);
-
-    // ============================================
-    // UPDATE PENDING -> FAILED
-    // ============================================
-
-    if (creditReport) {
-      try {
-        creditReport.status = "Failed";
-
-        creditReport.reportData = {
-          error: error.response?.data || error.message,
-        };
-
-        await creditReport.save();
-      } catch (dbError) {
-        console.error(
-          "[CIBIL] Failed to update report status:",
-          dbError.message,
-        );
-      }
-    }
-
-    // ============================================
-    // AXIOS ERROR
-    // ============================================
+    console.error("[CIBIL] API/PDF Error:", error.message);
 
     if (error.response) {
-      return res.status(error.response.status || 500).json({
-        success: false,
+      console.error("[CIBIL] Digi API status:", error.response.status);
 
-        status: "failed",
-
-        message: "CIBIL API request failed",
-
-        creditReportId: creditReport?._id || null,
-
-        userId: creditReport?.userId || null,
-
-        error: error.response.data,
-      });
+      console.error("[CIBIL] Digi API response:", error.response.data);
     }
 
-    // ============================================
-    // NO RESPONSE
-    // ============================================
-
-    if (error.request) {
-      return res.status(504).json({
-        success: false,
-
-        status: "failed",
-
-        message: "CIBIL API did not respond",
-
-        creditReportId: creditReport?._id || null,
-
-        userId: creditReport?.userId || null,
-
-        errorCode: error.code,
-
-        errorMessage: error.message,
-      });
-    }
-
-    // ============================================
-    // INTERNAL ERROR
-    // ============================================
-
-    return res.status(500).json({
+    return res.status(error.response?.status || 500).json({
       success: false,
 
-      status: "failed",
+      message:
+        error.response?.data?.message || "Failed to generate CIBIL report",
 
-      message: "Server error",
-
-      creditReportId: creditReport?._id || null,
-
-      userId: creditReport?.userId || null,
-
-      error: error.message,
+      error: error.response?.data || error.message,
     });
   }
 };
@@ -1191,7 +613,11 @@ const CrifReport = async (req, res) => {
       await creditReport.save();
 
       // Definitive bureau rejection — flat ₹30 fail fee
-      const crifFailCharge = await debitFailedPull(creditReport, "crif", "CRIF");
+      const crifFailCharge = await debitFailedPull(
+        creditReport,
+        "crif",
+        "CRIF",
+      );
       return res.status(400).json({
         success: false,
         message: apiData?.message || "CRIF report request failed",
@@ -1754,7 +1180,11 @@ const ExperianReport = async (req, res) => {
       await creditReport.save();
 
       // Bureau gave no usable payload — flat ₹30 fail fee
-      const expFailCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
+      const expFailCharge = await debitFailedPull(
+        creditReport,
+        "experian",
+        "EXPERIAN",
+      );
       return res.status(502).json({
         success: false,
         message: "Invalid response from Experian API",
@@ -1780,7 +1210,11 @@ const ExperianReport = async (req, res) => {
       await creditReport.save();
 
       // Bureau verification rejected — flat ₹30 fail fee
-      const expVerifyCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
+      const expVerifyCharge = await debitFailedPull(
+        creditReport,
+        "experian",
+        "EXPERIAN",
+      );
       return res.status(400).json({
         success: false,
 
@@ -1896,7 +1330,11 @@ const ExperianReport = async (req, res) => {
       await creditReport.save();
 
       // Data arrived from the bureau but our PDF step failed — flat ₹30 fail fee
-      const expPdfCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
+      const expPdfCharge = await debitFailedPull(
+        creditReport,
+        "experian",
+        "EXPERIAN",
+      );
       return res.status(500).json({
         success: false,
 
@@ -2029,7 +1467,11 @@ const ExperianReport = async (req, res) => {
       );
 
       // Bureau answered with an error — flat ₹30 fail fee
-      const expCatchCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
+      const expCatchCharge = await debitFailedPull(
+        creditReport,
+        "experian",
+        "EXPERIAN",
+      );
       return res.status(error.response.status || 500).json({
         success: false,
 
@@ -2298,7 +1740,11 @@ const EquifaxReport = async (req, res) => {
       await creditReport.save();
 
       // Definitive bureau rejection — flat ₹30 fail fee
-      const eqFailCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
+      const eqFailCharge = await debitFailedPull(
+        creditReport,
+        "equifax",
+        "EQUIFAX",
+      );
       return res.status(400).json({
         success: false,
 
@@ -2485,7 +1931,11 @@ const EquifaxReport = async (req, res) => {
       );
 
       // Bureau answered with an error — flat ₹30 fail fee
-      const eqCatchCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
+      const eqCatchCharge = await debitFailedPull(
+        creditReport,
+        "equifax",
+        "EQUIFAX",
+      );
       return res.status(error.response.status || 500).json({
         success: false,
 
