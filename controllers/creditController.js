@@ -9,6 +9,48 @@ const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
 const generateExperianPdf = require("../services/experianPdf.service");
 const generateCrifPdf = require("../templates/generateCrifPdf");
+const { canAfford, chargeForReport } = require("../utils/wallet");
+
+// Wallet affordability gate — run after input validation, before any paid
+// bureau call. Sends 402 when the partner cannot cover one pull.
+const affordOr402 = async (req, res, productKey) => {
+  try {
+    const gate = await canAfford(req.user?._id, productKey);
+    if (!gate.ok) {
+      res.status(402).json({
+        success: false,
+        message:
+          gate.reason === "user-not-found"
+            ? "User authentication required"
+            : `Insufficient wallet balance. ${gate.total} required — please recharge.`,
+        required: gate.total,
+        balance: gate.balance,
+      });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[wallet] affordability check failed (${productKey}):`, err.message);
+    return true; // fail-open: never block delivery on a pricing hiccup
+  }
+};
+
+// Post-success debit — guarded, idempotent, and never throws, so report
+// delivery can never break because of a ledger problem.
+const debitReportPull = async (creditReport, productKey, bureauLabel) => {
+  try {
+    const charge = await chargeForReport(creditReport.userId, creditReport._id, productKey, bureauLabel);
+    if (!charge.ok) {
+      console.warn(`[wallet] charge skipped (${charge.reason}) for ${bureauLabel} report ${creditReport._id}`);
+    } else {
+      console.log(`[wallet] charged ₹${charge.total} for ${bureauLabel} report ${creditReport._id} (balance ₹${charge.balance})`);
+    }
+    return charge;
+  } catch (err) {
+    console.error(`[wallet] charge error for ${bureauLabel} report ${creditReport._id}:`, err.message);
+    return { ok: false, reason: "error" };
+  }
+};
 
 const CibilReportFromDigi = async (req, res) => {
   let creditReport = null;
@@ -117,6 +159,9 @@ const CibilReportFromDigi = async (req, res) => {
         error: "LEGAL_COPY_NOT_FOUND",
       });
     }
+
+    // Wallet gate (CIBIL = ₹50 + GST) — before any paid bureau call
+    if (!(await affordOr402(req, res, "cibil"))) return;
 
     // ============================================
     // STEP 6: DIGI V7 PAYLOAD
@@ -576,6 +621,9 @@ const CibilReportFromDigi = async (req, res) => {
 
     console.log("[DIGI] Credit Report Updated:", creditReport._id);
 
+    // Wallet debit (CIBIL = ₹50 + GST) — post-success only
+    await debitReportPull(creditReport, "cibil", "CIBIL");
+
     // ============================================
     // STEP 23: SUCCESS RESPONSE
     // ============================================
@@ -928,6 +976,10 @@ const CrifReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Wallet debit (CRIF = ₹50 + GST) — idempotent per report, so the
+      // Q&A completion and the fresh pull can never double-charge
+      await debitReportPull(creditReport, "crif", "CRIF");
+
       return res.status(200).json({
         success: true,
         status: "success",
@@ -990,6 +1042,10 @@ const CrifReport = async (req, res) => {
         message: "Customer consent must be Y",
       });
     }
+
+    // Wallet gate (CRIF = ₹50 + GST) — fresh pulls only; Q&A answers
+    // reuse the already-gated report above
+    if (!(await affordOr402(req, res, "crif"))) return;
 
     // ============================================================
     // STEP 9: DOB
@@ -1180,6 +1236,9 @@ const CrifReport = async (req, res) => {
 
     await creditReport.save();
 
+    // Wallet debit (CRIF = ₹50 + GST) — post-success only
+    await debitReportPull(creditReport, "crif", "CRIF");
+
     // ============================================================
     // STEP 19: RESPONSE
     // ============================================================
@@ -1367,6 +1426,9 @@ const ExperianReport = async (req, res) => {
         message: "Customer consent must be Y",
       });
     }
+
+    // Wallet gate (Experian = ₹50 + GST) — before any paid bureau call
+    if (!(await affordOr402(req, res, "experian"))) return;
 
     // ============================================================
     // 4. DOB VALIDATION
@@ -1810,6 +1872,9 @@ const ExperianReport = async (req, res) => {
       creditReport._id,
     );
 
+    // Wallet debit (Experian = ₹50 + GST) — post-success only
+    await debitReportPull(creditReport, "experian", "EXPERIAN");
+
     // ============================================================
     // 26. FINAL RESPONSE
     // ============================================================
@@ -2032,6 +2097,9 @@ const EquifaxReport = async (req, res) => {
         message: "Customer consent must be Y",
       });
     }
+
+    // Wallet gate (Equifax = ₹50 + GST) — before any paid bureau call
+    if (!(await affordOr402(req, res, "equifax"))) return;
 
     // ==========================================
     // 6. CLEAN DATA
@@ -2274,6 +2342,9 @@ const EquifaxReport = async (req, res) => {
     await creditReport.save();
 
     console.log("[EQUIFAX] Credit Report Updated:", creditReport._id);
+
+    // Wallet debit (Equifax = ₹50 + GST) — post-success only
+    await debitReportPull(creditReport, "equifax", "EQUIFAX");
 
     // ==========================================
     // 19. FINAL RESPONSE

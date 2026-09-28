@@ -26,6 +26,26 @@ const ticketRoutes = require("./routes/ticketRoutes");
 // Connect Database
 connectDB();
 
+// Seed default pricing (insert-only — never overwrites admin edits)
+const Pricing = require("./models/Pricing");
+Pricing.updateOne(
+  { key: "default" },
+  {
+    $setOnInsert: {
+      ai: { base: 100, gstRate: 18 },
+      cibil: { base: 50, gstRate: 18 },
+      crif: { base: 50, gstRate: 18 },
+      experian: { base: 50, gstRate: 18 },
+      equifax: { base: 50, gstRate: 18 },
+      minRecharge: 100,
+      lowBalanceThreshold: 500,
+    },
+  },
+  { upsert: true },
+)
+  .then(() => console.log("[Pricing] default config ensured"))
+  .catch((err) => console.error("[Pricing] seed failed:", err.message));
+
 const app = express();
 
 // Middleware

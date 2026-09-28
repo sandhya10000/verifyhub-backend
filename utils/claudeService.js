@@ -8,6 +8,22 @@ const CreditReport = require('../models/creditReport');
 const { logStep } = require('./logger');
 const { renderCreditReport } = require('./reportRenderer');
 
+// Wallet debit helper — guarded + idempotent, never throws, so background
+// analysis delivery can never break because of a ledger problem.
+const debitAiPull = async (userId, analysisId) => {
+  try {
+    const { chargeForReport } = require('./wallet');
+    const charge = await chargeForReport(userId, analysisId, 'ai', 'AI');
+    if (!charge.ok) {
+      console.warn(`[wallet] AI charge skipped (${charge.reason}) for analysis ${analysisId}`);
+    } else {
+      console.log(`[wallet] charged ₹${charge.total} for AI analysis ${analysisId} (balance ₹${charge.balance})`);
+    }
+  } catch (err) {
+    console.error(`[wallet] AI charge error for analysis ${analysisId}:`, err.message);
+  }
+};
+
 
 // ---------------------------------------------------------------------------
 // Validate critical env vars at startup so problems are visible immediately
@@ -735,6 +751,9 @@ async function processAnalysisInBackground(analysisId) {
       logStep(analysisId, 'Result Persistence Complete', { htmlStored: !!htmlReport });
       console.log(`[claudeService:${analysisId}] Status -> completed (single-call path, HTML stored inline)`);
 
+      // Wallet debit (AI = ₹100 + GST) — post-success only
+      await debitAiPull(analysis.userId, analysisId);
+
       return;
     }
 
@@ -820,6 +839,9 @@ async function processAnalysisInBackground(analysisId) {
       htmlStatus:     htmlReport ? 'completed' : 'failed',
     });
     console.log(`[claudeService:${analysisId}] Status -> completed (chunked path, HTML stored inline)`);
+
+    // Wallet debit (AI = ₹100 + GST) — post-success only
+    await debitAiPull(analysis.userId, analysisId);
 
   } catch (err) {
     console.error('!'.repeat(60));
