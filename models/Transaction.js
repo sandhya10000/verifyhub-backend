@@ -15,18 +15,33 @@ const transactionSchema = new mongoose.Schema(
     },
 
     // Set on report-charge debits — unique so a report can never be
-    // charged twice (recharge rows leave this null; the sparse index
-    // allows unlimited nulls).
+    // charged twice. NO default: the field must stay ABSENT (not null)
+    // on recharge rows, because even sparse indexes reject duplicate
+    // explicit nulls. Only debits set this field.
     reportId: {
       type: mongoose.Schema.Types.ObjectId,
-      default: null,
     },
 
     // Pricing tier active at transaction time (recharges: tier purchased;
     // debits: tier charged at). Powers per-tier revenue reporting.
     planTier: {
       type: String,
-      enum: ["starter", "growth", "pro", "enterprise"],
+      enum: ["startup", "starter", "growth", "pro", "enterprise"],
+      default: null,
+    },
+
+    // Plan chosen at order creation (recharges only). Verify re-reads this
+    // so the paid plan survives even if pricing changes mid-checkout.
+    planSelected: {
+      type: String,
+      default: null,
+    },
+
+    // Plan fee locked at order time (recharges only). Verify honors this
+    // instead of re-reading live pricing, so a mid-checkout reprice can
+    // neither strand paid money nor grant a below-price plan.
+    planFee: {
+      type: Number,
       default: null,
     },
 
@@ -64,7 +79,7 @@ const transactionSchema = new mongoose.Schema(
 
     purpose: {
       type: String,
-      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE"],
+      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE", "PLAN_PURCHASE"],
       required: true,
     },
 

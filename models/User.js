@@ -65,8 +65,8 @@ const userSchema = new mongoose.Schema(
     // auto-downgrades.
     activePlan: {
       type: String,
-      enum: ["starter", "growth", "pro", "enterprise"],
-      default: "starter",
+      enum: ["startup", "starter", "growth", "pro", "enterprise"],
+      default: null,
     },
     isActive: {
       type: Boolean,

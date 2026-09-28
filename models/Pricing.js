@@ -31,6 +31,10 @@ const pricingSchema = new mongoose.Schema(
   {
     key: { type: String, default: "default", unique: true },
     plans: {
+      startup: {
+        type: tierPricesSchema,
+        default: { recharge: 200, cibil: 120, experian: 95, crif: 95, equifax: 85, cibilFailed: 90 },
+      },
       starter: {
         type: tierPricesSchema,
         default: { recharge: 1000, cibil: 110, experian: 85, crif: 85, equifax: 80, cibilFailed: 80 },
@@ -50,22 +54,25 @@ const pricingSchema = new mongoose.Schema(
     },
     ai: { type: productPriceSchema, default: { base: 100, gstRate: 18 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
-    minRecharge: { type: Number, default: 100, min: 0 },
+    minRecharge: { type: Number, default: 200, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
   },
   { timestamps: true },
 );
 
-const PLAN_KEYS = ["starter", "growth", "pro", "enterprise"];
+const PLAN_KEYS = ["startup", "starter", "growth", "pro", "enterprise"];
 const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax"];
 
-// Recharge amount -> plan tier (floor-mapped, sticky upgrades)
+// Recharge amount -> plan tier (floor-mapped, sticky upgrades).
+// Amounts below the cheapest plan return null (rejected upstream).
 function tierForAmount(amount) {
   const amt = Number(amount) || 0;
   if (amt >= 25000) return "enterprise";
   if (amt >= 10000) return "pro";
   if (amt >= 5000) return "growth";
-  return "starter";
+  if (amt >= 1000) return "starter";
+  if (amt >= 200) return "startup";
+  return null;
 }
 
 function totalsFor(base, gstRate) {
