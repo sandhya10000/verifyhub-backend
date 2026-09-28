@@ -123,6 +123,8 @@ const login = async (req, res) => {
     if (user.isActive === false) {
       return res.status(403).json({ success: false, code: "ACCOUNT_DEACTIVATED", message: "Your account has been deactivated. Please contact support." });
     }
+    // Stamp last login (fire-and-forget — never blocks the response).
+    User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } }).exec().catch(() => {});
     res.json({
       success: true,
       token: generateToken(user._id),

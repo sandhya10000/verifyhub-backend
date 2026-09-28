@@ -569,3 +569,5 @@
 [ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:10.477Z] STEP="Frontend Polling Status" elapsed_step=3298ms elapsed_total=36519ms details={"status":"processing","htmlStatus":null}
 [ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:10.555Z] STEP="Result Persistence Complete" elapsed_step=78ms elapsed_total=36597ms details={"htmlStored":true}
 [ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:14.501Z] STEP="Frontend Polling Status" elapsed_step=3946ms elapsed_total=40543ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T18:47:42.595Z] STEP="User Download Click Received" elapsed_step=0ms elapsed_total=0ms
+[ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T18:47:42.770Z] STEP="Download Serving htmlReport" elapsed_step=175ms elapsed_total=175ms

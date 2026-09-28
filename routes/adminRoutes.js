@@ -17,6 +17,10 @@ router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCredi
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
+router.get('/partners/:id', auth, isAdmin, adminController.getPartnerById);
+router.patch('/partners/:id', auth, isAdmin, adminController.updatePartner);
+router.get('/partners/:id/reports', auth, isAdmin, adminController.getPartnerReports);
+router.get('/partners/:id/transactions', auth, isAdmin, adminController.getPartnerTransactions);
 router.get('/transactions', auth, isAdmin, adminController.getAllTransactions);
 router.get('/pricing', auth, isAdmin, adminController.getPricing);
 router.patch('/pricing', auth, isAdmin, adminController.updatePricing);

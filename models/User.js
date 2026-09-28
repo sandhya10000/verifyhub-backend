@@ -72,6 +72,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Last successful login (stamped by authController; null until first login after this field shipped).
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
     // Last low-balance alert sent (cron dedupes on this + interval).
     lowBalanceLastAlertAt: {
       type: Date,
