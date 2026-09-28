@@ -297,6 +297,124 @@ exports.getAllPartners = async (req, res) => {
 const Pricing = require("../models/Pricing");
 const { PLAN_KEYS, PRODUCT_KEYS } = require("../models/Pricing");
 const { resetPricingCache } = require("../utils/wallet");
+const { sendMail } = require("../utils/sendMail");
+
+// PATCH /api/admin/partners/:id/status { isActive: boolean }
+// Deactivate/reactivate a partner. Never targets admins or self.
+exports.setPartnerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ success: false, message: "isActive (boolean) is required" });
+    }
+    if (String(req.user?._id) === String(id)) {
+      return res.status(400).json({ success: false, message: "You cannot change your own status" });
+    }
+    const target = await User.findById(id).select("role isActive").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Admin accounts cannot be deactivated" });
+    }
+    if (target.isActive === isActive) {
+      const full = await User.findById(id).select("-password").lean();
+      return res.status(200).json({ success: true, duplicate: true, data: full });
+    }
+    const updated = await User.findByIdAndUpdate(id, { $set: { isActive } }, { new: true }).select("-password").lean();
+
+    // Fire-and-forget status mail. Never blocks the admin response.
+    if (updated?.email) {
+      const active = isActive === true;
+      sendMail({
+        to: updated.email,
+        subject: active ? "VerifyHub: your account is reactivated" : "VerifyHub: your account is suspended",
+        html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #eee;border-radius:12px;padding:24px">
+          <h2 style="margin:0 0 8px">VerifyHub — Account ${active ? "reactivated" : "suspended"}</h2>
+          <p style="color:#42506b">Hi ${updated.name || "Partner"},</p>
+          <p style="color:#42506b">${active
+            ? "Good news — your account is active again. You can log in and continue pulling reports."
+            : "Your account has been suspended by the admin. You can no longer log in or pull reports. Please contact support if you believe this is a mistake."}</p>
+        </div>`,
+        text: active
+          ? `Hi ${updated.name || "Partner"}, your VerifyHub account is active again.`
+          : `Hi ${updated.name || "Partner"}, your VerifyHub account has been suspended. Please contact support.`,
+      }).catch((e) => console.error("[mail] partner status mail failed:", e.message));
+    }
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error("setPartnerStatus Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not update partner status" });
+  }
+};
+
+// POST /api/admin/partners/:id/add-funds { amount, note? }
+// Admin wallet top-up: no GST, credited amount is final. Ledgered as
+// ADD_FUNDS / ADMIN and notified to the partner by mail.
+exports.addFundsToPartner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+    const note = String(req.body?.note || "").trim().slice(0, 200);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: "A positive amount is required" });
+    }
+    if (amount > 1000000) {
+      return res.status(400).json({ success: false, message: "Amount exceeds the ₹10,00,000 per-top-up limit" });
+    }
+    const target = await User.findById(id).select("role name email partner_id walletBalance").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Cannot top up an admin account" });
+    }
+
+    const updated = await User.findByIdAndUpdate(id, { $inc: { walletBalance: amount } }, { new: true }).select("-password").lean();
+    if (!updated) return res.status(404).json({ success: false, message: "Partner not found" });
+
+    const txn = await Transaction.create({
+      userId: updated._id,
+      orderId: `admin_${String(updated._id)}_${Date.now()}`,
+      amount,
+      gstAmount: 0,
+      totalAmount: amount,
+      currency: "INR",
+      type: "CREDIT",
+      purpose: "ADD_FUNDS",
+      status: "SUCCESS",
+      gateway: "ADMIN",
+      description: note ? `Admin top-up by ${req.user?.email || "admin"}: ${note}` : `Admin top-up by ${req.user?.email || "admin"}`,
+    });
+
+    // Balance healthy again? Clear any stale low-balance flag.
+    try {
+      const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
+      if ((updated.walletBalance ?? 0) >= (pricing?.lowBalanceThreshold ?? 500)) {
+        await User.updateOne({ _id: updated._id }, { $set: { lowBalanceLastAlertAt: null } });
+      }
+    } catch { /* non-fatal */ }
+
+    // Fire-and-forget partner notification. Never blocks the response.
+    if (updated.email) {
+      const { sendAdminTopupMail } = require("../utils/sendMail");
+      sendAdminTopupMail(updated.email, {
+        name: updated.name, amount,
+        prevBalance: target.walletBalance ?? 0,
+        walletBalance: updated.walletBalance,
+        note: note || null,
+        transactionId: String(txn._id),
+        partnerId: updated.partner_id, date: new Date(),
+      }).catch((e) => console.error("[mail] admin top-up mail failed:", e.message));
+    }
+
+    res.json({
+      success: true,
+      data: { walletBalance: updated.walletBalance, prevBalance: target.walletBalance ?? 0, credited: amount, transactionId: txn._id },
+    });
+  } catch (err) {
+    console.error("addFundsToPartner Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not add funds" });
+  }
+};
 
 exports.getPricing = async (req, res) => {
   try {

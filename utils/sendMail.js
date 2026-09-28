@@ -249,7 +249,37 @@ async function sendLowBalanceMail(to, { name, balance, threshold }) {
   });
 }
 
+// --- Admin top-up (no GST: credited amount is final) ---
+
+function adminTopupInvoiceHtml(d) {
+  const invoiceRows = [
+    row("Admin wallet top-up (no GST)", inr(d.amount)),
+    row("Previous balance", inr(d.prevBalance)),
+  ].join("");
+  const totals = [totalRow("New wallet balance", inr(d.walletBalance), true)].join("");
+  const meta = [
+    metaRow("Ledger Txn ID", d.transactionId || "—"),
+    metaRow("Date (IST)", istDate(d.date)),
+    ...(d.note ? [metaRow("Note", d.note)] : []),
+    ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
+  ].join("");
+  const intro = `The admin has added <b>${esc(inr(d.amount))}</b> to your wallet. No GST applies — the full amount is credited and ready to use.`;
+  return receiptShell({
+    title: "Wallet Top-up Receipt", preheader: `${inr(d.amount)} added · Balance ${inr(d.walletBalance)}`,
+    name: d.name, introHtml: intro, invoiceRowsHtml: invoiceRows, totalsHtml: totals, metaRowsHtml: meta,
+  });
+}
+
+async function sendAdminTopupMail(to, d) {
+  return sendMail({
+    to,
+    subject: `VerifyHub: ${inr(d.amount)} added to your wallet`,
+    html: adminTopupInvoiceHtml(d),
+    text: `Hi ${d.name || "Partner"}, ${inr(d.amount)} was added to your VerifyHub wallet by the admin. Previous balance ${inr(d.prevBalance)}, new balance ${inr(d.walletBalance)}.`,
+  });
+}
+
 module.exports = {
-  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail,
-  getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml,
+  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail,
+  getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml,
 };

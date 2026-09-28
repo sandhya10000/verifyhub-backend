@@ -118,6 +118,11 @@ const login = async (req, res) => {
     if (!user) return res.status(500).json({ success: false, message: "Invalid Email or Password" });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ success: false, message: "Invalid Email or Password" });
+    // Block suspended partners at login (checked after credential match
+    // so wrong-password attempts don't leak account status).
+    if (user.isActive === false) {
+      return res.status(403).json({ success: false, code: "ACCOUNT_DEACTIVATED", message: "Your account has been deactivated. Please contact support." });
+    }
     res.json({
       success: true,
       token: generateToken(user._id),
