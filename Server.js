@@ -22,28 +22,45 @@ const paymentRoutes = require("./routes/payment");
 const aiAnalyzerRoutes = require("./routes/aiAnalyzerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
+const partnerRoutes = require("./routes/partnerRoutes");
 
 // Connect Database
 connectDB();
 
 // Seed default pricing (insert-only — never overwrites admin edits)
+// + one-way migration: older docs (e.g. the v1 flat-price shape without
+// `plans`) get the missing sections backfilled, existing values untouched.
 const Pricing = require("./models/Pricing");
-Pricing.updateOne(
-  { key: "default" },
-  {
-    $setOnInsert: {
-      ai: { base: 100, gstRate: 18 },
-      cibil: { base: 50, gstRate: 18 },
-      crif: { base: 50, gstRate: 18 },
-      experian: { base: 50, gstRate: 18 },
-      equifax: { base: 50, gstRate: 18 },
-      minRecharge: 100,
-      lowBalanceThreshold: 500,
-    },
+const PRICING_DEFAULTS = {
+  plans: {
+    starter: { recharge: 1000, cibil: 110, experian: 85, crif: 85, equifax: 80, cibilFailed: 80 },
+    growth: { recharge: 5000, cibil: 90, experian: 65, crif: 65, equifax: 60, cibilFailed: 70 },
+    pro: { recharge: 10000, cibil: 80, experian: 50, crif: 55, equifax: 50, cibilFailed: 60 },
+    enterprise: { recharge: 25000, cibil: 65, experian: 35, crif: 45, equifax: 40, cibilFailed: 50 },
   },
-  { upsert: true },
-)
-  .then(() => console.log("[Pricing] default config ensured"))
+  ai: { base: 100, gstRate: 18 },
+  otherFailedCharge: { base: 30, gstRate: 0 },
+  minRecharge: 100,
+  lowBalanceThreshold: 500,
+};
+Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upsert: true })
+  .then(async () => {
+    // Backfill sections missing from pre-existing docs (v1 -> v2)
+    const doc = await Pricing.findOne({ key: "default" }).lean();
+    if (doc) {
+      const missing = {};
+      for (const [k, v] of Object.entries(PRICING_DEFAULTS)) {
+        if (doc[k] === undefined || doc[k] === null) missing[k] = v;
+      }
+      // v1 docs stored flat per-product prices (ai/cibil/...) with no plans —
+      // keep them untouched; just ensure the v2 sections exist.
+      if (Object.keys(missing).length > 0) {
+        await Pricing.updateOne({ key: "default" }, { $set: missing });
+        console.log("[Pricing] migrated missing sections:", Object.keys(missing).join(", "));
+      }
+    }
+    console.log("[Pricing] default config ensured");
+  })
   .catch((err) => console.error("[Pricing] seed failed:", err.message));
 
 const app = express();
@@ -106,6 +123,7 @@ app.use("/api", paymentRoutes);
 app.use("/api/ai-analyzer", aiAnalyzerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
+app.use("/api/partner", partnerRoutes);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

@@ -503,3 +503,24 @@
 [ANALYSIS 6aba164eb0f1f7f179993aa2] [2026-09-28T07:25:30.025Z] STEP="Frontend Polling Status" elapsed_step=192ms elapsed_total=27175ms details={"status":"processing","htmlStatus":null}
 [ANALYSIS 6aba164eb0f1f7f179993aa2] [2026-09-28T07:25:30.099Z] STEP="Result Persistence Complete" elapsed_step=74ms elapsed_total=27249ms details={"htmlStored":true}
 [ANALYSIS 6aba164eb0f1f7f179993aa2] [2026-09-28T07:25:33.123Z] STEP="Frontend Polling Status" elapsed_step=3024ms elapsed_total=30273ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.197Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6ab58f24446e2bb39afef6a0.pdf","sizeBytes":339867}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.199Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6aba3c2f27b079f3e6b185bc"}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.203Z] STEP="Trigger Background Processing" elapsed_step=4ms elapsed_total=6ms
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.287Z] STEP="File Parsing Start" elapsed_step=84ms elapsed_total=90ms
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.369Z] STEP="File Parsing Complete" elapsed_step=82ms elapsed_total=172ms details={"mediaType":"application/pdf","fileSizeKB":"331.9","pageCount":4}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:39.377Z] STEP="Analysis API Call Start" elapsed_step=8ms elapsed_total=180ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:42.324Z] STEP="Frontend Polling Status" elapsed_step=2947ms elapsed_total=3127ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:45.316Z] STEP="Frontend Polling Status" elapsed_step=2992ms elapsed_total=6119ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:48.312Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=9115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:51.312Z] STEP="Frontend Polling Status" elapsed_step=3000ms elapsed_total=12115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:54.318Z] STEP="Frontend Polling Status" elapsed_step=3006ms elapsed_total=15121ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:06:57.312Z] STEP="Frontend Polling Status" elapsed_step=2994ms elapsed_total=18115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:00.321Z] STEP="Frontend Polling Status" elapsed_step=3009ms elapsed_total=21124ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:03.312Z] STEP="Frontend Polling Status" elapsed_step=2991ms elapsed_total=24115ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.318Z] STEP="Frontend Polling Status" elapsed_step=3006ms elapsed_total=27121ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.355Z] STEP="Analysis API Call Complete" elapsed_step=37ms elapsed_total=27158ms details={"usage":{"input_tokens":11607,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3231,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.359Z] STEP="HTML Template Render Start" elapsed_step=4ms elapsed_total=27162ms
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.395Z] STEP="HTML Template Render Complete" elapsed_step=36ms elapsed_total=27198ms details={"durationMs":35,"lengthChars":178730}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.401Z] STEP="Result Persistence Start" elapsed_step=6ms elapsed_total=27204ms
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:06.634Z] STEP="Result Persistence Complete" elapsed_step=233ms elapsed_total=27437ms details={"htmlStored":true}
+[ANALYSIS 6aba3c2f27b079f3e6b185bc] [2026-09-28T10:07:09.437Z] STEP="Frontend Polling Status" elapsed_step=2803ms elapsed_total=30240ms details={"status":"completed","htmlStatus":"completed"}

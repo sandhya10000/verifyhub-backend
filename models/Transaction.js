@@ -15,7 +15,7 @@ const transactionSchema = new mongoose.Schema(
     },
 
     // Set on report-charge debits — unique so a report can never be
-    // charged twice (recharge rows leave this null; sparse index
+    // charged twice (recharge rows leave this null; the sparse index
     // allows unlimited nulls).
     reportId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -32,7 +32,7 @@ const transactionSchema = new mongoose.Schema(
       required: true,
     },
 
-    // GST split (all ex-GST in `amount`; total = amount + gstAmount)
+    // GST split (ex-GST value in `amount`; total = amount + gstAmount)
     gstAmount: {
       type: Number,
       default: 0,
@@ -56,7 +56,7 @@ const transactionSchema = new mongoose.Schema(
 
     purpose: {
       type: String,
-      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "REFUND", "REPORT_CHARGE"],
+      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE"],
       required: true,
     },
 

@@ -218,3 +218,62 @@ exports.getAllPartners = async (req, res) => {
     res.status(500).json({ success: false, message: 'Could not fetch partners' });
   }
 };
+
+const Pricing = require("../models/Pricing");
+const { PLAN_KEYS, PRODUCT_KEYS } = require("../models/Pricing");
+const { resetPricingCache } = require("../utils/wallet");
+
+exports.getPricing = async (req, res) => {
+  try {
+    const pricing = await Pricing.findOne({ key: "default" }).lean();
+    if (!pricing) return res.status(404).json({ success: false, message: "Pricing not configured" });
+    res.json({ success: true, data: pricing });
+  } catch (err) {
+    console.error("getPricing Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch pricing" });
+  }
+};
+
+// PATCH /api/admin/pricing — whitelisted matrix edits only.
+// Body may contain any subset of: plans.{starter,growth,pro,enterprise}.{recharge,cibil,experian,crif,equifax,cibilFailed},
+// ai.{base,gstRate}, otherFailedCharge.{base,gstRate}, minRecharge, lowBalanceThreshold.
+exports.updatePricing = async (req, res) => {
+  try {
+    const set = {};
+    const num = (v) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+
+    for (const plan of PLAN_KEYS) {
+      const row = req.body?.plans?.[plan];
+      if (row && typeof row === "object") {
+        for (const field of ["recharge", "cibil", "experian", "crif", "equifax", "cibilFailed"]) {
+          const n = num(row[field]);
+          if (n !== undefined && Number.isFinite(n) && n >= 0) set[`plans.${plan}.${field}`] = n;
+        }
+      }
+    }
+    for (const key of ["ai", "otherFailedCharge"]) {
+      const obj = req.body?.[key];
+      if (obj && typeof obj === "object") {
+        for (const field of ["base", "gstRate"]) {
+          const n = num(obj[field]);
+          if (n !== undefined && Number.isFinite(n) && n >= 0) set[`${key}.${field}`] = n;
+        }
+      }
+    }
+    for (const field of ["minRecharge", "lowBalanceThreshold"]) {
+      const n = num(req.body?.[field]);
+      if (n !== undefined && Number.isFinite(n) && n >= 0) set[field] = n;
+    }
+
+    if (Object.keys(set).length === 0) {
+      return res.status(400).json({ success: false, message: "No valid pricing fields provided" });
+    }
+
+    const pricing = await Pricing.findOneAndUpdate({ key: "default" }, { $set: set }, { new: true }).lean();
+    resetPricingCache(); // wallet quotes pick up the change within a minute at most
+    res.json({ success: true, data: pricing });
+  } catch (err) {
+    console.error("updatePricing Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not update pricing" });
+  }
+};

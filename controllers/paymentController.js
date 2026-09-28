@@ -176,11 +176,24 @@ const verifyPayment = async (req, res) => {
 
     // 7. Wallet recharge
     if (transaction.purpose === "WALLET_RECHARGE") {
+      // Plan tier from the recharge slab (floor-mapped). Sticky: a small
+      // top-up never downgrades an existing higher tier.
+      const { tierForAmount, PLAN_KEYS } = require("../models/Pricing");
+      const newPlan = tierForAmount(transaction.amount);
+      const current = await User.findById(transaction.userId).select("activePlan").lean();
+      const keepPlan =
+        current &&
+        PLAN_KEYS.indexOf(current.activePlan || "starter") >= PLAN_KEYS.indexOf(newPlan)
+          ? current.activePlan
+          : newPlan;
       const updatedUser = await User.findByIdAndUpdate(
         transaction.userId,
         {
           $inc: {
             walletBalance: transaction.amount,
+          },
+          $set: {
+            activePlan: keepPlan,
           },
         },
         {
@@ -200,6 +213,7 @@ const verifyPayment = async (req, res) => {
         message: "Wallet recharged successfully",
         transaction,
         walletBalance: updatedUser.walletBalance,
+        activePlan: updatedUser.activePlan,
       });
     }
 

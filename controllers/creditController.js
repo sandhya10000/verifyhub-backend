@@ -9,7 +9,7 @@ const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
 const generateExperianPdf = require("../services/experianPdf.service");
 const generateCrifPdf = require("../templates/generateCrifPdf");
-const { canAfford, chargeForReport } = require("../utils/wallet");
+const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
 
 // Wallet affordability gate — run after input validation, before any paid
 // bureau call. Sends 402 when the partner cannot cover one pull.
@@ -48,6 +48,27 @@ const debitReportPull = async (creditReport, productKey, bureauLabel) => {
     return charge;
   } catch (err) {
     console.error(`[wallet] charge error for ${bureauLabel} report ${creditReport._id}:`, err.message);
+    return { ok: false, reason: "error" };
+  }
+};
+
+// Post-failure debit — same guards as success. CIBIL is mismatch-gated
+// (matched inputs fail free); every other product bills the flat fallback.
+// Never throws; returns the charge result for response transparency.
+const debitFailedPull = async (creditReport, productKey, bureauLabel, mismatched = true) => {
+  if (!creditReport?._id || !creditReport?.userId) return { ok: false, reason: "no-report" };
+  try {
+    const charge = await chargeFailedReport(creditReport.userId, creditReport._id, productKey, bureauLabel, mismatched);
+    if (charge.free) {
+      console.log(`[wallet] ${bureauLabel} fail free (inputs matched) for report ${creditReport._id}`);
+    } else if (charge.ok) {
+      console.log(`[wallet] charged ₹${charge.total} ${bureauLabel} fail fee for report ${creditReport._id} (balance ₹${charge.balance})`);
+    } else {
+      console.warn(`[wallet] ${bureauLabel} fail charge skipped (${charge.reason}) for report ${creditReport._id}`);
+    }
+    return charge;
+  } catch (err) {
+    console.error(`[wallet] fail-charge error for ${bureauLabel} report ${creditReport._id}:`, err.message);
     return { ok: false, reason: "error" };
   }
 };
@@ -139,6 +160,11 @@ const CibilReportFromDigi = async (req, res) => {
     const cleanPan = String(pan).trim().toUpperCase();
 
     const name = `${cleanFirstName} ${cleanLastName}`;
+
+    // Mismatch signal for failure billing: partner-altered mobile vs the
+    // phone on their own account. (PAN has no DB reference to compare.)
+    const inputMismatched =
+      cleanMobile !== String(req.user?.phone || "").trim();
 
     // ============================================
     // STEP 5: CONSENT
@@ -336,6 +362,8 @@ const CibilReportFromDigi = async (req, res) => {
       // ==========================================
 
       if (apiError.code === "ECONNABORTED" || apiError.code === "ETIMEDOUT") {
+        // Bureau was hit (request left our server) — mismatch-gated fail fee
+        const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
         return res.status(504).json({
           success: false,
 
@@ -348,6 +376,8 @@ const CibilReportFromDigi = async (req, res) => {
           userId: creditReport.userId,
 
           status: creditReport.status,
+
+          failureCharge: failCharge.ok ? failCharge.total : 0,
         });
       }
 
@@ -375,6 +405,8 @@ const CibilReportFromDigi = async (req, res) => {
       // OTHER DIGI ERROR
       // ==========================================
 
+      // Bureau answered with an error — mismatch-gated fail fee
+      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
       return res.status(httpStatus || 502).json({
         success: false,
 
@@ -387,6 +419,8 @@ const CibilReportFromDigi = async (req, res) => {
         status: creditReport.status,
 
         error: digiError || apiError.message,
+
+        failureCharge: failCharge.ok ? failCharge.total : 0,
       });
     }
 
@@ -407,6 +441,8 @@ const CibilReportFromDigi = async (req, res) => {
 
       await creditReport.save();
 
+      // Empty bureau answer after a paid call — mismatch-gated fail fee
+      const emptyCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
       return res.status(502).json({
         success: false,
 
@@ -417,6 +453,8 @@ const CibilReportFromDigi = async (req, res) => {
         creditReportId: creditReport._id,
 
         userId: creditReport.userId,
+
+        failureCharge: emptyCharge.ok ? emptyCharge.total : 0,
       });
     }
 
@@ -550,6 +588,8 @@ const CibilReportFromDigi = async (req, res) => {
 
       await creditReport.save();
 
+      // Definitive bureau rejection — mismatch-gated fail fee
+      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL", inputMismatched);
       return res.status(400).json({
         success: false,
 
@@ -568,6 +608,8 @@ const CibilReportFromDigi = async (req, res) => {
         userId: creditReport.userId,
 
         status: creditReport.status,
+
+        failureCharge: failCharge.ok ? failCharge.total : 0,
       });
     }
 
@@ -1148,6 +1190,8 @@ const CrifReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Definitive bureau rejection — flat ₹30 fail fee
+      const crifFailCharge = await debitFailedPull(creditReport, "crif", "CRIF");
       return res.status(400).json({
         success: false,
         message: apiData?.message || "CRIF report request failed",
@@ -1157,6 +1201,8 @@ const CrifReport = async (req, res) => {
         status: creditReport.status,
 
         data: apiData,
+
+        failureCharge: crifFailCharge.ok ? crifFailCharge.total : 0,
       });
     }
 
@@ -1302,6 +1348,9 @@ const CrifReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
+      // Bureau answered with an error — flat ₹30 fail fee (no-response /
+      // internal errors below stay free)
+      const crifErrCharge = await debitFailedPull(creditReport, "crif", "CRIF");
       return res.status(error.response.status || 500).json({
         success: false,
 
@@ -1312,6 +1361,8 @@ const CrifReport = async (req, res) => {
         creditReportId: creditReport?._id || null,
 
         error: error.response.data,
+
+        failureCharge: crifErrCharge.ok ? crifErrCharge.total : 0,
       });
     }
 
@@ -1702,6 +1753,8 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Bureau gave no usable payload — flat ₹30 fail fee
+      const expFailCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
       return res.status(502).json({
         success: false,
         message: "Invalid response from Experian API",
@@ -1711,6 +1764,8 @@ const ExperianReport = async (req, res) => {
         status: creditReport.status,
 
         response: apiData,
+
+        failureCharge: expFailCharge.ok ? expFailCharge.total : 0,
       });
     }
 
@@ -1724,6 +1779,8 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Bureau verification rejected — flat ₹30 fail fee
+      const expVerifyCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
       return res.status(400).json({
         success: false,
 
@@ -1735,6 +1792,8 @@ const ExperianReport = async (req, res) => {
 
         error: verify.error || null,
         result: verify.result || null,
+
+        failureCharge: expVerifyCharge.ok ? expVerifyCharge.total : 0,
       });
     }
 
@@ -1836,6 +1895,8 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Data arrived from the bureau but our PDF step failed — flat ₹30 fail fee
+      const expPdfCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
       return res.status(500).json({
         success: false,
 
@@ -1845,6 +1906,8 @@ const ExperianReport = async (req, res) => {
         userId: creditReport.userId,
 
         status: creditReport.status,
+
+        failureCharge: expPdfCharge.ok ? expPdfCharge.total : 0,
       });
     }
 
@@ -1965,6 +2028,8 @@ const ExperianReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
+      // Bureau answered with an error — flat ₹30 fail fee
+      const expCatchCharge = await debitFailedPull(creditReport, "experian", "EXPERIAN");
       return res.status(error.response.status || 500).json({
         success: false,
 
@@ -1977,6 +2042,8 @@ const ExperianReport = async (req, res) => {
         userId: creditReport?.userId || null,
 
         error: error.response.data,
+
+        failureCharge: expCatchCharge.ok ? expCatchCharge.total : 0,
       });
     }
 
@@ -2230,6 +2297,8 @@ const EquifaxReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Definitive bureau rejection — flat ₹30 fail fee
+      const eqFailCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
       return res.status(400).json({
         success: false,
 
@@ -2242,6 +2311,8 @@ const EquifaxReport = async (req, res) => {
         status: creditReport.status,
 
         data: apiData,
+
+        failureCharge: eqFailCharge.ok ? eqFailCharge.total : 0,
       });
     }
 
@@ -2413,6 +2484,8 @@ const EquifaxReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
+      // Bureau answered with an error — flat ₹30 fail fee
+      const eqCatchCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
       return res.status(error.response.status || 500).json({
         success: false,
 
@@ -2425,6 +2498,8 @@ const EquifaxReport = async (req, res) => {
         userId: creditReport?.userId || null,
 
         error: error.response.data,
+
+        failureCharge: eqCatchCharge.ok ? eqCatchCharge.total : 0,
       });
     }
 

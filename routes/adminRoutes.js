@@ -9,6 +9,8 @@ router.get('/overview/summary', auth, isAdmin, adminController.getOverviewSummar
 router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalyses);
 router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCreditReports);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
+router.get('/pricing', auth, isAdmin, adminController.getPricing);
+router.patch('/pricing', auth, isAdmin, adminController.updatePricing);
 
 // Support Ticket routes
 router.get('/tickets/unread-count', auth, isAdmin, ticketController.getUnreadCount);

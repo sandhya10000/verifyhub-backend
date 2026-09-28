@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const Pricing = require("../models/Pricing");
-const { PRODUCT_KEYS, totalsFor } = require("../models/Pricing");
+const { PLAN_KEYS, quoteForProduct } = require("../models/Pricing");
 
 let cachedPricing = null;
 let cachedAt = 0;
@@ -10,17 +10,7 @@ const CACHE_MS = 60 * 1000;
 async function getPricing() {
   const now = Date.now();
   if (cachedPricing && now - cachedAt < CACHE_MS) return cachedPricing;
-  cachedPricing =
-    (await Pricing.findOne({ key: "default" }).lean()) ||
-    {
-      ai: { base: 100, gstRate: 18 },
-      cibil: { base: 50, gstRate: 18 },
-      crif: { base: 50, gstRate: 18 },
-      experian: { base: 50, gstRate: 18 },
-      equifax: { base: 50, gstRate: 18 },
-      minRecharge: 100,
-      lowBalanceThreshold: 500,
-    };
+  cachedPricing = (await Pricing.findOne({ key: "default" }).lean()) || null;
   cachedAt = now;
   return cachedPricing;
 }
@@ -30,30 +20,37 @@ function resetPricingCache() {
   cachedAt = 0;
 }
 
-// Effective charge for a product: { base, gstRate, gstAmount, total }
-async function quoteFor(productKey) {
+async function userTier(userId) {
+  const user = await User.findById(userId).select("activePlan walletBalance").lean();
+  const tier = user && PLAN_KEYS.includes(user.activePlan) ? user.activePlan : "starter";
+  return { user, tier };
+}
+
+// Effective charge for a product + tier + outcome.
+// kind: 'success' | 'fail'
+async function quoteFor(productKey, tier = "starter", kind = "success") {
   const pricing = await getPricing();
-  const key = String(productKey || "").toLowerCase();
-  if (!PRODUCT_KEYS.includes(key)) throw new Error(`Unknown product: ${productKey}`);
-  return totalsFor(pricing[key]);
+  if (!pricing) throw new Error("Pricing config missing");
+  if (!pricing.plans || !pricing.ai || !pricing.otherFailedCharge) {
+    throw new Error("Pricing config incomplete (pre-v2 doc) — restart backend to auto-migrate");
+  }
+  return quoteForProduct(pricing, productKey, tier, kind);
 }
 
 // Pre-check: can this user afford one pull of this product right now?
+// Tier is read from the user's activePlan (defaults to starter).
 async function canAfford(userId, productKey) {
-  const { total } = await quoteFor(productKey);
-  const user = await User.findById(userId).select("walletBalance").lean();
-  if (!user) return { ok: false, reason: "user-not-found", total, balance: 0 };
+  const { user, tier } = await userTier(userId);
+  if (!user) return { ok: false, reason: "user-not-found", total: 0, balance: 0, tier };
+  const { total } = await quoteFor(productKey, tier, "success");
   if ((user.walletBalance || 0) < total) {
-    return { ok: false, reason: "insufficient", total, balance: user.walletBalance || 0 };
+    return { ok: false, reason: "insufficient", total, balance: user.walletBalance || 0, tier };
   }
-  return { ok: true, total, balance: user.walletBalance };
+  return { ok: true, total, balance: user.walletBalance, tier };
 }
 
-// Charge one successful report. Idempotent per reportId; balance can
-// never go negative thanks to the $gte guard (safe under double
-// submits and parallel pulls).
-async function chargeForReport(userId, reportId, productKey, bureau) {
-  const { base, gstRate, gstAmount, total } = await quoteFor(productKey);
+async function applyDebit(userId, reportId, productLabel, quote, purpose) {
+  const { base, gstAmount, total } = quote;
 
   // Already charged? Treat as success without double-charging.
   const existing = await Transaction.findOne({ reportId }).select("_id").lean();
@@ -81,23 +78,21 @@ async function chargeForReport(userId, reportId, productKey, bureau) {
       totalAmount: total,
       currency: "INR",
       type: "DEBIT",
-      purpose: "REPORT_CHARGE",
+      purpose,
       status: "SUCCESS",
       gateway: "WALLET",
-      description: `${String(productKey).toUpperCase()} report charge${bureau ? ` (${bureau})` : ""}`,
+      description: productLabel,
     });
   } catch (err) {
     if (err && err.code === 11000) {
-      // Lost a race with a parallel charge for the same report.
-      // Money was already deducted once — refund this second debit.
+      // Lost a race with a parallel charge for the same report —
+      // refund this second debit.
       await User.updateOne({ _id: userId }, { $inc: { walletBalance: total } });
       const user = await User.findById(userId).select("walletBalance").lean();
       return { ok: true, duplicate: true, total, balance: user?.walletBalance ?? null };
     }
-    // Ledger write failed AFTER the debit — do not hide it. The money
-    // moved, so surface loudly for manual reconciliation.
     console.error("[wallet] DEBIT applied but ledger write failed:", {
-      userId: String(userId), reportId: String(reportId), productKey, total, error: err?.message,
+      userId: String(userId), reportId: String(reportId), productLabel, total, error: err?.message,
     });
     throw err;
   }
@@ -106,4 +101,34 @@ async function chargeForReport(userId, reportId, productKey, bureau) {
   return { ok: true, total, base, gstAmount, balance: user?.walletBalance ?? null };
 }
 
-module.exports = { getPricing, resetPricingCache, quoteFor, canAfford, chargeForReport };
+// Charge one successful report. Idempotent per reportId; balance can
+// never go negative thanks to the $gte guard.
+async function chargeForReport(userId, reportId, productKey, bureau) {
+  const { tier } = await userTier(userId);
+  const quote = await quoteFor(productKey, tier, "success");
+  return applyDebit(
+    userId, reportId,
+    `${String(productKey).toUpperCase()} report charge${bureau ? ` (${bureau})` : ""} · ${tier} plan`,
+    quote, "REPORT_CHARGE",
+  );
+}
+
+// Charge a failed pull.
+//  - CIBIL: free when inputs match history (mismatched=false); otherwise
+//    the tier's cibilFailed rate.
+//  - Every other product (incl. AI): flat otherFailedCharge, any tier.
+async function chargeFailedReport(userId, reportId, productKey, bureau, mismatched = true) {
+  const key = String(productKey || "").toLowerCase();
+  if (key === "cibil" && !mismatched) {
+    return { ok: true, free: true, total: 0 };
+  }
+  const { tier } = await userTier(userId);
+  const quote = await quoteFor(key, tier, "fail");
+  return applyDebit(
+    userId, reportId,
+    `${String(productKey).toUpperCase()} failed-report charge${bureau ? ` (${bureau})` : ""} · ${tier} plan`,
+    quote, "REPORT_FAIL_CHARGE",
+  );
+}
+
+module.exports = { getPricing, resetPricingCache, quoteFor, canAfford, chargeForReport, chargeFailedReport, userTier };

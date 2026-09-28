@@ -883,6 +883,17 @@ async function processAnalysisInBackground(analysisId) {
       errorMessage: userFacingMessage,
       debugError,
     });
+
+    // Flat ₹30 AI fail fee (any tier) — Claude was still called
+    try {
+      const { chargeFailedReport } = require('./wallet');
+      const charge = await chargeFailedReport(analysis.userId, analysisId, 'ai', 'AI', true);
+      if (charge.ok && !charge.free) {
+        console.log(`[wallet] charged ₹${charge.total} AI fail fee for analysis ${analysisId}`);
+      }
+    } catch (walletErr) {
+      console.error(`[wallet] AI fail-charge error for analysis ${analysisId}:`, walletErr.message);
+    }
   }
 }
 
