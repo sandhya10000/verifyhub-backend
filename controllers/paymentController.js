@@ -4,6 +4,7 @@ const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const Pricing = require("../models/Pricing");
 const { PLAN_KEYS, tierForAmount } = require("../models/Pricing");
+const { sendRechargeSuccessMail, sendPlanActivationMail } = require("../utils/sendMail");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -244,7 +245,7 @@ const verifyPayment = async (req, res) => {
       const pricing = await Pricing.findOne({ key: "default" }).lean();
       const rankOf = (t) => (t ? PLAN_KEYS.indexOf(t) : -1);
 
-      const current = await User.findById(transaction.userId).select("activePlan").lean();
+      const current = await User.findById(transaction.userId).select("activePlan email name partner_id").lean();
       if (!current) {
         return res.status(404).json({
           success: false,
@@ -300,6 +301,26 @@ const verifyPayment = async (req, res) => {
           success: false,
           message: "User not found",
         });
+      }
+
+      // Fire-and-forget receipt mail + clear stale low-balance flag
+      // once the wallet is healthy again. Never blocks the response.
+      if (current.email) {
+        sendRechargeSuccessMail(current.email, {
+          name: current.name, baseAmount: Number(transaction.amount),
+          gstAmount: Number(transaction.gstAmount) || 0,
+          totalPaid: Number(transaction.totalAmount),
+          walletCredit, plan, planFee,
+          walletBalance: updatedUser.walletBalance,
+          activePlan: updatedUser.activePlan,
+          paymentId: transaction.paymentId, orderId: transaction.orderId,
+          transactionId: String(transaction._id),
+          partnerId: current.partner_id, date: new Date(),
+        }).catch((e) => console.error("[mail] recharge receipt failed:", e.message));
+      }
+      const _threshold = pricing?.lowBalanceThreshold ?? 500;
+      if ((updatedUser.walletBalance ?? 0) >= _threshold) {
+        User.updateOne({ _id: transaction.userId }, { $set: { lowBalanceLastAlertAt: null } }).exec().catch(() => {});
       }
 
       return res.status(200).json({
@@ -422,7 +443,15 @@ async function activatePlan(req, res) {
       description: `${plan.toUpperCase()} plan activation from wallet`,
     });
 
-    const updated = await User.findById(userId).select("walletBalance activePlan").lean();
+    const updated = await User.findById(userId).select("walletBalance activePlan email name partner_id").lean();
+    if (updated?.email) {
+      sendPlanActivationMail(updated.email, {
+        name: updated.name, plan, planFee: fee,
+        walletBalance: updated.walletBalance,
+        transactionId: `plan_${String(userId)}`,
+        partnerId: updated.partner_id, date: new Date(),
+      }).catch((e) => console.error("[mail] plan activation receipt failed:", e.message));
+    }
     return res.status(200).json({
       success: true,
       message: `${plan} plan activated`,

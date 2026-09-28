@@ -72,6 +72,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Last low-balance alert sent (cron dedupes on this + interval).
+    lowBalanceLastAlertAt: {
+      type: Date,
+      default: null,
+    },
     // Tracks when this admin last opened the Support Tickets page.
     // Used to compute the "new tickets since last visit" badge count.
     supportLastSeenAt: {
