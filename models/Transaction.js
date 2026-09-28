@@ -22,6 +22,14 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Pricing tier active at transaction time (recharges: tier purchased;
+    // debits: tier charged at). Powers per-tier revenue reporting.
+    planTier: {
+      type: String,
+      enum: ["starter", "growth", "pro", "enterprise"],
+      default: null,
+    },
+
     paymentId: {
       type: String,
       default: null,

@@ -49,7 +49,7 @@ async function canAfford(userId, productKey) {
   return { ok: true, total, balance: user.walletBalance, tier };
 }
 
-async function applyDebit(userId, reportId, productLabel, quote, purpose) {
+async function applyDebit(userId, reportId, productLabel, quote, purpose, tier) {
   const { base, gstAmount, total } = quote;
 
   // Already charged? Treat as success without double-charging.
@@ -81,6 +81,7 @@ async function applyDebit(userId, reportId, productLabel, quote, purpose) {
       purpose,
       status: "SUCCESS",
       gateway: "WALLET",
+      planTier: tier || null,
       description: productLabel,
     });
   } catch (err) {
@@ -109,7 +110,7 @@ async function chargeForReport(userId, reportId, productKey, bureau) {
   return applyDebit(
     userId, reportId,
     `${String(productKey).toUpperCase()} report charge${bureau ? ` (${bureau})` : ""} · ${tier} plan`,
-    quote, "REPORT_CHARGE",
+    quote, "REPORT_CHARGE", tier,
   );
 }
 
@@ -127,7 +128,7 @@ async function chargeFailedReport(userId, reportId, productKey, bureau, mismatch
   return applyDebit(
     userId, reportId,
     `${String(productKey).toUpperCase()} failed-report charge${bureau ? ` (${bureau})` : ""} · ${tier} plan`,
-    quote, "REPORT_FAIL_CHARGE",
+    quote, "REPORT_FAIL_CHARGE", tier,
   );
 }
 

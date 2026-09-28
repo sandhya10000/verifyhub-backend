@@ -186,6 +186,9 @@ const verifyPayment = async (req, res) => {
         PLAN_KEYS.indexOf(current.activePlan || "starter") >= PLAN_KEYS.indexOf(newPlan)
           ? current.activePlan
           : newPlan;
+      // Stamp the purchased tier on the ledger row for per-tier revenue
+      transaction.planTier = newPlan;
+      await transaction.save();
       const updatedUser = await User.findByIdAndUpdate(
         transaction.userId,
         {
