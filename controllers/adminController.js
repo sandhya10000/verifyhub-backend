@@ -45,7 +45,7 @@ exports.getOverviewSummary = async (req, res) => {
       aiFailedMonth, crFailedMonth,
       totalWalletBalance,
       recentRecharge,
-      totalPartners, newPartnersWeek,
+      totalPartners, newPartnersWeek, newPartnersToday,
       collectedAgg, collectedPrevAgg,
       consumedAgg, consumedPrevAgg,
       failFeeAgg,
@@ -72,6 +72,7 @@ exports.getOverviewSummary = async (req, res) => {
       }).select('_id').lean(),
       User.countDocuments({ role: { $ne: 'admin' } }),
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: weekStart } }),
+      User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: todayStart, $lte: todayEnd } }),
       Transaction.aggregate([
         { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -117,6 +118,7 @@ exports.getOverviewSummary = async (req, res) => {
         hasRecentRecharge: !!recentRecharge,
         totalPartners,
         newPartnersWeek,
+        newPartnersToday,
         collectedMonth: collected,
         collectedDeltaPct: pctChange(collected, sum0(collectedPrevAgg)),
         consumedMonth: consumed,
