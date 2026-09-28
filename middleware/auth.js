@@ -25,6 +25,16 @@ const auth = async (req, res, next) => {
       });
     }
 
+    // Deactivated partners are blocked immediately on every request —
+    // existing tokens stop working as soon as the admin suspends them.
+    if (req.user.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_DEACTIVATED",
+        message: "Your account has been deactivated. Please contact support.",
+      });
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({

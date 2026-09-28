@@ -15,6 +15,8 @@ router.get('/overview/recent-activity', auth, isAdmin, adminController.getRecent
 router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalyses);
 router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCreditReports);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
+router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
+router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
 router.get('/transactions', auth, isAdmin, adminController.getAllTransactions);
 router.get('/pricing', auth, isAdmin, adminController.getPricing);
 router.patch('/pricing', auth, isAdmin, adminController.updatePricing);
