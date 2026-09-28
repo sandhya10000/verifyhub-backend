@@ -43,6 +43,7 @@ const PRICING_DEFAULTS = {
   otherFailedCharge: { base: 30, gstRate: 0 },
   minRecharge: 200,
   lowBalanceThreshold: 500,
+  lowBalanceAlertIntervalDays: 7,
 };
 Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upsert: true })
   .then(async () => {
@@ -145,6 +146,13 @@ app.use("/api/ai-analyzer", aiAnalyzerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/partner", partnerRoutes);
+
+// Low-balance mail sweep (cron-only): daily + once shortly after boot.
+// Per-user dedup (max once per lowBalanceAlertIntervalDays) lives in the service.
+const { runLowBalanceAlerts } = require("./services/lowBalanceAlert.service");
+const LOW_BALANCE_SWEEP_MS = Number(process.env.LOW_BALANCE_SWEEP_MS) || 24 * 60 * 60 * 1000;
+setTimeout(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] startup run failed:", e.message)), 30 * 1000);
+setInterval(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] sweep failed:", e.message)), LOW_BALANCE_SWEEP_MS);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

@@ -335,7 +335,7 @@ exports.updatePricing = async (req, res) => {
         }
       }
     }
-    for (const field of ["minRecharge", "lowBalanceThreshold"]) {
+    for (const field of ["minRecharge", "lowBalanceThreshold", "lowBalanceAlertIntervalDays"]) {
       const n = num(req.body?.[field]);
       if (n !== undefined && Number.isFinite(n) && n >= 0) set[field] = n;
     }
@@ -545,6 +545,8 @@ exports.getTopPartners = async (req, res) => {
 // GET /api/admin/overview/recent � latest pulls (with tier + charge) + tickets + low wallets
 exports.getRecentActivity = async (req, res) => {
   try {
+    const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
+    const lowAt = pricing?.lowBalanceThreshold ?? 500;
     const [recentCr, recentAi, recentTickets, lowWallets] = await Promise.all([
       CreditReport.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email activePlan").select("bureau score status createdAt userId name").lean(),
@@ -552,7 +554,7 @@ exports.getRecentActivity = async (req, res) => {
         .populate("userId", "name email activePlan").select("status createdAt userId fileName result.score").lean(),
       Ticket.find({}).sort({ createdAt: -1 }).limit(3)
         .populate("partnerId", "name email").select("category status createdAt partnerId").lean(),
-      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: 500 } })
+      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: lowAt } })
         .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance activePlan").lean(),
     ]);
     const chargeMap = {};

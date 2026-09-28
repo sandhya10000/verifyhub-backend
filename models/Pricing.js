@@ -56,6 +56,7 @@ const pricingSchema = new mongoose.Schema(
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
     minRecharge: { type: Number, default: 200, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
+    lowBalanceAlertIntervalDays: { type: Number, default: 7, min: 1 },
   },
   { timestamps: true },
 );
