@@ -249,7 +249,7 @@ exports.getPrefill = async (req, res) => {
     res.status(500).json({ success: false, message: "Could not fetch prefill data" });
   }
 };
-// GET /api/partner/pricing/plans — PUBLIC price list for the Plans page.
+// GET /api/partner/pricing/plans ï¿½ PUBLIC price list for the Plans page.
 // Computed totals only; the frontend never does money math. Falls back to
 // the founder table when the Pricing doc is missing.
 exports.getPublicPlans = async (req, res) => {
