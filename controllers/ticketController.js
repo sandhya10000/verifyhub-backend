@@ -8,15 +8,24 @@ const User = require('../models/User');
 exports.createTicket = async (req, res) => {
   try {
     const { category, reference, description } = req.body;
-    
+
     if (!category || !description) {
       return res.status(400).json({ success: false, message: 'Category and description are required' });
+    }
+
+    // Support ID: random six-digit number, unique across tickets.
+    // Frontend sends a pre-generated one; fall back to server-side
+    // generation (with retries) so direct API calls are covered too.
+    const makeSupportId = () => String(Math.floor(100000 + Math.random() * 900000));
+    let supportId = String(reference || '').trim() || makeSupportId();
+    for (let i = 0; i < 5 && await Ticket.exists({ reference: supportId }); i++) {
+      supportId = makeSupportId();
     }
 
     const newTicket = await Ticket.create({
       partnerId: req.user._id, // Assuming authMiddleware sets req.user
       category,
-      reference,
+      reference: supportId,
       description
     });
 

@@ -140,7 +140,9 @@ const getUserIdFilter = async (partnerSearch) => {
   const users = await User.find({
     $or: [
       { name: { $regex: partnerSearch, $options: 'i' } },
-      { email: { $regex: partnerSearch, $options: 'i' } }
+      { email: { $regex: partnerSearch, $options: 'i' } },
+      { partner_id: { $regex: partnerSearch, $options: 'i' } },
+      { phone: { $regex: partnerSearch, $options: 'i' } }
     ]
   }).select('_id');
   return users.map(u => u._id);
@@ -225,6 +227,65 @@ exports.getAllCreditReports = async (req, res) => {
   } catch (err) {
     console.error('getAllCreditReports Admin Error:', err);
     res.status(500).json({ success: false, message: 'Could not fetch credit reports' });
+  }
+};
+
+// GET /api/admin/reports/failed-reports?page&limit&bureau&partnerSearch&startDate&endDate
+// Credit bureau pulls with status=Failed. Returns date/time, partnerId,
+// report type, bureau and human-readable failure reason.
+exports.getFailedCreditReports = async (req, res) => {
+  try {
+    const { page = 1, limit = 50, startDate, endDate, partnerSearch, bureau } = req.query;
+
+    const query = { status: 'Failed' };
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    if (bureau && bureau !== 'All') {
+      query.bureau = bureau.toUpperCase();
+    }
+
+    if (partnerSearch) {
+      const userIds = await getUserIdFilter(partnerSearch);
+      query.userId = { $in: userIds };
+    }
+
+    const perPage = Math.min(parseInt(limit, 10) || 50, 100);
+    const total = await CreditReport.countDocuments(query);
+    const rows = await CreditReport.find(query)
+      .populate('userId', 'name email partner_id phone')
+      .sort({ createdAt: -1 })
+      .skip((parseInt(page, 10) - 1) * perPage)
+      .limit(perPage)
+      .lean();
+
+    // Repair: legacy docs with missing reason OR a stored raw JSON dump
+    // get a clean human message derived from reportData.error.
+    const { deriveFromReport, looksLikeJson } = require('../utils/failureReason');
+    const data = rows.map((r) => {
+      if (r.failureReason && !looksLikeJson(r.failureReason)) {
+        const { reportData, ...rest } = r;
+        return rest;
+      }
+      const d = deriveFromReport(r);
+      const { reportData, ...rest } = r;
+      return { ...rest, failureReason: d.failureReason, failureCategory: d.failureCategory, errorCode: d.errorCode };
+    });
+
+    res.json({
+      success: true,
+      data,
+      total,
+      page: parseInt(page, 10),
+      pages: Math.ceil(total / perPage)
+    });
+  } catch (err) {
+    console.error('getFailedCreditReports Admin Error:', err);
+    res.status(500).json({ success: false, message: 'Could not fetch failed reports' });
   }
 };
 

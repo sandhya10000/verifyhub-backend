@@ -131,10 +131,66 @@ const creditReportSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
+    // =========================
+    // FAILURE DETAILS (failed bureau pulls)
+    // =========================
+    failureReason: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    failureCategory: {
+      type: String,
+      enum: [
+        "BUREAU_REJECT",
+        "VALIDATION",
+        "TIMEOUT",
+        "AUTH_CONFIG",
+        "NETWORK",
+        "EMPTY_RESPONSE",
+        "UNKNOWN",
+      ],
+      default: null,
+    },
+    errorCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    failedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+creditReportSchema.index({ status: 1, bureau: 1, createdAt: -1 });
+creditReportSchema.index({ userId: 1, status: 1 });
+
+// Auto-fill failure fields on save: new failures and legacy docs that only
+// have reportData.error get a readable reason without touching controllers.
+creditReportSchema.pre("save", function () {
+  if (this.status === "Failed") {
+    if (!this.failedAt) this.failedAt = new Date();
+    if (!this.failureReason) {
+      try {
+        const { classifyFailure } = require("../utils/failureReason");
+        const errPayload =
+          this.reportData?.error ?? this.reportData ?? this.remarks ?? null;
+        const c = classifyFailure(errPayload);
+        this.failureReason = c.failureReason;
+        if (!this.failureCategory) this.failureCategory = c.failureCategory;
+        if (!this.errorCode) this.errorCode = c.errorCode;
+      } catch {
+        if (!this.failureReason) this.failureReason = "Bureau request failed";
+        if (!this.failureCategory) this.failureCategory = "UNKNOWN";
+      }
+    }
+  }
+});
 
 module.exports = mongoose.model("CreditReport", creditReportSchema);
