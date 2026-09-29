@@ -96,7 +96,7 @@ const register = async (req, res) => {
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
     });
   } catch (error) {
     // Race-condition safety: unique index violation on email/phone
@@ -128,7 +128,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
