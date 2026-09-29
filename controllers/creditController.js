@@ -1836,7 +1836,7 @@ const EquifaxReport = async (req, res) => {
     }
 
     // Wallet gate (Equifax = ₹50 + GST) — before any paid bureau call
-    if (!(await affordOr402(req, res, "equifax"))) return;
+    // if (!(await affordOr402(req, res, "equifax"))) return;
 
     // ==========================================
     // 6. CLEAN DATA
