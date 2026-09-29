@@ -177,8 +177,8 @@ exports.getRecent = async (req, res) => {
         .select('bureau score status createdAt name').lean(),
       AIAnalysis.find({ userId }).sort({ createdAt: -1 }).limit(8)
         .select('status createdAt fileName result.score').lean(),
-      Transaction.find({ userId }).sort({ createdAt: -1 }).limit(5)
-        .select('type amount status purpose createdAt').lean(),
+      Transaction.find({ userId }).sort({ createdAt: -1 }).limit(15)
+        .select('type amount totalAmount status purpose createdAt').lean(),
       Ticket.find({ partnerId: userId }).sort({ createdAt: -1 }).limit(3)
         .select('category status createdAt').lean(),
     ]);
@@ -286,5 +286,98 @@ exports.getPublicPlans = async (req, res) => {
   } catch (err) {
     console.error("partner getPublicPlans Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch plans" });
+  }
+};
+
+// GET /api/partner/profile?range=lifetime|month|week — own user doc +
+// ranged money/report summary. Strictly scoped to the requester.
+exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId).select("-password").lean();
+    if (!user) return res.status(404).json({ success: false, message: "Partner not found" });
+
+    const range = ["month", "week"].includes(req.query.range) ? req.query.range : "lifetime";
+    const since = range === "month" ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      : range === "week" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) : null;
+    const ranged = since ? { createdAt: { $gte: since } } : {};
+
+    const [crCount, aiCount, sums, lastCr, lastAi] = await Promise.all([
+      CreditReport.countDocuments({ userId, ...ranged }),
+      AIAnalysis.countDocuments({ userId, ...ranged }),
+      Transaction.aggregate([
+        { $match: { userId, status: "SUCCESS", ...(since ? { createdAt: { $gte: since } } : {}) } },
+        {
+          $group: {
+            _id: null,
+            recharged: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            spent: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
+          },
+        },
+      ]),
+      CreditReport.findOne({ userId }).sort({ createdAt: -1 }).select("createdAt").lean(),
+      AIAnalysis.findOne({ userId }).sort({ createdAt: -1 }).select("createdAt").lean(),
+    ]);
+    const crDate = lastCr ? new Date(lastCr.createdAt) : null;
+    const aiDate = lastAi ? new Date(lastAi.createdAt) : null;
+    res.json({
+      success: true,
+      data: user,
+      summary: {
+        totalReports: crCount + aiCount,
+        creditReports: crCount,
+        aiAnalyses: aiCount,
+        totalRecharged: sums[0]?.recharged ?? 0,
+        totalSpent: sums[0]?.spent ?? 0,
+        lastReportDate: crDate && aiDate ? (crDate > aiDate ? crDate : aiDate) : (crDate || aiDate || null),
+        range,
+      },
+    });
+  } catch (err) {
+    console.error("partner getProfile Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch profile" });
+  }
+};
+
+// GET /api/partner/transactions?page&limit&purpose&type&status&startDate&endDate
+// Own money ledger with filters + summary. Strictly scoped to the requester.
+exports.getMyTransactions = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { page = 1, limit = 20, startDate, endDate, type, status, purpose } = req.query;
+    const perPage = Math.min(parseInt(limit, 10) || 20, 100);
+
+    const query = { userId };
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+    if (type && type !== "All") query.type = String(type).toUpperCase();
+    if (status && status !== "All") query.status = String(status).toUpperCase();
+    if (purpose && purpose !== "All") query.purpose = purpose;
+
+    const [total, rows, sums] = await Promise.all([
+      Transaction.countDocuments(query),
+      Transaction.find(query).sort({ createdAt: -1 })
+        .skip((parseInt(page, 10) - 1) * perPage).limit(perPage).select("-signature").lean(),
+      Transaction.aggregate([
+        { $match: { ...query, status: "SUCCESS" } },
+        {
+          $group: {
+            _id: null,
+            credited: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            debited: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
+          },
+        },
+      ]),
+    ]);
+    res.json({
+      success: true, data: rows, total, page: parseInt(page, 10), pages: Math.ceil(total / perPage),
+      summary: { credited: sums[0]?.credited ?? 0, debited: sums[0]?.debited ?? 0 },
+    });
+  } catch (err) {
+    console.error("partner getMyTransactions Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch transactions" });
   }
 };
