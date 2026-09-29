@@ -45,7 +45,7 @@ exports.getOverviewSummary = async (req, res) => {
       aiFailedMonth, crFailedMonth,
       totalWalletBalance,
       recentRecharge,
-      totalPartners, newPartnersWeek,
+      totalPartners, newPartnersWeek, newPartnersToday,
       collectedAgg, collectedPrevAgg,
       consumedAgg, consumedPrevAgg,
       failFeeAgg,
@@ -72,6 +72,7 @@ exports.getOverviewSummary = async (req, res) => {
       }).select('_id').lean(),
       User.countDocuments({ role: { $ne: 'admin' } }),
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: weekStart } }),
+      User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: todayStart, $lte: todayEnd } }),
       Transaction.aggregate([
         { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -117,6 +118,7 @@ exports.getOverviewSummary = async (req, res) => {
         hasRecentRecharge: !!recentRecharge,
         totalPartners,
         newPartnersWeek,
+        newPartnersToday,
         collectedMonth: collected,
         collectedDeltaPct: pctChange(collected, sum0(collectedPrevAgg)),
         consumedMonth: consumed,
@@ -295,6 +297,311 @@ exports.getAllPartners = async (req, res) => {
 const Pricing = require("../models/Pricing");
 const { PLAN_KEYS, PRODUCT_KEYS } = require("../models/Pricing");
 const { resetPricingCache } = require("../utils/wallet");
+const { sendMail } = require("../utils/sendMail");
+
+// PATCH /api/admin/partners/:id/status { isActive: boolean }
+// Deactivate/reactivate a partner. Never targets admins or self.
+exports.setPartnerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ success: false, message: "isActive (boolean) is required" });
+    }
+    if (String(req.user?._id) === String(id)) {
+      return res.status(400).json({ success: false, message: "You cannot change your own status" });
+    }
+    const target = await User.findById(id).select("role isActive").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Admin accounts cannot be deactivated" });
+    }
+    if (target.isActive === isActive) {
+      const full = await User.findById(id).select("-password").lean();
+      return res.status(200).json({ success: true, duplicate: true, data: full });
+    }
+    const updated = await User.findByIdAndUpdate(id, { $set: { isActive } }, { new: true }).select("-password").lean();
+
+    // Fire-and-forget status mail. Never blocks the admin response.
+    if (updated?.email) {
+      const active = isActive === true;
+      sendMail({
+        to: updated.email,
+        subject: active ? "VerifyHub: your account is reactivated" : "VerifyHub: your account is suspended",
+        html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #eee;border-radius:12px;padding:24px">
+          <h2 style="margin:0 0 8px">VerifyHub — Account ${active ? "reactivated" : "suspended"}</h2>
+          <p style="color:#42506b">Hi ${updated.name || "Partner"},</p>
+          <p style="color:#42506b">${active
+            ? "Good news — your account is active again. You can log in and continue pulling reports."
+            : "Your account has been suspended by the admin. You can no longer log in or pull reports. Please contact support if you believe this is a mistake."}</p>
+        </div>`,
+        text: active
+          ? `Hi ${updated.name || "Partner"}, your VerifyHub account is active again.`
+          : `Hi ${updated.name || "Partner"}, your VerifyHub account has been suspended. Please contact support.`,
+      }).catch((e) => console.error("[mail] partner status mail failed:", e.message));
+    }
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error("setPartnerStatus Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not update partner status" });
+  }
+};
+
+// POST /api/admin/partners/:id/add-funds { amount, note? }
+// Admin wallet top-up: no GST, credited amount is final. Ledgered as
+// ADD_FUNDS / ADMIN and notified to the partner by mail.
+exports.addFundsToPartner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+    const note = String(req.body?.note || "").trim().slice(0, 200);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: "A positive amount is required" });
+    }
+    if (amount > 1000000) {
+      return res.status(400).json({ success: false, message: "Amount exceeds the ₹10,00,000 per-top-up limit" });
+    }
+    const target = await User.findById(id).select("role name email partner_id walletBalance").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Cannot top up an admin account" });
+    }
+
+    const updated = await User.findByIdAndUpdate(id, { $inc: { walletBalance: amount } }, { new: true }).select("-password").lean();
+    if (!updated) return res.status(404).json({ success: false, message: "Partner not found" });
+
+    const txn = await Transaction.create({
+      userId: updated._id,
+      orderId: `admin_${String(updated._id)}_${Date.now()}`,
+      amount,
+      gstAmount: 0,
+      totalAmount: amount,
+      currency: "INR",
+      type: "CREDIT",
+      purpose: "ADD_FUNDS",
+      status: "SUCCESS",
+      gateway: "ADMIN",
+      description: note ? `Admin top-up by ${req.user?.email || "admin"}: ${note}` : `Admin top-up by ${req.user?.email || "admin"}`,
+    });
+
+    // Balance healthy again? Clear any stale low-balance flag.
+    try {
+      const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
+      if ((updated.walletBalance ?? 0) >= (pricing?.lowBalanceThreshold ?? 500)) {
+        await User.updateOne({ _id: updated._id }, { $set: { lowBalanceLastAlertAt: null } });
+      }
+    } catch { /* non-fatal */ }
+
+    // Fire-and-forget partner notification. Never blocks the response.
+    if (updated.email) {
+      const { sendAdminTopupMail } = require("../utils/sendMail");
+      sendAdminTopupMail(updated.email, {
+        name: updated.name, amount,
+        prevBalance: target.walletBalance ?? 0,
+        walletBalance: updated.walletBalance,
+        note: note || null,
+        transactionId: String(txn._id),
+        partnerId: updated.partner_id, date: new Date(),
+      }).catch((e) => console.error("[mail] admin top-up mail failed:", e.message));
+    }
+
+    res.json({
+      success: true,
+      data: { walletBalance: updated.walletBalance, prevBalance: target.walletBalance ?? 0, credited: amount, transactionId: txn._id },
+    });
+  } catch (err) {
+    console.error("addFundsToPartner Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not add funds" });
+  }
+};
+
+// PATCH /api/admin/partners/:id { name?, phone?, state?, city?, pincode? }
+// Admin edit of partner contact/profile fields. Never targets admins.
+exports.updatePartner = async (req, res) => {
+  try {
+    const target = await User.findById(req.params.id).select("role").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") return res.status(400).json({ success: false, message: "Not a partner account" });
+
+    const set = {};
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name || "").trim();
+      if (!name) return res.status(400).json({ success: false, field: "name", message: "Name cannot be empty" });
+      set.name = name;
+    }
+    if (req.body.phone !== undefined) {
+      const phone = String(req.body.phone || "").replace(/\D/g, "").slice(-10);
+      if (!/^\d{10}$/.test(phone)) return res.status(400).json({ success: false, field: "phone", message: "Phone must be 10 digits" });
+      set.phone = phone;
+    }
+    if (req.body.state !== undefined) {
+      const state = String(req.body.state || "").trim();
+      if (!state) return res.status(400).json({ success: false, field: "state", message: "State cannot be empty" });
+      set.state = state;
+    }
+    if (req.body.city !== undefined) {
+      const city = String(req.body.city || "").trim();
+      if (!city) return res.status(400).json({ success: false, field: "city", message: "City cannot be empty" });
+      set.city = city;
+    }
+    if (req.body.pincode !== undefined) {
+      const pincode = String(req.body.pincode || "").trim();
+      if (!/^\d{6}$/.test(pincode)) return res.status(400).json({ success: false, field: "pincode", message: "Pincode must be 6 digits" });
+      set.pincode = pincode;
+    }
+    if (Object.keys(set).length === 0) {
+      return res.status(400).json({ success: false, message: "No editable fields provided" });
+    }
+    const updated = await User.findByIdAndUpdate(req.params.id, { $set: set }, { new: true }).select("-password").lean();
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    if (err && err.code === 11000) {
+      const field = err.keyPattern?.phone ? "phone" : undefined;
+      return res.status(400).json({ success: false, field, message: "Phone number already registered to another partner." });
+    }
+    console.error("updatePartner Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not update partner" });
+  }
+};
+
+// GET /api/admin/partners/:id?range=lifetime|month|week — profile + summary for the detail page.
+// Wallet balance + profile fields are always current; counts/sums obey the range.
+exports.getPartnerById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password").lean();
+    if (!user) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (user.role === "admin") return res.status(400).json({ success: false, message: "Not a partner account" });
+
+    const range = ["month", "week"].includes(req.query.range) ? req.query.range : "lifetime";
+    const since = range === "month" ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      : range === "week" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) : null;
+    const ranged = since ? { createdAt: { $gte: since } } : {};
+
+    const [crCount, aiCount, sums, lastCr, lastAi] = await Promise.all([
+      CreditReport.countDocuments({ userId: user._id, ...ranged }),
+      AIAnalysis.countDocuments({ userId: user._id, ...ranged }),
+      Transaction.aggregate([
+        { $match: { userId: user._id, status: "SUCCESS", ...(since ? { createdAt: { $gte: since } } : {}) } },
+        {
+          $group: {
+            _id: null,
+            recharged: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            spent: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
+          },
+        },
+      ]),
+      CreditReport.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
+      AIAnalysis.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
+    ]);
+    const crDate = lastCr ? new Date(lastCr.createdAt) : null;
+    const aiDate = lastAi ? new Date(lastAi.createdAt) : null;
+    const summary = {
+      totalReports: crCount + aiCount,
+      creditReports: crCount,
+      aiAnalyses: aiCount,
+      totalRecharged: sums[0]?.recharged ?? 0,
+      totalSpent: sums[0]?.spent ?? 0,
+      lastReportDate: crDate && aiDate ? (crDate > aiDate ? crDate : aiDate) : (crDate || aiDate || null),
+      range,
+    };
+    res.json({ success: true, data: user, summary });
+  } catch (err) {
+    console.error("getPartnerById Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch partner" });
+  }
+};
+
+// GET /api/admin/partners/:id/reports?page&limit — merged credit + AI pulls, newest first (all statuses).
+exports.getPartnerReports = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const perPage = Math.min(parseInt(limit, 10) || 20, 100);
+    const skip = (parseInt(page, 10) - 1) * perPage;
+    const { id } = req.params;
+    const exists = await User.exists({ _id: id, role: { $ne: "admin" } });
+    if (!exists) return res.status(404).json({ success: false, message: "Partner not found" });
+
+    const [crTotal, aiTotal] = await Promise.all([
+      CreditReport.countDocuments({ userId: id }),
+      AIAnalysis.countDocuments({ userId: id }),
+    ]);
+    // Over-fetch each side so the merged page is correct without full-collection loads.
+    const [crs, ais] = await Promise.all([
+      CreditReport.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
+        .select("bureau score status reportType name createdAt localPath reportUrl").lean(),
+      AIAnalysis.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
+        .select("status fileName result createdAt").lean(),
+    ]);
+    const crIds = crs.map((r) => r._id);
+    const charges = crIds.length
+      ? await Transaction.find({ reportId: { $in: crIds } }).select("reportId totalAmount purpose").lean()
+      : [];
+    const chargeMap = {};
+    charges.forEach((c) => { chargeMap[String(c.reportId)] = c; });
+
+    const rows = [
+      ...crs.map((r) => ({
+        id: r._id, kind: "credit", bureau: r.bureau, customer: r.name,
+        score: r.score ?? null, status: r.status,
+        charge: chargeMap[String(r._id)]?.totalAmount ?? null,
+        hasFile: !!(r.localPath || r.reportUrl),
+        fileUrl: r.localPath || r.reportUrl || null,
+        createdAt: r.createdAt,
+      })),
+      ...ais.map((a) => ({
+        id: a._id, kind: "ai", bureau: "AI",
+        customer: (a.fileName || "").replace(/\.[^/.]+$/, "") || "—",
+        score: a.result?.score ?? null, status: a.status,
+        charge: null, hasFile: a.status === "completed",
+        fileUrl: null,
+        createdAt: a.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, perPage);
+
+    res.json({ success: true, data: rows, total: crTotal + aiTotal, page: parseInt(page, 10), pages: Math.ceil((crTotal + aiTotal) / perPage) });
+  } catch (err) {
+    console.error("getPartnerReports Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch partner reports" });
+  }
+};
+
+// GET /api/admin/partners/:id/transactions?page&limit — full payment ledger for one partner.
+exports.getPartnerTransactions = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const perPage = Math.min(parseInt(limit, 10) || 20, 100);
+    const { id } = req.params;
+    const mongoose = require("mongoose");
+    if (!mongoose.isValidObjectId(id)) return res.status(404).json({ success: false, message: "Partner not found" });
+    const uid = new mongoose.Types.ObjectId(id);
+    const exists = await User.exists({ _id: uid, role: { $ne: "admin" } });
+    if (!exists) return res.status(404).json({ success: false, message: "Partner not found" });
+
+    const [total, rows, sums] = await Promise.all([
+      Transaction.countDocuments({ userId: uid }),
+      Transaction.find({ userId: uid }).sort({ createdAt: -1 })
+        .skip((parseInt(page, 10) - 1) * perPage).limit(perPage).select("-signature").lean(),
+      Transaction.aggregate([
+        { $match: { userId: uid, status: "SUCCESS" } },
+        {
+          $group: {
+            _id: null,
+            credited: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            debited: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
+          },
+        },
+      ]),
+    ]);
+    res.json({
+      success: true, data: rows, total, page: parseInt(page, 10), pages: Math.ceil(total / perPage),
+      summary: { credited: sums[0]?.credited ?? 0, debited: sums[0]?.debited ?? 0 },
+    });
+  } catch (err) {
+    console.error("getPartnerTransactions Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch partner transactions" });
+  }
+};
 
 exports.getPricing = async (req, res) => {
   try {
@@ -333,7 +640,7 @@ exports.updatePricing = async (req, res) => {
         }
       }
     }
-    for (const field of ["minRecharge", "lowBalanceThreshold"]) {
+    for (const field of ["minRecharge", "lowBalanceThreshold", "lowBalanceAlertIntervalDays"]) {
       const n = num(req.body?.[field]);
       if (n !== undefined && Number.isFinite(n) && n >= 0) set[field] = n;
     }
@@ -417,7 +724,7 @@ exports.getPlanDistribution = async (req, res) => {
         { $group: { _id: { tier: "$planTier", type: "$type" }, total: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", "$totalAmount"] } } } },
       ]),
     ]);
-    const tiers = ["starter", "growth", "pro", "enterprise"];
+    const tiers = ["startup", "starter", "growth", "pro", "enterprise"];
     const pMap = Object.fromEntries(partners.map((p) => [p._id || "starter", p]));
     const collected = {}, consumed = {};
     money.forEach((m) => {
@@ -543,6 +850,8 @@ exports.getTopPartners = async (req, res) => {
 // GET /api/admin/overview/recent � latest pulls (with tier + charge) + tickets + low wallets
 exports.getRecentActivity = async (req, res) => {
   try {
+    const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
+    const lowAt = pricing?.lowBalanceThreshold ?? 500;
     const [recentCr, recentAi, recentTickets, lowWallets] = await Promise.all([
       CreditReport.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email activePlan").select("bureau score status createdAt userId name").lean(),
@@ -550,7 +859,7 @@ exports.getRecentActivity = async (req, res) => {
         .populate("userId", "name email activePlan").select("status createdAt userId fileName result.score").lean(),
       Ticket.find({}).sort({ createdAt: -1 }).limit(3)
         .populate("partnerId", "name email").select("category status createdAt partnerId").lean(),
-      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: 500 } })
+      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: lowAt } })
         .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance activePlan").lean(),
     ]);
     const chargeMap = {};

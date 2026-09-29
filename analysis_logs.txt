@@ -545,3 +545,29 @@
 [ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T10:41:09.977Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=28845ms
 [ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T10:41:10.184Z] STEP="Result Persistence Complete" elapsed_step=207ms elapsed_total=29052ms details={"htmlStored":true}
 [ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T10:41:12.374Z] STEP="Frontend Polling Status" elapsed_step=2190ms elapsed_total=31242ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:33.958Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"experian-6ab58f24446e2bb39afef6a0.pdf","sizeBytes":339867}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:34.000Z] STEP="DB Record Created" elapsed_step=42ms elapsed_total=42ms details={"analysisId":"6aba7559e5eb5019247b9a01"}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:34.005Z] STEP="Trigger Background Processing" elapsed_step=5ms elapsed_total=47ms
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:34.142Z] STEP="File Parsing Start" elapsed_step=137ms elapsed_total=184ms
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:34.258Z] STEP="File Parsing Complete" elapsed_step=116ms elapsed_total=300ms details={"mediaType":"application/pdf","fileSizeKB":"331.9","pageCount":4}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:34.282Z] STEP="Analysis API Call Start" elapsed_step=24ms elapsed_total=324ms details={"model":"claude-haiku-4-5-20251001"}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:37.196Z] STEP="Frontend Polling Status" elapsed_step=2914ms elapsed_total=3238ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:40.161Z] STEP="Frontend Polling Status" elapsed_step=2965ms elapsed_total=6203ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:43.772Z] STEP="Frontend Polling Status" elapsed_step=3611ms elapsed_total=9814ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:46.149Z] STEP="Frontend Polling Status" elapsed_step=2377ms elapsed_total=12191ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:49.161Z] STEP="Frontend Polling Status" elapsed_step=3012ms elapsed_total=15203ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:52.178Z] STEP="Frontend Polling Status" elapsed_step=3017ms elapsed_total=18220ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:55.181Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=21223ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:10:58.174Z] STEP="Frontend Polling Status" elapsed_step=2993ms elapsed_total=24216ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:01.172Z] STEP="Frontend Polling Status" elapsed_step=2998ms elapsed_total=27214ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:04.187Z] STEP="Frontend Polling Status" elapsed_step=3015ms elapsed_total=30229ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:04.429Z] STEP="Analysis API Call Complete" elapsed_step=242ms elapsed_total=30471ms details={"usage":{"input_tokens":11607,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3647,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:04.433Z] STEP="HTML Template Render Start" elapsed_step=4ms elapsed_total=30475ms
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:04.513Z] STEP="HTML Template Render Complete" elapsed_step=80ms elapsed_total=30555ms details={"durationMs":79,"lengthChars":178528}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:04.514Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=30556ms
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:07.179Z] STEP="Frontend Polling Status" elapsed_step=2665ms elapsed_total=33221ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:10.477Z] STEP="Frontend Polling Status" elapsed_step=3298ms elapsed_total=36519ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:10.555Z] STEP="Result Persistence Complete" elapsed_step=78ms elapsed_total=36597ms details={"htmlStored":true}
+[ANALYSIS 6aba7559e5eb5019247b9a01] [2026-09-28T14:11:14.501Z] STEP="Frontend Polling Status" elapsed_step=3946ms elapsed_total=40543ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T18:47:42.595Z] STEP="User Download Click Received" elapsed_step=0ms elapsed_total=0ms
+[ANALYSIS 6aba4429c3882b865f1577d3] [2026-09-28T18:47:42.770Z] STEP="Download Serving htmlReport" elapsed_step=175ms elapsed_total=175ms
