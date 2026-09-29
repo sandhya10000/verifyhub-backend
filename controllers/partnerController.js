@@ -49,7 +49,7 @@ exports.getSummary = async (req, res) => {
       CreditReport.countDocuments({ userId, status: 'Success', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
       AIAnalysis.countDocuments({ userId, status: 'failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
       CreditReport.countDocuments({ userId, status: 'Failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
-      User.findById(userId).select('walletBalance').lean(),
+      User.findById(userId).select('walletBalance activePlan').lean(),
       Transaction.aggregate([
         { $match: { userId: userId, type: 'DEBIT', status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd } } },
         // Fallback: older rows may store lowercase status
@@ -83,6 +83,7 @@ exports.getSummary = async (req, res) => {
         failedThisMonth,
         successRate: attempts > 0 ? Math.round((reportsThisMonth / attempts) * 100) : 100,
         walletBalance: me?.walletBalance ?? 0,
+        activePlan: me?.activePlan || null,
         spentThisMonth: spentAgg.length > 0 ? spentAgg[0].total : 0,
         lastRecharge,
         openTickets,

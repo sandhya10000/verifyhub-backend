@@ -44,8 +44,9 @@ const createWalletRechargeOrder = async (req, res) => {
     // First funding ever -> auto-assign by amount slab, client choice ignored,
     // plan fee deducted from the top-up.
     // Later top-ups -> PURE wallet credit by default. A plan may optionally
-    // ride along (chosen at checkout); otherwise plans are bought separately
-    // from wallet balance via /plan/activate. Downgrades always rejected.
+    // ride along (chosen at checkout, upgrades and downgrades both allowed);
+    // otherwise plans are bought separately from wallet balance via
+    // /plan/activate.
     const priorSuccess = await Transaction.exists({
       userId: user._id, purpose: "WALLET_RECHARGE", status: "SUCCESS",
     });
@@ -62,13 +63,6 @@ const createWalletRechargeOrder = async (req, res) => {
     } else if (requestedPlan) {
       if (!PLAN_KEYS.includes(requestedPlan)) {
         return res.status(400).json({ success: false, message: "Unknown plan selected" });
-      }
-      const rankOf = (t) => (t ? PLAN_KEYS.indexOf(t) : -1);
-      if (rankOf(requestedPlan) < rankOf(user.activePlan)) {
-        return res.status(400).json({
-          success: false,
-          message: "Plan downgrades are not allowed yet. Please choose your current plan or higher.",
-        });
       }
       plan = requestedPlan;
     }
@@ -243,7 +237,6 @@ const verifyPayment = async (req, res) => {
     // Re-derive defensively and never strand paid money.
     if (transaction.purpose === "WALLET_RECHARGE") {
       const pricing = await Pricing.findOne({ key: "default" }).lean();
-      const rankOf = (t) => (t ? PLAN_KEYS.indexOf(t) : -1);
 
       const current = await User.findById(transaction.userId).select("activePlan email name partner_id").lean();
       if (!current) {
@@ -264,12 +257,9 @@ const verifyPayment = async (req, res) => {
       if (!plan) planFee = 0;
       const walletCredit = Math.max(0, Number(transaction.amount) - planFee);
 
-      // Sticky, upgrades-only: a concurrent purchase may have raised the
-      // tier between order and verify — never move it down here. Pure
-      // top-ups never touch the tier at all.
-      const effectivePlan = plan
-        ? (rankOf(plan) >= rankOf(current.activePlan) ? plan : current.activePlan)
-        : (current.activePlan || null);
+      // The plan chosen at checkout wins (upgrades and downgrades both
+      // allowed). Pure top-ups never touch the tier at all.
+      const effectivePlan = plan || current.activePlan || null;
       // Stamp the tier on the ledger row for per-tier revenue (pure top-ups
       // attribute to the tier the partner currently holds)
       transaction.planTier = plan || current.activePlan || null;
@@ -371,8 +361,9 @@ module.exports = {
 
 // POST /api/plan/activate { plan }
 // Activates a plan by debiting its price from the existing wallet balance.
-// No Razorpay involved: top up first, then activate. Upgrades-only, and
-// re-buying the active plan is rejected. Atomic + idempotent per outcome.
+// No Razorpay involved: top up first, then activate. Upgrades and
+// downgrades are both allowed; re-buying the active plan is rejected.
+// Atomic + idempotent per outcome.
 async function activatePlan(req, res) {
   try {
     const { plan } = req.body;
@@ -387,15 +378,8 @@ async function activatePlan(req, res) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const rankOf = (t) => (t ? PLAN_KEYS.indexOf(t) : -1);
     if ((user.activePlan || null) === plan) {
       return res.status(400).json({ success: false, message: `You are already on the ${plan} plan` });
-    }
-    if (rankOf(plan) < rankOf(user.activePlan)) {
-      return res.status(400).json({
-        success: false,
-        message: "Plan downgrades are not allowed yet. Please choose your current plan or higher.",
-      });
     }
 
     const pricing = await Pricing.findOne({ key: "default" }).lean();
