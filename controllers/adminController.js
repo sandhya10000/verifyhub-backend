@@ -477,6 +477,84 @@ exports.addFundsToPartner = async (req, res) => {
   }
 };
 
+// POST /api/admin/partners/:id/deduct-funds { amount, note? }
+// Admin wallet deduction: no GST, debited amount is final. Never lets the
+// balance go negative. Ledgered as DEDUCT_FUNDS / ADMIN and notified to
+// the partner by mail.
+exports.deductFundsFromPartner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+    const note = String(req.body?.note || "").trim().slice(0, 200);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: "A positive amount is required" });
+    }
+    if (!note) {
+      return res.status(400).json({ success: false, message: "A reason is required for audit" });
+    }
+    if (amount > 1000000) {
+      return res.status(400).json({ success: false, message: "Amount exceeds the ₹10,00,000 per-deduction limit" });
+    }
+    const target = await User.findById(id).select("role name email partner_id walletBalance").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Cannot deduct from an admin account" });
+    }
+    if ((target.walletBalance ?? 0) < amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance — partner has ${target.walletBalance ?? 0}, cannot deduct ${amount}`,
+      });
+    }
+
+    // Conditional decrement: fails if a concurrent deduction dropped the
+    // balance below `amount` after our check above.
+    const updated = await User.findOneAndUpdate(
+      { _id: id, walletBalance: { $gte: amount } },
+      { $inc: { walletBalance: -amount } },
+      { new: true },
+    ).select("-password").lean();
+    if (!updated) {
+      return res.status(400).json({ success: false, message: "Insufficient balance — please refresh and try again" });
+    }
+
+    const txn = await Transaction.create({
+      userId: updated._id,
+      orderId: `admin_deduct_${String(updated._id)}_${Date.now()}`,
+      amount,
+      gstAmount: 0,
+      totalAmount: amount,
+      currency: "INR",
+      type: "DEBIT",
+      purpose: "DEDUCT_FUNDS",
+      status: "SUCCESS",
+      gateway: "ADMIN",
+      description: note ? `Admin deduction by ${req.user?.email || "admin"}: ${note}` : `Admin deduction by ${req.user?.email || "admin"}`,
+    });
+
+    // Fire-and-forget partner notification. Never blocks the response.
+    if (updated.email) {
+      const { sendAdminDeductMail } = require("../utils/sendMail");
+      sendAdminDeductMail(updated.email, {
+        name: updated.name, amount,
+        prevBalance: target.walletBalance ?? 0,
+        walletBalance: updated.walletBalance,
+        note: note || null,
+        transactionId: String(txn._id),
+        partnerId: updated.partner_id, date: new Date(),
+      }).catch((e) => console.error("[mail] admin deduct mail failed:", e.message));
+    }
+
+    res.json({
+      success: true,
+      data: { walletBalance: updated.walletBalance, prevBalance: target.walletBalance ?? 0, deducted: amount, transactionId: txn._id },
+    });
+  } catch (err) {
+    console.error("deductFundsFromPartner Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not deduct funds" });
+  }
+};
+
 // PATCH /api/admin/partners/:id { name?, phone?, state?, city?, pincode? }
 // Admin edit of partner contact/profile fields. Never targets admins.
 exports.updatePartner = async (req, res) => {
