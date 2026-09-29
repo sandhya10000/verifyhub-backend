@@ -647,7 +647,7 @@ const CrifReport = async (req, res) => {
 
     // Wallet gate (CRIF = ₹50 + GST) — fresh pulls only; Q&A answers
     // reuse the already-gated report above
-    //  if (!(await affordOr402(req, res, "crif"))) return;
+    if (!(await affordOr402(req, res, "crif"))) return;
 
     // ============================================================
     // STEP 9: DOB
