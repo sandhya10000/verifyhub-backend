@@ -1,4 +1,5 @@
 const axios = require("axios");
+const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
@@ -114,12 +115,19 @@ const debitFailedPull = async (
   }
 };
 //logic for cibil report from digi
-
 const CibilReportFromDigi = async (req, res) => {
+  let creditReport = null;
+
   try {
     console.log("[CIBIL] Starting CIBIL V7 report generation...");
+
+    // ============================================================
+    // 1. DIGI CONFIG
+    // ============================================================
+
     const baseUrl = process.env.DIGI_BASE_URL;
-    const jwtToken = process.env.DIGI_API_TOKEN;
+    const partnerId = process.env.DIGI_PARTNER_ID;
+    const secretKey = process.env.DIGI_SECRET_KEY;
 
     if (!baseUrl) {
       return res.status(500).json({
@@ -128,17 +136,38 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
-    if (!jwtToken) {
+    if (!partnerId) {
       return res.status(500).json({
         success: false,
-        message: "DIGI_API_TOKEN is not configured",
+        message: "DIGI_PARTNER_ID is not configured",
       });
     }
 
-    const { fullname, firstName, lastName, mobile, pan, consent } = req.body;
+    if (!secretKey) {
+      return res.status(500).json({
+        success: false,
+        message: "DIGI_SECRET_KEY is not configured",
+      });
+    }
+
+    // ============================================================
+    // 2. REQUEST DATA
+    // ============================================================
+
+    const {
+      fullname,
+      firstName,
+      lastName,
+      mobile,
+      pan,
+      consent,
+      creditReportId,
+      orderId,
+    } = req.body;
 
     const customerName =
       fullname || `${firstName || ""} ${lastName || ""}`.trim();
+
     if (!customerName) {
       return res.status(400).json({
         success: false,
@@ -167,6 +196,24 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
+    // ============================================================
+    // 3. GENERATE JWT
+    // ============================================================
+
+    const jwtToken = jwt.sign(
+      {
+        partnerId: partnerId,
+        secret: secretKey,
+      },
+      secretKey,
+    );
+
+    console.log("[CIBIL] JWT generated", jwtToken);
+
+    // ============================================================
+    // 4. DIGI PAYLOAD
+    // ============================================================
+
     const digiPayload = {
       fullname: customerName,
       mobile: mobile.toString().trim(),
@@ -175,38 +222,40 @@ const CibilReportFromDigi = async (req, res) => {
     };
 
     console.log("[CIBIL] Digi Payload:", {
-      ...digiPayload,
-      pan: "********",
+      fullname: customerName,
       mobile: "********",
+      pan: "********",
+      consent: "Y",
     });
 
-    console.log("[CIBIL] Calling Digi CIBIL V7 API...");
+    // ============================================================
+    // 5. CALL DIGI API
+    // ============================================================
 
-    const response = await axios.post(
-      `${baseUrl}/api/v7/cibil-bureau-report`,
-      digiPayload,
-      {
-        headers: {
-          accept: "application/json",
-          "Content-Type": "application/json",
-          "jwt-token": jwtToken,
-        },
+    const apiUrl = `${baseUrl.replace(/\/+$/, "")}/api/v7/cibil-bureau-report`;
 
-        timeout: 120000,
+    console.log("[CIBIL] Calling:", apiUrl);
+
+    const response = await axios.post(apiUrl, digiPayload, {
+      headers: {
+        accept: "application/json",
+        "Content-Type": "application/json",
+        "jwt-token": jwtToken,
       },
-    );
+      timeout: 120000,
+    });
 
     const apiData = response.data;
 
-    console.log("[CIBIL] Digi API response received");
-
     console.log("[CIBIL] Digi API success:", apiData?.success);
+
+    // ============================================================
+    // 6. CHECK CIBIL DATA
+    // ============================================================
 
     const cibilData = apiData?.data?.cibilData;
 
     if (!cibilData) {
-      console.error("[CIBIL] cibilData not found in Digi response");
-
       return res.status(400).json({
         success: false,
         message: "CIBIL data not found in Digi API response",
@@ -214,11 +263,76 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
-    const creditReportId = req.body?.creditReportId || `CIBIL-${Date.now()}`;
+    // ============================================================
+    // 7. CREATE CREDIT REPORT IN DATABASE
+    // ============================================================
 
-    console.log("[CIBIL] Sending Digi response to PDF service...");
+    creditReport = await CreditReport.create({
+      userId: req.user?._id,
 
-    const pdf = await generateCibilPdf(apiData, creditReportId);
+      orderId: orderId || null,
+
+      name: customerName,
+
+      firstName: firstName || null,
+      lastName: lastName || null,
+
+      mobile: mobile.toString().trim(),
+
+      pan: pan.toString().trim().toUpperCase(),
+
+      reportType: "CIBIL",
+
+      consent: "Y",
+
+      bureau: "CIBIL",
+
+      status: "Pending",
+
+      reportUrl: null,
+
+      localPath: null,
+
+      reportData: apiData,
+
+      score: cibilData?.score || cibilData?.cibilScore || null,
+
+      isPublic: false,
+    });
+
+    console.log("[CIBIL] CreditReport saved:", creditReport._id);
+
+    // ============================================================
+    // 8. GENERATE PDF USING DATABASE ID
+    // ============================================================
+
+    const pdfCreditReportId = creditReport._id.toString();
+
+    console.log("[CIBIL] Generating PDF:", pdfCreditReportId);
+
+    const pdf = await generateCibilPdf(apiData, pdfCreditReportId);
+
+    if (!pdf || !pdf.filePath) {
+      throw new Error("CIBIL PDF was not generated");
+    }
+
+    // ============================================================
+    // 9. UPDATE DATABASE WITH PDF DETAILS
+    // ============================================================
+
+    creditReport.localPath = pdf.filePath;
+
+    creditReport.reportUrl = pdf.relativePath;
+
+    creditReport.status = "Success";
+
+    await creditReport.save();
+
+    console.log("[CIBIL] CreditReport updated with PDF");
+
+    // ============================================================
+    // 10. SUCCESS RESPONSE
+    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -226,17 +340,41 @@ const CibilReportFromDigi = async (req, res) => {
       message: "CIBIL report generated successfully",
 
       data: {
-        creditReportId,
+        creditReportId: creditReport._id,
 
         fileName: pdf.fileName,
 
         pdfUrl: pdf.relativePath,
 
         filePath: pdf.filePath,
+
+        bureau: "CIBIL",
+
+        status: "Success",
       },
     });
   } catch (error) {
     console.error("[CIBIL] API/PDF Error:", error.message);
+
+    // ============================================================
+    // UPDATE DB AS FAILED
+    // ============================================================
+
+    if (creditReport) {
+      try {
+        creditReport.status = "Failed";
+
+        await creditReport.save();
+
+        console.log("[CIBIL] CreditReport marked as Failed");
+      } catch (dbError) {
+        console.error("[CIBIL] Failed to update DB status:", dbError.message);
+      }
+    }
+
+    // ============================================================
+    // DIGI ERROR
+    // ============================================================
 
     if (error.response) {
       console.error("[CIBIL] Digi API status:", error.response.status);
@@ -553,6 +691,44 @@ const CrifReport = async (req, res) => {
 
       customerConsent: "Y",
     };
+    // ============================================================
+    // STEP 10.1: DUPLICATE PAN CHECK
+    // ============================================================
+
+    const normalizedPan = String(panNumber).trim().toUpperCase();
+
+    const existingReport = await CreditReport.findOne({
+      userId,
+      pan: normalizedPan,
+      bureau: "CRIF",
+      status: "Success",
+    });
+
+    if (existingReport) {
+      console.log("[CRIF] Duplicate PAN request blocked:", normalizedPan);
+
+      return res.status(409).json({
+        success: false,
+        status: "duplicate",
+        message: "A CRIF credit report already exists for this PAN.",
+
+        creditReportId: existingReport._id,
+
+        userId: existingReport.userId,
+
+        reportId: existingReport.reportId,
+
+        orderId: existingReport.orderId,
+
+        score: existingReport.score,
+
+        reportUrl: existingReport.reportUrl,
+
+        localPath: existingReport.localPath,
+
+        data: existingReport,
+      });
+    }
 
     // ============================================================
     // STEP 11: CREATE PENDING REPORT
@@ -904,7 +1080,59 @@ const ExperianReport = async (req, res) => {
       });
     }
 
-    // Wallet gate (Experian = ₹50 + GST) — before any paid bureau call
+    // ============================================================
+    // 3A. DUPLICATE PAN CHECK
+    // ============================================================
+
+    const normalizedPan = String(panNumber).trim().toUpperCase();
+
+    const existingReport = await CreditReport.findOne({
+      userId,
+      pan: normalizedPan,
+      bureau: "EXPERIAN",
+      status: {
+        $in: ["Pending", "Success"],
+      },
+    }).sort({ createdAt: -1 });
+
+    if (existingReport) {
+      // ----------------------------------------------------------
+      // If previous request is still processing
+      // ----------------------------------------------------------
+      if (existingReport.status === "Pending") {
+        return res.status(409).json({
+          success: false,
+          status: "duplicate_pending",
+          message:
+            "An Experian credit report request for this PAN is already in progress.",
+          creditReportId: existingReport._id,
+          userId: existingReport.userId,
+          status: existingReport.status,
+        });
+      }
+
+      // ----------------------------------------------------------
+      // If report already exists successfully
+      // ----------------------------------------------------------
+      return res.status(409).json({
+        success: false,
+        status: "duplicate",
+        message: "An Experian credit report already exists for this PAN.",
+        creditReportId: existingReport._id,
+        userId: existingReport.userId,
+        score: existingReport.score,
+        status: existingReport.status,
+        reportUrl: existingReport.reportUrl,
+        localPath: existingReport.localPath,
+        data: existingReport,
+      });
+    }
+
+    // ============================================================
+    // 3B. WALLET GATE
+    // ============================================================
+
+    // Wallet gate (Experian = ₹50 + GST)
     if (!(await affordOr402(req, res, "experian"))) return;
 
     // ============================================================
