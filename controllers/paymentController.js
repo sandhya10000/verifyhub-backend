@@ -82,15 +82,13 @@ const createWalletRechargeOrder = async (req, res) => {
     }
     const walletCredit = baseAmount - planFee;
 
-    // 4. GST calculation (on the full top-up, as before)
-    const GST_RATE = 18;
+    // 4. No GST on top-ups — plan charges are GST-inclusive, so the
+    // customer pays exactly the entered amount via Razorpay.
+    const gstAmount = 0;
 
-    const gstAmount = (baseAmount * GST_RATE) / 100;
-
-    const totalAmount = baseAmount + gstAmount;
+    const totalAmount = baseAmount;
 
     console.log("Base Amount:", baseAmount);
-    console.log("GST Amount:", gstAmount);
     console.log("Total Amount:", totalAmount);
     console.log("Plan:", plan, "| Plan Fee:", planFee, "| Wallet Credit:", walletCredit);
 

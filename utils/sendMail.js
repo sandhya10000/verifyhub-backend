@@ -151,9 +151,9 @@ function metaRow(label, value) {
 
 function rechargeInvoiceHtml(d) {
   const invoiceRows = [
-    row("Wallet top-up (base amount)", inr(d.baseAmount)),
+    row("Wallet top-up (GST-inclusive)", inr(d.baseAmount)),
     ...(d.plan && Number(d.planFee) > 0 ? [row(`Plan fee — ${String(d.plan).toUpperCase()} (adjusted from top-up)`, `− ${inr(d.planFee)}`)] : []),
-    row(`GST @ 18% on top-up`, inr(d.gstAmount)),
+    ...(Number(d.gstAmount) > 0 ? [row(`GST @ 18% on top-up`, inr(d.gstAmount))] : []),
   ].join("");
   const totals = [
     totalRow("Paid via Razorpay", inr(d.totalPaid), false),
@@ -186,7 +186,7 @@ async function sendRechargeSuccessMail(to, d) {
   const text = [
     `Hi ${d.name || "Partner"},`,
     d.plan ? `Your ${String(d.plan).toUpperCase()} plan is now active.` : `Your wallet top-up was successful.`,
-    `Base: ${inr(d.baseAmount)} | GST: ${inr(d.gstAmount)} | Paid: ${inr(d.totalPaid)}`,
+    ...(Number(d.gstAmount) > 0 ? [`Base: ${inr(d.baseAmount)} | GST: ${inr(d.gstAmount)} | Paid: ${inr(d.totalPaid)}`] : [`Paid (GST-inclusive): ${inr(d.totalPaid)}`]),
     d.plan ? `Plan fee: ${inr(d.planFee)} | ` : "", `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
     `Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
   ].join("\n");
