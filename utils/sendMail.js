@@ -279,7 +279,37 @@ async function sendAdminTopupMail(to, d) {
   });
 }
 
+// --- Admin deduct (no GST: debited amount is final) ---
+
+function adminDeductInvoiceHtml(d) {
+  const invoiceRows = [
+    row("Admin wallet deduction (no GST)", inr(d.amount)),
+    row("Previous balance", inr(d.prevBalance)),
+  ].join("");
+  const totals = [totalRow("New wallet balance", inr(d.walletBalance), true)].join("");
+  const meta = [
+    metaRow("Ledger Txn ID", d.transactionId || "—"),
+    metaRow("Date (IST)", istDate(d.date)),
+    ...(d.note ? [metaRow("Note", d.note)] : []),
+    ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
+  ].join("");
+  const intro = `The admin has deducted <b>${esc(inr(d.amount))}</b> from your wallet${d.note ? ` (${esc(d.note)})` : ""}. Reply to this email if you believe this is a mistake.`;
+  return receiptShell({
+    title: "Wallet Deduction Notice", preheader: `${inr(d.amount)} deducted · Balance ${inr(d.walletBalance)}`,
+    name: d.name, introHtml: intro, invoiceRowsHtml: invoiceRows, totalsHtml: totals, metaRowsHtml: meta,
+  });
+}
+
+async function sendAdminDeductMail(to, d) {
+  return sendMail({
+    to,
+    subject: `VerifyHub: ${inr(d.amount)} deducted from your wallet`,
+    html: adminDeductInvoiceHtml(d),
+    text: `Hi ${d.name || "Partner"}, ${inr(d.amount)} was deducted from your VerifyHub wallet by the admin. Previous balance ${inr(d.prevBalance)}, new balance ${inr(d.walletBalance)}.`,
+  });
+}
+
 module.exports = {
-  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail,
-  getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml,
+  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail,
+  getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml, adminDeductInvoiceHtml,
 };
