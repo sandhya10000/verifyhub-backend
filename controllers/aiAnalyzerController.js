@@ -5,6 +5,8 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground } = require('../utils/claudeService');
 
+const ALLOWED_LANGUAGE_CODES = new Set(['en','hi','ta','te','kn','mr','bn','gu','pa','ml','or','as','ur']);
+
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
 const { logStep } = require('../utils/logger');
 
@@ -45,6 +47,10 @@ exports.uploadReport = async (req, res) => {
       }
     }
 
+    // Read and validate the requested output language (from FormData)
+    const rawLang = (req.body.language || '').trim().toLowerCase();
+    const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
+    console.log(`[uploadReport] language: '${language}' (raw: '${rawLang}')`);
     // Wallet affordability gate (AI analysis = ₹100 + GST) — before
     // accepting the file for background processing
     try {
@@ -71,6 +77,7 @@ exports.uploadReport = async (req, res) => {
       fileName: req.file.originalname,
       filePath: req.file.path,
       fileType: path.extname(req.file.originalname).replace('.', ''),
+      language,
       status: 'uploaded',
     });    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
     logStep(analysis._id, 'DB Record Created', { analysisId: analysis._id });
@@ -80,7 +87,7 @@ exports.uploadReport = async (req, res) => {
 
     console.log('[uploadReport] Kicking off background Claude processing for analysisId:', analysis._id);
     logStep(analysis._id, 'Trigger Background Processing');
-    processAnalysisInBackground(analysis._id);
+    processAnalysisInBackground(analysis._id, language);
   } catch (err) {
     console.error('[uploadReport] Unhandled error:', err);
     res.status(500).json({ success: false, message: 'Upload failed. Please try again.' });
@@ -107,6 +114,7 @@ exports.getAnalysis = async (req, res) => {
       chunkCount: analysis.chunkCount,
       chunksCompleted: analysis.chunksCompleted,
       result: analysis.status === 'completed' ? analysis.result : null,
+      language: analysis.language || 'en',
       htmlStatus: analysis.htmlStatus,
     };
 
