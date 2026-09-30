@@ -47,7 +47,7 @@ function otpHtml(otp, purpose) {
   const title = purpose === "reset" ? "Reset your password" : "Verify your email";
   return `
   <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;border:1px solid #eee;border-radius:12px;padding:24px">
-    <h2 style="margin:0 0 8px">VerifyHub – ${title}</h2>
+    <h2 style="margin:0 0 8px">Verify Hub – ${title}</h2>
     <p style="color:#555">Use this OTP to continue. It expires in ${process.env.OTP_EXPIRY_MIN || 10} minutes.</p>
     <div style="font-size:32px;font-weight:800;letter-spacing:8px;text-align:center;background:#f6f8ff;border-radius:8px;padding:16px;margin:16px 0">${otp}</div>
     <p style="color:#888;font-size:12px">If you did not request this, ignore this email. Do not share this code.</p>
@@ -66,7 +66,7 @@ async function sendMail({ to, subject, html, text }) {
     return { mocked: true };
   }
   await getTransporter().sendMail({
-    from: process.env.SMTP_FROM || `"VerifyHub" <${process.env.SMTP_USER}>`,
+    from: process.env.SMTP_FROM || `"Verify Hub" <${process.env.SMTP_USER}>`,
     to,
     subject,
     html,
@@ -76,12 +76,12 @@ async function sendMail({ to, subject, html, text }) {
 }
 
 async function sendOtpMail(to, otp, purpose = "signup") {
-  const subject = purpose === "reset" ? "VerifyHub password reset OTP" : "VerifyHub email verification OTP";
+  const subject = purpose === "reset" ? "Verify Hub password reset OTP" : "Verify Hub email verification OTP";
   return sendMail({
     to,
     subject,
     html: otpHtml(otp, purpose),
-    text: `Your VerifyHub OTP is ${otp}. It expires in ${process.env.OTP_EXPIRY_MIN || 10} minutes.`,
+    text: `Your Verify Hub OTP is ${otp}. It expires in ${process.env.OTP_EXPIRY_MIN || 10} minutes.`,
   }).then((r) => {
     if (r.mocked && process.env.NODE_ENV === "production" && process.env.SMTP_USER) throw new Error("Email service not configured");
     // Preserve old contract: throw in production when SMTP missing
@@ -97,7 +97,7 @@ function receiptShell({ title, preheader, name, introHtml, invoiceRowsHtml, tota
   <div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(preheader || title)}</div>
   <div style="max-width:600px;margin:auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e9f2">
     <div style="background:#0f1e3d;padding:22px 28px;color:#ffffff">
-      <div style="font-size:20px;font-weight:800;letter-spacing:0.5px">VerifyHub</div>
+      <div style="font-size:20px;font-weight:800;letter-spacing:0.5px">Verify Hub</div>
       <div style="font-size:13px;color:#b9c4dd;margin-top:4px">${esc(title)}</div>
     </div>
     <div style="padding:26px 28px;color:#1e2a44">
@@ -208,7 +208,7 @@ function planActivationInvoiceHtml(d) {
 }
 
 async function sendPlanActivationMail(to, d) {
-  const subject = `VerifyHub: your ${String(d.plan).toUpperCase()} plan is active`;
+  const subject = `Verify Hub: your ${String(d.plan).toUpperCase()} plan is active`;
   return sendMail({
     to, subject, html: planActivationInvoiceHtml(d),
     text: `Hi ${d.name || "Partner"}, your ${String(d.plan).toUpperCase()} plan is active. Nothing was deducted. Balance ${inr(d.walletBalance)}.`,
@@ -223,7 +223,7 @@ function lowBalanceHtml({ name, balance, threshold, dashboardUrl }) {
 <div style="font-family:Arial,Helvetica,sans-serif;background:#f1f4f9;margin:0;padding:24px 12px">
   <div style="max-width:560px;margin:auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e9f2">
     <div style="background:#b42318;padding:20px 26px;color:#fff">
-      <div style="font-size:18px;font-weight:800">VerifyHub — Low wallet balance</div>
+      <div style="font-size:18px;font-weight:800">Verify Hub — Low wallet balance</div>
       <div style="font-size:13px;color:#ffd9d4;margin-top:4px">Action needed to avoid failed report pulls</div>
     </div>
     <div style="padding:24px 26px;color:#1e2a44">
@@ -242,7 +242,7 @@ function lowBalanceHtml({ name, balance, threshold, dashboardUrl }) {
 async function sendLowBalanceMail(to, { name, balance, threshold }) {
   return sendMail({
     to,
-    subject: `VerifyHub: wallet balance low (${inr(balance)}) — please recharge`,
+    subject: `Verify Hub: wallet balance low (${inr(balance)}) — please recharge`,
     html: lowBalanceHtml({ name, balance, threshold }),
     text: `Hi ${name || "Partner"}, your VerifyHub wallet balance is ${inr(balance)}, below ${inr(threshold)}. Please recharge to avoid interruptions.`,
   });
@@ -272,7 +272,7 @@ function adminTopupInvoiceHtml(d) {
 async function sendAdminTopupMail(to, d) {
   return sendMail({
     to,
-    subject: `VerifyHub: ${inr(d.amount)} added to your wallet`,
+    subject: `Verify Hub: ${inr(d.amount)} added to your wallet`,
     html: adminTopupInvoiceHtml(d),
     text: `Hi ${d.name || "Partner"}, ${inr(d.amount)} was added to your VerifyHub wallet by the admin. Previous balance ${inr(d.prevBalance)}, new balance ${inr(d.walletBalance)}.`,
   });
@@ -302,7 +302,7 @@ function adminDeductInvoiceHtml(d) {
 async function sendAdminDeductMail(to, d) {
   return sendMail({
     to,
-    subject: `VerifyHub: ${inr(d.amount)} deducted from your wallet`,
+    subject: `Verify Hub: ${inr(d.amount)} deducted from your wallet`,
     html: adminDeductInvoiceHtml(d),
     text: `Hi ${d.name || "Partner"}, ${inr(d.amount)} was deducted from your VerifyHub wallet by the admin. Previous balance ${inr(d.prevBalance)}, new balance ${inr(d.walletBalance)}.`,
   });
