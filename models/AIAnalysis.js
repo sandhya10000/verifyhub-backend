@@ -18,6 +18,7 @@ const AIAnalysisSchema = new mongoose.Schema(
       index: true,
     },
     fileName: { type: String, required: true },
+    language:  { type: String, default: 'en' },   // ISO code for the report output language
     filePath: { type: String, required: true },
     fileType: { type: String, enum: ['pdf', 'json'], required: true },
     status: {
@@ -42,11 +43,9 @@ const AIAnalysisSchema = new mongoose.Schema(
     },
     resultPdfPath: { type: String, default: null },
     rawModelResponse: { type: mongoose.Schema.Types.Mixed, default: null },
-    // Full 8-section HTML report — generated lazily on first Download/Save action
-    htmlReport:      { type: String,  default: null },
-    htmlGenerating:  { type: Boolean, default: false },
-    htmlStatus:      { type: String, enum: ['generating', 'completed', 'failed'], default: null },
-    lastHtmlGenerationFailure: { type: Date, default: null },
+    // Full HTML report — rendered synchronously inline after the Claude extraction call
+    htmlReport:  { type: String, default: null },
+    htmlStatus:  { type: String, enum: ['generating', 'completed', 'failed'], default: null },
 
     // Chunked-pipeline fields — only set for PDFs over 100 pages
     isChunked:       { type: Boolean, default: false },   // true when the chunked path was used

@@ -42,6 +42,36 @@ const anthropic = new Anthropic({
 console.log('[claudeService] Anthropic client initialised.');
 
 // ---------------------------------------------------------------------------
+// Language map and instruction builder
+// ---------------------------------------------------------------------------
+const LANGUAGE_NAMES = {
+  en: 'English', hi: 'Hindi',  ta: 'Tamil',   te: 'Telugu',
+  kn: 'Kannada', mr: 'Marathi', bn: 'Bengali', gu: 'Gujarati',
+  pa: 'Punjabi', ml: 'Malayalam', or: 'Odia',  as: 'Assamese',
+  ur: 'Urdu',
+};
+
+/**
+ * Builds the language instruction appended to the Claude system/user prompt
+ * for the qualitative synthesis and single-call extraction.
+ * Returns an empty string for English (no extra instruction needed).
+ */
+function buildLanguageInstruction(code) {
+  const name = LANGUAGE_NAMES[code] || 'English';
+  if (!code || code === 'en') return '';
+  return (
+    `\n\nOUTPUT LANGUAGE: Write ALL human-readable text in ${name} (${code}), ` +
+    'using natural, simple wording a lending customer can understand. This includes ' +
+    'executive_summary, recommendation, risk_factors[].title and explanation, ' +
+    'action_month_1/2/3, whats_helping, whats_hurting, and ui_labels. ' +
+    'Do NOT translate or change: JSON keys, enum values, numbers, currency amounts, ' +
+    'dates, account numbers, lender/bank names, credit score bands used as enum values, ' +
+    'or bureau names. Use standard Latin digits (0-9) for all numbers. ' +
+    'Return valid JSON only, matching the tool schema exactly.'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Helper — detect Anthropic's PDF page-count limit error
 // Matches: 400 invalid_request_error where the body or message mentions the
 // 100-page PDF cap.  Intentionally narrow so other 400s still get the generic
@@ -184,6 +214,25 @@ const ANALYSIS_TOOL = {
         type: 'array',
         items: { type: 'number' },
       },
+      ui_labels: {
+        type: 'object',
+        description: 'UI section/field labels translated into the target language',
+        properties: {
+          credit_score:   { type: 'string' },
+          score_band:     { type: 'string' },
+          active_loans:   { type: 'string' },
+          overdue_dpd:    { type: 'string' },
+          enquiries:      { type: 'string' },
+          foir:           { type: 'string' },
+          max_eligible:   { type: 'string' },
+          risk_factors:   { type: 'string' },
+          recommendation: { type: 'string' },
+          next_3_months:  { type: 'string' },
+          whats_helping:  { type: 'string' },
+          whats_hurting:  { type: 'string' },
+          disclaimer:     { type: 'string' },
+        },
+      },
     },
   },
 };
@@ -228,6 +277,25 @@ const QUALITATIVE_TOOL = {
       projected_scores: {
         type: 'array',
         items: { type: 'number' },
+      },
+      ui_labels: {
+        type: 'object',
+        description: 'UI section/field labels translated into the target language',
+        properties: {
+          credit_score:   { type: 'string' },
+          score_band:     { type: 'string' },
+          active_loans:   { type: 'string' },
+          overdue_dpd:    { type: 'string' },
+          enquiries:      { type: 'string' },
+          foir:           { type: 'string' },
+          max_eligible:   { type: 'string' },
+          risk_factors:   { type: 'string' },
+          recommendation: { type: 'string' },
+          next_3_months:  { type: 'string' },
+          whats_helping:  { type: 'string' },
+          whats_hurting:  { type: 'string' },
+          disclaimer:     { type: 'string' },
+        },
       },
     },
   },
@@ -466,10 +534,11 @@ function mergeChunkResults(chunkResults) {
 // For the chunked path: after all chunks are merged, one Claude call
 // produces the QUALITATIVE fields (risk factors, action plan, projections)
 // from the merged JSON. No PDF re-sent. Uses QUALITATIVE_TOOL.
+// language: ISO code for the output language (e.g. 'hi' for Hindi).
 // Returns an object that is merged with mergedData before rendering.
 // ---------------------------------------------------------------------------
-async function synthesizeFinalResult(mergedData, analysisId) {
-  console.log(`[claudeService:${analysisId}] Synthesizing qualitative fields from merged data (${mergedData.total_accounts} accounts)...`);
+async function synthesizeFinalResult(mergedData, analysisId, language = 'en') {
+  console.log(`[claudeService:${analysisId}] Synthesizing qualitative fields from merged data (${mergedData.total_accounts} accounts)... language=${language}`);
 
   const context = {
     client_name:       mergedData.client_name,
@@ -499,8 +568,9 @@ async function synthesizeFinalResult(mergedData, analysisId) {
   const qualitativePrompt =
     'You are a senior credit analyst. The following JSON contains structured credit data ' +
     'extracted from a CIBIL report. Produce the qualitative analysis fields using the ' +
-    'submit_qualitative_analysis tool. Be specific — name the lenders and actual figures.\n\n' +
-    '```json\n' + JSON.stringify(context, null, 2) + '\n```';
+    'submit_qualitative_analysis tool. Be specific — name the lenders and actual figures.' +
+    buildLanguageInstruction(language) +
+    '\n\n```json\n' + JSON.stringify(context, null, 2) + '\n```';
 
   const response = await anthropic.messages.create({
     model:      CLAUDE_MODEL,
@@ -565,9 +635,9 @@ async function saveToCreditReport(analysisId, userId, result) {
 // ---------------------------------------------------------------------------
 // processAnalysisInBackground
 // Routes to single-call path (<=100 pages) or chunked path (>100 pages).
-// The single-call path is byte-for-byte identical to the pre-chunking version.
+// language: ISO code for the report output language (e.g. 'hi'). Default 'en'.
 // ---------------------------------------------------------------------------
-async function processAnalysisInBackground(analysisId) {
+async function processAnalysisInBackground(analysisId, language = 'en') {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`[claudeService:${analysisId}] Background job started at ${new Date().toISOString()}`);
   console.log('='.repeat(60));
@@ -632,11 +702,11 @@ async function processAnalysisInBackground(analysisId) {
 
       let response;
       try {
-        logStep(analysisId, 'Analysis API Call Start', { model: CLAUDE_MODEL });
+        logStep(analysisId, 'Analysis API Call Start', { model: CLAUDE_MODEL, language });
         response = await anthropic.messages.create({
           model:      CLAUDE_MODEL,
           max_tokens: 12000,
-          system:     EXTRACTION_PROMPT,
+          system:     EXTRACTION_PROMPT + buildLanguageInstruction(language),
           messages: [
             {
               role: 'user',
@@ -684,6 +754,7 @@ async function processAnalysisInBackground(analysisId) {
       }
 
       const result = toolUseBlock.input;
+      result.language = language; // ensure language is passed to EJS template
       console.log(`[claudeService:${analysisId}] Extracted ${(result.accounts||[]).length} accounts, ${(result.enquiries||[]).length} enquiries`);
 
       // ── Render HTML immediately from structured data (no second Claude call) ──
@@ -772,10 +843,11 @@ async function processAnalysisInBackground(analysisId) {
     console.log(`[claudeService:${analysisId}] Merge complete: ${mergedData.total_accounts} deduped accounts, score=${mergedData.credit_score}`);
 
     // B4. Synthesis call — qualitative fields from merged JSON (no PDF re-send)
-    const qualitativeFields = await synthesizeFinalResult(mergedData, analysisId);
+    const qualitativeFields = await synthesizeFinalResult(mergedData, analysisId, language);
 
     // B4b. Merge qualitative fields into mergedData for rendering
     const fullData = Object.assign({}, mergedData, qualitativeFields);
+    fullData.language = language; // ensure language is passed to EJS template
 
     // B4c. Render HTML from merged structured data
     logStep(analysisId, 'HTML Template Render Start (chunked path)');
@@ -881,265 +953,5 @@ async function processHtmlGenerationInBackground(analysisId) {
 }
 
 module.exports = { processAnalysisInBackground, generateFullHtmlReport, ANALYSIS_TOOL, processHtmlGenerationInBackground };
-
-// ============================================================================
-// DEAD CODE BELOW — kept for reference, will be removed in next cleanup pass.
-// ============================================================================
-async function _deadCodeStart() {
-
-  const analysis = await AIAnalysis.findById(analysisId);
-  if (!analysis) throw new Error(`[htmlReport:${analysisId}] Analysis record not found`);
-  if (analysis.status !== 'completed') {
-    throw new Error(`[htmlReport:${analysisId}] Analysis is not completed (status: ${analysis.status})`);
-  }
-
-  console.log(`[htmlReport:${analysisId}] System prompt length : ${CREDIT_ANALYSIS_PROMPT.length} chars`);
-  console.log(`[htmlReport:${analysisId}] isChunked: ${analysis.isChunked}`);
-
-  // =========================================================================
-  // PATH A -- SHORT FILE: re-send the PDF natively (unchanged behaviour)
-  // =========================================================================
-  if (!analysis.isChunked) {
-    console.log(`[htmlReport:${analysisId}] Short-file path -- re-reading PDF for second Claude call`);
-
-    let fileBuffer;
-    try {
-      fileBuffer = await fs.promises.readFile(analysis.filePath);
-    } catch (fileErr) {
-      console.error(`[htmlReport:${analysisId}] Failed to read file: ${analysis.filePath}`, fileErr);
-      throw fileErr;
-    }
-
-    const base64Data = fileBuffer.toString('base64');
-    const mediaType  = mime.lookup(analysis.filePath) || 'application/pdf';
-    console.log(`[htmlReport:${analysisId}] File: ${analysis.filePath} | ${(fileBuffer.length / 1024).toFixed(1)} KB | ${mediaType}`);
-    console.log(`[htmlReport:${analysisId}] Calling Claude API (short-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 65000`);
-
-    let response;
-    try {
-      // Request shape: model, max_tokens, thinking, messages, system
-      // Thinking DISABLED: HTML generation is a template-fill task, not reasoning.
-      // This eliminates 1-3 min of thinking overhead per generation.
-      const requestPayload = {
-        model:      CLAUDE_MODEL,
-        max_tokens: 65000,
-        thinking:   { type: 'disabled' },
-        system:     CREDIT_ANALYSIS_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type:   'document',
-                source: { type: 'base64', media_type: mediaType, data: base64Data },
-              },
-              {
-                type: 'text',
-                text: 'Generate the full HTML credit analysis report per the system prompt instructions.',
-              },
-            ],
-          },
-        ],
-      };
-      
-      console.log(`[htmlReport:${analysisId}] Actual request payload being sent:`, JSON.stringify(requestPayload, (k,v) => k==='data' ? '<base64>' : v, 2));
-      
-      const startTime = Date.now();
-      let firstByteTime = null;
-      let tokenCount = 0;
-      console.log(`[htmlReport:${analysisId}] TIMING: Stream starting at ${startTime}`);
-      logStep(analysisId, 'HTML Generation API Call Start', { path: 'short-file' });
-
-      const stream = anthropic.messages.stream(requestPayload);
-      
-      stream.on('text', () => {
-        tokenCount++;
-        if (!firstByteTime) {
-          firstByteTime = Date.now();
-          logStep(analysisId, 'HTML Generation First Byte Received', { timeToFirstByte: firstByteTime - startTime });
-          console.log(`[htmlReport:${analysisId}] TIMING: First byte received in ${firstByteTime - startTime}ms`);
-        }
-        if (tokenCount % 100 === 0) {
-            logStep(analysisId, 'HTML Generation Stream Progress', { textChunks: tokenCount });
-        }
-      });
-      
-      response = await stream.finalMessage();
-      
-      const endTime = Date.now();
-      logStep(analysisId, 'HTML Generation API Call Complete', { 
-        usage: response.usage, 
-        durationMs: endTime - startTime, 
-        tokensPerSec: response.usage?.output_tokens / ((endTime - startTime) / 1000)
-      });
-      console.log(`[htmlReport:${analysisId}] TIMING: Stream completed in ${endTime - (firstByteTime || startTime)}ms (Total since start: ${endTime - startTime}ms)`);
-
-    } catch (apiErr) {
-      console.error(`[htmlReport:${analysisId}] Claude API call FAILED`);
-      console.error(`[htmlReport:${analysisId}]   Error type    :`, apiErr.constructor && apiErr.constructor.name);
-      console.error(`[htmlReport:${analysisId}]   Error message :`, apiErr.message);
-      if (apiErr.status !== undefined) console.error(`[htmlReport:${analysisId}]   HTTP status   :`, apiErr.status);
-      if (apiErr.error  !== undefined) console.error(`[htmlReport:${analysisId}]   API error body:`, JSON.stringify(apiErr.error, null, 2));
-      throw apiErr;
-    }
-
-    return await _extractAndPersistHtml(response, analysisId);
-  }
-
-  // =========================================================================
-  // PATH B -- LARGE FILE: generate HTML from stored mergedData JSON.
-  // No PDF re-send. Uses the already-extracted structured data.
-  // =========================================================================
-  console.log(`[htmlReport:${analysisId}] Large-file path -- generating HTML from stored mergedData JSON`);
-
-  if (!analysis.mergedData) {
-    throw new Error(`[htmlReport:${analysisId}] isChunked=true but mergedData is missing from DB record`);
-  }
-
-  const mergedJson = JSON.stringify(analysis.mergedData, null, 2);
-  console.log(`[htmlReport:${analysisId}] mergedData: ${mergedJson.length} chars, ${analysis.mergedData.total_accounts} accounts`);
-  console.log(`[htmlReport:${analysisId}] Calling Claude API (large-file HTML mode) | model: ${CLAUDE_MODEL} | max_tokens: 65000`);
-
-  let response;
-  try {
-    // Request shape: model, max_tokens, thinking, messages, system
-    // Thinking DISABLED: HTML generation is a template-fill task, not reasoning.
-    // This eliminates 1-3 min of thinking overhead per generation.
-    const requestPayload = {
-      model:      CLAUDE_MODEL,
-      max_tokens: 65000,
-      thinking:   { type: 'disabled' },
-      system:     CREDIT_ANALYSIS_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text:
-                'The following JSON contains the complete structured credit data extracted from a multi-page credit bureau report. ' +
-                'Generate the full HTML credit analysis report per the system prompt instructions, using ONLY this data. ' +
-                'Follow the exact same template, sections, charts, and design as specified in the system prompt.\n\n' +
-                '```json\n' + mergedJson + '\n```',
-            },
-          ],
-        },
-      ],
-    };
-
-    console.log(`[htmlReport:${analysisId}] Actual request payload being sent:`, JSON.stringify(requestPayload, null, 2));
-
-    const startTime = Date.now();
-    let firstByteTime = null;
-    console.log(`[htmlReport:${analysisId}] TIMING: Stream starting at ${startTime}`);
-
-    const stream = anthropic.messages.stream(requestPayload);
-
-    stream.on('text', () => {
-      if (!firstByteTime) {
-        firstByteTime = Date.now();
-        console.log(`[htmlReport:${analysisId}] TIMING: First byte received in ${firstByteTime - startTime}ms`);
-      }
-    });
-
-    response = await stream.finalMessage();
-    
-    const endTime = Date.now();
-    console.log(`[htmlReport:${analysisId}] TIMING: Stream completed in ${endTime - (firstByteTime || startTime)}ms (Total since start: ${endTime - startTime}ms)`);
-
-  } catch (apiErr) {
-    console.error(`[htmlReport:${analysisId}] Claude API call FAILED (large-file path)`);
-    console.error(`[htmlReport:${analysisId}]   Error type    :`, apiErr.constructor && apiErr.constructor.name);
-    console.error(`[htmlReport:${analysisId}]   Error message :`, apiErr.message);
-    if (apiErr.status !== undefined) console.error(`[htmlReport:${analysisId}]   HTTP status   :`, apiErr.status);
-    if (apiErr.error  !== undefined) console.error(`[htmlReport:${analysisId}]   API error body:`, JSON.stringify(apiErr.error, null, 2));
-    throw apiErr;
-  }
-
-  return await _extractAndPersistHtml(response, analysisId);
-}
-
-// ---------------------------------------------------------------------------
-// _extractAndPersistHtml -- shared post-processing for both HTML paths.
-// Validates that the response is proper HTML, strips markdown fences, persists.
-// ---------------------------------------------------------------------------
-async function _extractAndPersistHtml(response, analysisId) {
-  console.log(`[htmlReport:${analysisId}] Claude response received`);
-  console.log(`[htmlReport:${analysisId}]   stop_reason   : ${response.stop_reason}`);
-  console.log(`[htmlReport:${analysisId}]   content blocks: ${response.content.length}`);
-  console.log(`[htmlReport:${analysisId}]   usage         :`, response.usage);
-
-  const textBlock = response.content.find((c) => c.type === 'text');
-  if (!textBlock) {
-    const blockTypes = response.content.map(c => c.type);
-    console.error(`[htmlReport:${analysisId}] No text block found.`);
-    console.error(`[htmlReport:${analysisId}] stop_reason: ${response.stop_reason}`);
-    console.error(`[htmlReport:${analysisId}] block types:`, blockTypes);
-    console.error(`[htmlReport:${analysisId}] token usage:`, response.usage);
-
-    if (response.stop_reason === 'max_tokens') {
-      const maxTokenErr = new Error("HTML generation hit the max_tokens limit before producing output (likely during the thinking phase). Consider raising max_tokens or lowering effort.");
-      maxTokenErr.code = 'MAX_TOKENS_EXCEEDED';
-      throw maxTokenErr;
-    }
-
-    throw new Error('Claude did not return a text block -- expected free-text HTML output');
-  }
-
-  let rawHtml = (textBlock.text || '').trim();
-  logStep(analysisId, 'HTML Extraction & Validation Start');
-  console.log(`[htmlReport:${analysisId}] Raw HTML length: ${rawHtml.length} chars`);
-  console.log(`[htmlReport:${analysisId}] First 300 chars:\n${rawHtml.slice(0, 300)}`);
-
-  // Strip markdown code fences if Claude wrapped the HTML
-  if (rawHtml.toLowerCase().startsWith('```html')) {
-    rawHtml = rawHtml.substring(7);
-  } else if (rawHtml.startsWith('```')) {
-    rawHtml = rawHtml.substring(3);
-  }
-  if (rawHtml.endsWith('```')) {
-    rawHtml = rawHtml.substring(0, rawHtml.length - 3);
-  }
-  rawHtml = rawHtml.trim();
-
-  if (!rawHtml.toLowerCase().startsWith('<!doctype html>')) {
-    console.error(`[htmlReport:${analysisId}] VALIDATION FAILED -- response does not start with <!DOCTYPE html>`);
-    console.error(`[htmlReport:${analysisId}] Raw response first 500 chars:\n${rawHtml.slice(0, 500)}`);
-    throw new Error(
-      'Claude returned malformed output (does not start with <!DOCTYPE html>). ' +
-      'Check server logs for the raw response.'
-    );
-  }
-  logStep(analysisId, 'HTML Extraction & Validation Complete');
-
-  const startDb = Date.now();
-  logStep(analysisId, 'HTML Persistence to DB Start');
-  await AIAnalysis.findByIdAndUpdate(analysisId, {
-    htmlReport:     rawHtml,
-    htmlGenerating: false,
-    htmlStatus:     'completed'
-  });
-  const endDb = Date.now();
-  logStep(analysisId, 'HTML Persistence to DB Complete', { lengthChars: rawHtml.length });
-  console.log(`[htmlReport:${analysisId}] TIMING: DB write completed in ${endDb - startDb}ms (htmlStatus = completed)`);
-
-  console.log(`[htmlReport:${analysisId}] HTML report stored in DB (${rawHtml.length} chars)`);
-
-  return rawHtml;
-}
-
-async function processHtmlGenerationInBackground(analysisId) {
-  try {
-    console.log(`[processHtmlGenerationInBackground:${analysisId}] Starting background generation`);
-    await generateFullHtmlReport(analysisId);
-  } catch (genErr) {
-    console.error(`[processHtmlGenerationInBackground:${analysisId}] FAILED:`, genErr.message);
-    await AIAnalysis.findByIdAndUpdate(analysisId, { 
-      htmlGenerating: false,
-      htmlStatus: 'failed',
-      lastHtmlGenerationFailure: new Date()
-    });
-  }
-}
 
 
