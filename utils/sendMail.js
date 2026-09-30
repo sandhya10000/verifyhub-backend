@@ -185,23 +185,22 @@ async function sendRechargeSuccessMail(to, d) {
   const html = rechargeInvoiceHtml(d);
   const text = [
     `Hi ${d.name || "Partner"},`,
-    d.plan ? `Your ${String(d.plan).toUpperCase()} plan is now active.` : `Your wallet top-up was successful.`,
+    d.plan ? `Your ${String(d.plan).toUpperCase()} plan is now active (free selection — nothing deducted).` : `Your wallet top-up was successful.`,
     ...(Number(d.gstAmount) > 0 ? [`Base: ${inr(d.baseAmount)} | GST: ${inr(d.gstAmount)} | Paid: ${inr(d.totalPaid)}`] : [`Paid (GST-inclusive): ${inr(d.totalPaid)}`]),
-    d.plan ? `Plan fee: ${inr(d.planFee)} | ` : "", `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
+    d.plan && Number(d.planFee) > 0 ? `Plan fee: ${inr(d.planFee)} | ` : "", `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
     `Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
   ].join("\n");
   return sendMail({ to, subject, html, text });
 }
 
 function planActivationInvoiceHtml(d) {
-  const invoiceRows = [row(`Plan activation — ${String(d.plan).toUpperCase()} (debited from wallet)`, inr(d.planFee))].join("");
-  const totals = [totalRow("New wallet balance", inr(d.walletBalance), true), totalRow("Active plan", String(d.plan).toUpperCase(), false)].join("");
+  const invoiceRows = [row(`Plan selected — ${String(d.plan).toUpperCase()} (free, no amount deducted)`, inr(0))].join("");
+  const totals = [totalRow("Wallet balance (untouched)", inr(d.walletBalance), true), totalRow("Active plan", String(d.plan).toUpperCase(), false)].join("");
   const meta = [
-    metaRow("Ledger Txn ID", d.transactionId || "—"),
     metaRow("Date (IST)", istDate(d.date)),
     ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
   ].join("");
-  const intro = `Your <b>${esc(String(d.plan).toUpperCase())}</b> plan is now active. <b>${esc(inr(d.planFee))}</b> was debited from your wallet balance — no card was charged.`;
+  const intro = `Your <b>${esc(String(d.plan).toUpperCase())}</b> plan is now active. <b>No amount was deducted</b> — your wallet balance stays fully available for report pulls, billed per report at this plan's rates.`;
   return receiptShell({
     title: "Plan Activation Receipt", preheader: `${d.plan} plan active · Balance ${inr(d.walletBalance)}`,
     name: d.name, introHtml: intro, invoiceRowsHtml: invoiceRows, totalsHtml: totals, metaRowsHtml: meta,
@@ -212,7 +211,7 @@ async function sendPlanActivationMail(to, d) {
   const subject = `VerifyHub: your ${String(d.plan).toUpperCase()} plan is active`;
   return sendMail({
     to, subject, html: planActivationInvoiceHtml(d),
-    text: `Hi ${d.name || "Partner"}, your ${String(d.plan).toUpperCase()} plan is active. Fee ${inr(d.planFee)} debited from wallet. New balance ${inr(d.walletBalance)}.`,
+    text: `Hi ${d.name || "Partner"}, your ${String(d.plan).toUpperCase()} plan is active. Nothing was deducted. Balance ${inr(d.walletBalance)}.`,
   });
 }
 

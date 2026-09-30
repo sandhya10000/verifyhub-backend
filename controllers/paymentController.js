@@ -40,26 +40,22 @@ const createWalletRechargeOrder = async (req, res) => {
       });
     }
 
-    // 3. Resolve plan + fee.
-    // First funding ever -> auto-assign by amount slab, client choice ignored,
-    // plan fee deducted from the top-up.
-    // Later top-ups -> PURE wallet credit by default. A plan may optionally
-    // ride along (chosen at checkout, upgrades and downgrades both allowed);
-    // otherwise plans are bought separately from wallet balance via
-    // /plan/activate.
+    // 3. Resolve plan (free tier selection — NEVER a fee).
+    // Plans are eligibility tiers, not purchases: the wallet is pure prepaid
+    // balance and the full top-up is always credited. A plan may ride along
+    // (first funding auto-assigns by amount slab; later top-ups may carry a
+    // checkout choice, upgrades and downgrades both allowed) purely to set
+    // the per-report price row. Nothing is ever deducted for the plan itself.
     const priorSuccess = await Transaction.exists({
       userId: user._id, purpose: "WALLET_RECHARGE", status: "SUCCESS",
     });
-    let plan = null, planFee = 0, autoAssigned = false;
+    let plan = null, autoAssigned = false;
     if (!priorSuccess) {
       plan = tierForAmount(baseAmount);
-      if (!plan) {
-        return res.status(400).json({
-          success: false,
-          message: `Amount below the cheapest plan. Minimum recharge is ₹${MIN_RECHARGE}`,
-        });
-      }
       autoAssigned = true;
+      // No minimum-plan gate on first funding beyond minRecharge (checked
+      // above): tierForAmount may return null for tiny amounts and the
+      // partner simply starts tier-less (billing defaults to starter).
     } else if (requestedPlan) {
       if (!PLAN_KEYS.includes(requestedPlan)) {
         return res.status(400).json({ success: false, message: "Unknown plan selected" });
@@ -67,23 +63,11 @@ const createWalletRechargeOrder = async (req, res) => {
       plan = requestedPlan;
     }
 
-    if (plan) {
-      const planRow = pricing?.plans?.[plan];
-      if (!planRow) {
-        return res.status(500).json({ success: false, message: "Pricing not configured for this plan" });
-      }
-      planFee = Number(planRow.recharge) || 0;
-      if (baseAmount < planFee) {
-        return res.status(400).json({
-          success: false,
-          message: `₹${baseAmount} is below the ${plan} plan price of ₹${planFee}`,
-        });
-      }
-    }
-    const walletCredit = baseAmount - planFee;
+    const planFee = 0;
+    const walletCredit = baseAmount;
 
-    // 4. No GST on top-ups — plan charges are GST-inclusive, so the
-    // customer pays exactly the entered amount via Razorpay.
+    // 4. No GST on top-ups and no plan fee — the customer pays exactly the
+    // entered amount via Razorpay and the full amount lands in the wallet.
     const gstAmount = 0;
 
     const totalAmount = baseAmount;
@@ -230,8 +214,9 @@ const verifyPayment = async (req, res) => {
     await transaction.save();
 
     // 7. Wallet recharge.
-    // Two shapes: plan purchase (planSelected set -> fee split + tier set)
-    // or pure top-up (planSelected null -> full credit, tier untouched).
+    // Two shapes: tier selection rides along (planSelected set -> tier set,
+    // full amount credited) or pure top-up (planSelected null -> full credit,
+    // tier untouched). Plans are free — no fee is ever withheld.
     // Re-derive defensively and never strand paid money.
     if (transaction.purpose === "WALLET_RECHARGE") {
       const pricing = await Pricing.findOne({ key: "default" }).lean();
@@ -245,15 +230,11 @@ const verifyPayment = async (req, res) => {
       }
 
       let plan = transaction.planSelected;
-      let planFee = transaction.planFee;
       if (plan && !PLAN_KEYS.includes(plan)) plan = null; // corrupt value -> treat as pure top-up
-      if (plan && (planFee === undefined || planFee === null)) {
-        // Legacy order predating fee locking — re-read live pricing
-        const planRow = pricing?.plans?.[plan];
-        planFee = planRow ? Number(planRow.recharge) || 0 : 0;
-      }
-      if (!plan) planFee = 0;
-      const walletCredit = Math.max(0, Number(transaction.amount) - planFee);
+      // Legacy orders predating free plans may carry a locked planFee —
+      // ignore it: plans cost nothing, the full amount is always credited.
+      const planFee = 0;
+      const walletCredit = Math.max(0, Number(transaction.amount));
 
       // The plan chosen at checkout wins (upgrades and downgrades both
       // allowed). Pure top-ups never touch the tier at all.
@@ -358,9 +339,11 @@ module.exports = {
 };
 
 // POST /api/plan/activate { plan }
-// Activates a plan by debiting its price from the existing wallet balance.
-// No Razorpay involved: top up first, then activate. Upgrades and
-// downgrades are both allowed; re-buying the active plan is rejected.
+// Free tier selection gated by wallet balance: the partner's balance must
+// cover the tier's `recharge` slab (eligibility only — NOTHING is deducted).
+// No Razorpay, no ledger row: the wallet is pure prepaid balance and only
+// per-report generation charges ever move it. Upgrades and downgrades are
+// both allowed; re-selecting the active plan is rejected.
 // Atomic + idempotent per outcome.
 async function activatePlan(req, res) {
   try {
@@ -381,17 +364,26 @@ async function activatePlan(req, res) {
     }
 
     const pricing = await Pricing.findOne({ key: "default" }).lean();
-    const fee = Number(pricing?.plans?.[plan]?.recharge);
-    if (!Number.isFinite(fee) || fee < 0) {
+    const threshold = Number(pricing?.plans?.[plan]?.recharge);
+    if (!Number.isFinite(threshold) || threshold < 0) {
       return res.status(500).json({ success: false, message: "Pricing not configured for this plan" });
     }
 
-    // Atomic: debit only if balance covers AND tier hasn't moved underneath us
-    const debit = await User.updateOne(
-      { _id: userId, walletBalance: { $gte: fee }, activePlan: user.activePlan || null },
-      { $inc: { walletBalance: -fee }, $set: { activePlan: plan } },
+    // Eligibility gate only: balance must cover the slab, but not a rupee
+    // moves. Guarded update keeps concurrent switches race-safe.
+    const balance = Number(user.walletBalance) || 0;
+    if (balance < threshold) {
+      return res.status(402).json({
+        success: false,
+        message: `${plan} needs ₹${threshold} wallet balance to select — please top up first. Nothing is charged for the plan itself.`,
+        required: threshold, balance,
+      });
+    }
+    const switched = await User.updateOne(
+      { _id: userId, activePlan: user.activePlan || null },
+      { $set: { activePlan: plan } },
     );
-    if (debit.modifiedCount === 0) {
+    if (switched.modifiedCount === 0) {
       const fresh = await User.findById(userId).select("activePlan walletBalance").lean();
       if (!fresh) {
         return res.status(404).json({ success: false, message: "User not found" });
@@ -403,32 +395,19 @@ async function activatePlan(req, res) {
           walletBalance: fresh.walletBalance, activePlan: fresh.activePlan,
         });
       }
-      return res.status(402).json({
+      return res.status(409).json({
         success: false,
-        message: `Insufficient wallet balance. ${plan} costs ₹${fee} — please top up first.`,
-        required: fee, balance: fresh.walletBalance ?? 0,
+        message: "Your plan changed just now — please retry.",
       });
     }
 
-    await Transaction.create({
-      userId,
-      orderId: `plan_${String(userId)}_${Date.now()}`,
-      amount: fee,
-      gstAmount: 0,
-      totalAmount: fee,
-      currency: "INR",
-      type: "DEBIT",
-      purpose: "PLAN_PURCHASE",
-      status: "SUCCESS",
-      gateway: "WALLET",
-      planTier: plan,
-      description: `${plan.toUpperCase()} plan activation from wallet`,
-    });
+    // No ledger row: free selections move no money, so the ledger stays
+    // money-only (recharges in, report charges out).
 
     const updated = await User.findById(userId).select("walletBalance activePlan email name partner_id").lean();
     if (updated?.email) {
       sendPlanActivationMail(updated.email, {
-        name: updated.name, plan, planFee: fee,
+        name: updated.name, plan, planFee: 0,
         walletBalance: updated.walletBalance,
         transactionId: `plan_${String(userId)}`,
         partnerId: updated.partner_id, date: new Date(),
@@ -439,15 +418,12 @@ async function activatePlan(req, res) {
       message: `${plan} plan activated`,
       walletBalance: updated.walletBalance,
       activePlan: updated.activePlan,
-      planFee: fee,
+      planFee: 0,
     });
   } catch (err) {
     // Genuine duplicate (parallel double-click): the guard above already
     // resolved it into duplicate:true, so reaching here means a real error.
-    // Balance moves only via the guarded update, never here.
     console.error("activatePlan Error:", err);
-    // If the debit applied but the ledger write failed, surface loudly —
-    // do NOT retry blindly (would double-charge).
-    return res.status(500).json({ success: false, message: "Could not activate plan. Please contact support if balance was deducted." });
+    return res.status(500).json({ success: false, message: "Could not activate plan. Please try again." });
   }
 }
