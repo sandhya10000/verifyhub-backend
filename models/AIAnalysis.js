@@ -18,6 +18,11 @@ const AIAnalysisSchema = new mongoose.Schema(
       index: true,
     },
     fileName: { type: String, required: true },
+    // Basename of the file as saved on disk (multer timestamp-renamed).
+    // Portable across machines — resolved as path.join(UPLOAD_DIR,
+    // storedFileName) at serve time instead of trusting the absolute
+    // filePath recorded at upload time.
+    storedFileName: { type: String, default: null },
     language:  { type: String, default: 'en' },   // ISO code for the report output language
     filePath: { type: String, required: true },
     fileType: { type: String, enum: ['pdf', 'json'], required: true },

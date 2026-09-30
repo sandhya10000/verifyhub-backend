@@ -75,6 +75,7 @@ exports.uploadReport = async (req, res) => {
     const analysis = await AIAnalysis.create({
       userId: req.user._id,
       fileName: req.file.originalname,
+      storedFileName: path.basename(req.file.path),
       filePath: req.file.path,
       fileType: path.extname(req.file.originalname).replace('.', ''),
       language,
@@ -169,6 +170,47 @@ exports.downloadPdf = async (req, res) => {
   } catch (err) {
     console.error(`[downloadPdf] Unhandled error for ${id}:`, err);
     res.status(500).json({ success: false, message: 'Could not generate PDF.' });
+  }
+};
+
+// GET /api/ai-analyzer/:id/upload
+// Streams the originally uploaded bureau file (PDF/JSON) inline so it opens
+// in a new tab via the "Uploaded Report" eye icon. Same ownership rule as
+// downloadPdf: owner or admin. No status gate — uploads exist from the
+// moment of upload, regardless of analysis progress.
+exports.downloadUpload = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const analysis = await AIAnalysis.findById(id);
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Analysis not found.' });
+    }
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin && String(analysis.userId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized.' });
+    }
+    // Resolve the disk file from the portable stored filename against the
+    // runtime upload dir (same constant multer writes through). Falls back
+    // to the recorded absolute path for docs predating storedFileName.
+    // path.basename() containment: the served file can never escape the
+    // upload dir even if a stored value were tampered with.
+    const { UPLOAD_DIR } = require('../config/uploadConfig');
+    const diskName = path.basename(analysis.storedFileName || analysis.filePath || '');
+    const filePath = diskName ? path.join(UPLOAD_DIR, diskName) : null;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'Uploaded file is no longer available.' });
+    }
+    const ext = path.extname(analysis.fileName || filePath).toLowerCase();
+    const contentType = ext === '.json' ? 'application/json' : 'application/pdf';
+    const safeName = path.basename(analysis.fileName || filePath).replace(/"/g, '');
+    console.log(`[downloadUpload:${id}] Serving ${filePath} as ${contentType}`);
+    return res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `inline; filename="${safeName}"`,
+    }).sendFile(path.resolve(filePath));
+  } catch (err) {
+    console.error(`[downloadUpload] Unhandled error for ${id}:`, err);
+    res.status(500).json({ success: false, message: 'Could not open uploaded file.' });
   }
 };
 
