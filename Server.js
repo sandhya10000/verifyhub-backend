@@ -140,6 +140,13 @@ app.use(express.json());
 // =========================
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+// AI bureau uploads live under ./uploads/ai-analysis, inside the served
+// uploads tree. The /ai-uploads alias below points at the same dir as a
+// fallback. The /uploads line above is untouched.
+const { UPLOAD_DIR: AI_UPLOAD_DIR } = require("./config/uploadConfig");
+app.use("/ai-uploads", express.static(AI_UPLOAD_DIR));
+console.log("[AI] upload dir:", AI_UPLOAD_DIR, "(served at /uploads/ai-analysis)");
 // Default Route
 app.get("/", (req, res) => {
   res.json({
