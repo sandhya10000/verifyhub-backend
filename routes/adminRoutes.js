@@ -6,9 +6,26 @@ const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/adminMiddleware');
 
 router.get('/overview/summary', auth, isAdmin, adminController.getOverviewSummary);
+router.get('/overview/money-timeseries', auth, isAdmin, adminController.getMoneyTimeseries);
+router.get('/overview/plan-distribution', auth, isAdmin, adminController.getPlanDistribution);
+router.get('/overview/bureau-split', auth, isAdmin, adminController.getBureauSplit);
+router.get('/overview/score-mix', auth, isAdmin, adminController.getScoreMix);
+router.get('/overview/top-partners', auth, isAdmin, adminController.getTopPartners);
+router.get('/overview/recent-activity', auth, isAdmin, adminController.getRecentActivity);
 router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalyses);
 router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCreditReports);
+router.get('/reports/failed-reports', auth, isAdmin, adminController.getFailedCreditReports);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
+router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
+router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
+router.post('/partners/:id/deduct-funds', auth, isAdmin, adminController.deductFundsFromPartner);
+router.get('/partners/:id', auth, isAdmin, adminController.getPartnerById);
+router.patch('/partners/:id', auth, isAdmin, adminController.updatePartner);
+router.get('/partners/:id/reports', auth, isAdmin, adminController.getPartnerReports);
+router.get('/partners/:id/transactions', auth, isAdmin, adminController.getPartnerTransactions);
+router.get('/transactions', auth, isAdmin, adminController.getAllTransactions);
+router.get('/pricing', auth, isAdmin, adminController.getPricing);
+router.patch('/pricing', auth, isAdmin, adminController.updatePricing);
 
 // Support Ticket routes
 router.get('/tickets/unread-count', auth, isAdmin, ticketController.getUnreadCount);

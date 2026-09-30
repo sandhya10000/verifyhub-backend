@@ -51,6 +51,26 @@ exports.uploadReport = async (req, res) => {
     const rawLang = (req.body.language || '').trim().toLowerCase();
     const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
     console.log(`[uploadReport] language: '${language}' (raw: '${rawLang}')`);
+    // Wallet affordability gate (AI analysis = ₹100 + GST) — before
+    // accepting the file for background processing
+    try {
+      const { canAfford } = require('../utils/wallet');
+      const gate = await canAfford(req.user?._id, 'ai');
+      if (!gate.ok) {
+        fs.unlinkSync(req.file.path);
+        return res.status(402).json({
+          success: false,
+          message: gate.reason === 'user-not-found'
+            ? 'User authentication required'
+            : `Insufficient wallet balance. ${gate.total} required — please recharge.`,
+          required: gate.total,
+          balance: gate.balance,
+        });
+      }
+    } catch (gateErr) {
+      console.error('[wallet] AI affordability check failed:', gateErr.message);
+      // fail-open: never block delivery on a pricing hiccup
+    }
 
     const analysis = await AIAnalysis.create({
       userId: req.user._id,
@@ -59,8 +79,7 @@ exports.uploadReport = async (req, res) => {
       fileType: path.extname(req.file.originalname).replace('.', ''),
       language,
       status: 'uploaded',
-    });
-    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
+    });    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
     logStep(analysis._id, 'DB Record Created', { analysisId: analysis._id });
 
     console.log('[uploadReport] DB record created, analysisId:', analysis._id, '| filePath:', req.file.path);
