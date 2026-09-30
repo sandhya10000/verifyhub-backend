@@ -22,9 +22,12 @@ const productPriceSchema = new mongoose.Schema(
 
 // Single-document pricing config.
 //
-// Success charges are tiered: the partner's activePlan picks the row,
-// the product picks the column. Tier numbers are GST-inclusive totals
-// (gstRate 0) unless the founder says otherwise.
+// Plans are FREE eligibility tiers, not purchases: `recharge` is the minimum
+// wallet balance required to SELECT the tier (nothing is ever deducted for
+// the plan itself). Success charges are tiered: the partner's activePlan
+// picks the row, the product picks the column — deducted per report pull.
+// Tier numbers are GST-inclusive totals (gstRate 0) unless the founder says
+// otherwise.
 // AI + failure fallbacks stay flat across all tiers:
 //   AI success = base + GST, any other failure = otherFailedCharge.
 const pricingSchema = new mongoose.Schema(

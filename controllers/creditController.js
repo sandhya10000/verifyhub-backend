@@ -381,6 +381,11 @@ const CibilReportFromDigi = async (req, res) => {
 
     console.log("[CIBIL] CreditReport updated with PDF");
 
+    // Wallet debit (tiered per-report price) — post-success only, mirroring
+    // Experian/CRIF/Equifax. Without this CIBIL pulls were free AND the
+    // header balance never moved.
+    await debitReportPull(creditReport, "cibil", "CIBIL");
+
     // ============================================================
     // 10. SUCCESS RESPONSE
     // ============================================================
