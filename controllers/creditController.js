@@ -10,6 +10,14 @@ const SUREPASS_CONFIG = require("../config/surepass");
 const saveCreditReportLocally = require("../utils/saveCreditReportLocally");
 const generateExperianPdf = require("../services/experianPdf.service");
 const generateCrifPdf = require("../templates/generateCrifPdf");
+const { getSurepassApiKeyValue } = require("../utils/surepassKey");
+// Models
+
+const Setting = require("../models/Setting");
+
+// Surepass client
+const surepassClient = require("../services/surepassClient");
+
 const {
   canAfford,
   chargeForReport,
@@ -1755,13 +1763,117 @@ const ExperianReport = async (req, res) => {
   }
 };
 
+/**
+ * ============================================================
+ * BUILD SUREPASS API URL
+ * ============================================================
+ */
+const buildSurepassUrl = () => {
+  const baseUrl = String(process.env.SUREPASS_BASE_URL || "").trim();
+
+  const configuredEndpoint = String(
+    process.env.SUREPASS_EQUIFAX_ENDPOINT || "",
+  ).trim();
+
+  if (!configuredEndpoint) {
+    throw new Error("SUREPASS_EQUIFAX_ENDPOINT is not configured");
+  }
+
+  // If endpoint is already a complete URL
+  if (
+    configuredEndpoint.startsWith("http://") ||
+    configuredEndpoint.startsWith("https://")
+  ) {
+    return configuredEndpoint;
+  }
+
+  if (!baseUrl) {
+    throw new Error("SUREPASS_BASE_URL is not configured");
+  }
+
+  return `${baseUrl.replace(/\/+$/, "")}/${configuredEndpoint.replace(/^\/+/, "")}`;
+};
+
+/**
+ * ============================================================
+ * CLEAN NAME
+ * ============================================================
+ */
+const cleanNameValue = (value) => {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+};
+
+/**
+ * ============================================================
+ * CLEAN PAN
+ * ============================================================
+ */
+const cleanPanValue = (value) => {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+};
+
+/**
+ * ============================================================
+ * CLEAN MOBILE
+ * ============================================================
+ */
+const cleanMobileValue = (value) => {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "");
+};
+
+/**
+ * ============================================================
+ * CLEAN GENDER
+ * ============================================================
+ */
+const cleanGenderValue = (value) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+};
+
+/**
+ * ============================================================
+ * TOKEN LOGGING
+ * ============================================================
+ *
+ * NEVER log complete API token.
+ */
+const logTokenInfo = (token) => {
+  if (!token) {
+    console.log("[EQUIFAX] Surepass Token: NOT FOUND");
+    return;
+  }
+
+  console.log("[EQUIFAX] Surepass Token Loaded: true");
+  console.log("[EQUIFAX] Surepass Token Length:", token.length);
+
+  if (token.length >= 10) {
+    console.log(
+      "[EQUIFAX] Surepass Token Preview:",
+      `${token.substring(0, 6)}******${token.slice(-4)}`,
+    );
+  }
+};
+
+/**
+ * ============================================================
+ * MAIN EQUIFAX CONTROLLER
+ * ============================================================
+ */
 const EquifaxReport = async (req, res) => {
   let creditReport = null;
 
   try {
-    // ==========================================
+    // ========================================================
     // 1. AUTHENTICATED USER
-    // ==========================================
+    // ========================================================
 
     const userId = req.user?._id;
 
@@ -1772,21 +1884,20 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
-    console.log("[EQUIFAX] Authenticated User:", userId);
+    console.log("[EQUIFAX] Authenticated User:", userId.toString());
 
-    // ==========================================
+    // ========================================================
     // 2. GET REQUEST DATA
-    // ==========================================
+    // ========================================================
 
     const { name, panNumber, mobile, gender, consent, orderId } = req.body;
 
-    // ==========================================
-    // 3. ENV VALIDATION
-    // ==========================================
+    // ========================================================
+    // 3. ENVIRONMENT VALIDATION
+    // ========================================================
 
     if (
-      !process.env.SUREPASS_BASE_URL ||
-      !process.env.SUREPASS_API_TOKEN ||
+      !process.env.SUREPASS_BASE_URL &&
       !process.env.SUREPASS_EQUIFAX_ENDPOINT
     ) {
       console.error("[EQUIFAX] Surepass environment variables are missing");
@@ -1797,9 +1908,18 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // 4. VALIDATION
-    // ==========================================
+    if (!process.env.SUREPASS_EQUIFAX_ENDPOINT) {
+      console.error("[EQUIFAX] SUREPASS_EQUIFAX_ENDPOINT is missing");
+
+      return res.status(500).json({
+        success: false,
+        message: "Surepass Equifax endpoint is not configured",
+      });
+    }
+
+    // ========================================================
+    // 4. REQUIRED FIELD VALIDATION
+    // ========================================================
 
     const requiredFields = {
       name,
@@ -1824,50 +1944,95 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
-    // ==========================================
+    // ========================================================
     // 5. CONSENT VALIDATION
-    // ==========================================
+    // ========================================================
 
-    if (String(consent).trim().toUpperCase() !== "Y") {
+    const normalizedConsent = String(consent).trim().toUpperCase();
+
+    if (normalizedConsent !== "Y") {
       return res.status(400).json({
         success: false,
         message: "Customer consent must be Y",
       });
     }
 
-    // Wallet gate (Equifax = ₹50 + GST) — before any paid bureau call
-    // if (!(await affordOr402(req, res, "equifax"))) return;
-
-    // ==========================================
+    // ========================================================
     // 6. CLEAN DATA
-    // ==========================================
+    // ========================================================
 
-    const cleanName = String(name).trim();
-    const cleanPan = String(panNumber).trim().toUpperCase();
-    const cleanMobile = String(mobile).trim();
-    const cleanGender = String(gender).trim().toLowerCase();
+    const cleanName = cleanNameValue(name);
 
-    // ==========================================
-    // 7. SUREPASS PAYLOAD
-    // ==========================================
+    const cleanPan = cleanPanValue(panNumber);
 
-    const payload = {
+    const cleanMobile = cleanMobileValue(mobile);
+
+    const cleanGender = cleanGenderValue(gender);
+
+    // ========================================================
+    // 7. PAN VALIDATION
+    // ========================================================
+
+    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+
+    if (!panRegex.test(cleanPan)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PAN number",
+      });
+    }
+
+    // ========================================================
+    // 8. MOBILE VALIDATION
+    // ========================================================
+
+    const mobileRegex = /^[6-9][0-9]{9}$/;
+
+    if (!mobileRegex.test(cleanMobile)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid mobile number",
+      });
+    }
+
+    // ========================================================
+    // 9. SUREPASS PAYLOAD
+    // ========================================================
+    //
+    // IMPORTANT:
+    //
+    // This matches your OLD WORKING EQUIFAX implementation.
+    //
+    // Old payload:
+    //
+    // {
+    //   name,
+    //   id_number,
+    //   id_type,
+    //   mobile,
+    //   consent
+    // }
+    //
+    // Gender is intentionally NOT sent to Surepass.
+    // ========================================================
+
+    const requestData = {
       name: cleanName,
       id_number: cleanPan,
       id_type: "pan",
       mobile: cleanMobile,
       consent: "Y",
-      gender: cleanGender,
     };
 
-    console.log("[EQUIFAX] Request:", {
-      ...payload,
+    console.log("[EQUIFAX] Request Data:", {
+      ...requestData,
       id_number: "********",
+      gender: cleanGender,
     });
 
-    // ==========================================
-    // 8. CREATE PENDING CREDIT REPORT
-    // ==========================================
+    // ========================================================
+    // 10. CREATE PENDING CREDIT REPORT
+    // ========================================================
 
     creditReport = await CreditReport.create({
       userId,
@@ -1901,64 +2066,93 @@ const EquifaxReport = async (req, res) => {
 
     console.log("[EQUIFAX] Pending Report Created:", creditReport._id);
 
-    // ==========================================
-    // 9. SUREPASS API URL
-    // ==========================================
+    // ========================================================
+    // 11. GET SUREPASS API KEY
+    // ========================================================
+    //
+    // VERY IMPORTANT:
+    //
+    // DO NOT USE:
+    //
+    // process.env.SUREPASS_API_TOKEN
+    //
+    // Old working code uses:
+    //
+    // getSurepassApiKeyValue()
+    //
+    // which first checks DB.
+    // ========================================================
 
-    const baseUrl = String(process.env.SUREPASS_BASE_URL).trim();
+    const surepassApiKey = await getSurepassApiKeyValue();
 
-    const equifaxEndpoint = String(
-      process.env.SUREPASS_EQUIFAX_ENDPOINT,
-    ).trim();
+    if (!surepassApiKey) {
+      console.error("[EQUIFAX] Surepass API key not configured");
 
-    const apiUrl = `${baseUrl}${equifaxEndpoint}`;
+      creditReport.status = "Failed";
 
-    console.log("[EQUIFAX] API URL:", apiUrl);
+      creditReport.reportData = {
+        error: "Surepass API key not configured",
+      };
 
-    // ==========================================
-    // 10. SUREPASS TOKEN
-    // ==========================================
+      await creditReport.save();
 
-    const token = String(process.env.SUREPASS_API_TOKEN).trim();
+      return res.status(500).json({
+        success: false,
+        status: "failed",
+        message: "Surepass API key not configured",
+        creditReportId: creditReport._id,
+        userId: creditReport.userId,
+      });
+    }
 
-    console.log("[EQUIFAX] Token Loaded:", !!token);
+    // Safe token logging
+    logTokenInfo(surepassApiKey);
 
-    console.log("[EQUIFAX] Token Length:", token.length);
+    // ========================================================
+    // 12. BUILD API URL
+    // ========================================================
 
+    const apiUrl = buildSurepassUrl();
+
+    console.log("[EQUIFAX] Surepass API URL:", apiUrl);
+
+    // ========================================================
+    // 13. CALL SUREPASS
+    // ========================================================
+    //
     // IMPORTANT:
-    // Actual token is NEVER printed in logs.
-    console.log(
-      "[EQUIFAX] Token Preview:",
-      token ? `${token.substring(0, 6)}******${token.slice(-4)}` : "NOT_FOUND",
-    );
-
-    // ==========================================
-    // 11. HEADERS
-    // ==========================================
-
-    const headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-
-    // ==========================================
-    // 12. CALL SUREPASS
-    // ==========================================
+    //
+    // DO NOT use axios.post() here.
+    //
+    // We are using the SAME old working flow:
+    //
+    // getSurepassApiKeyValue()
+    //       ↓
+    // makeCreditCheckRequest()
+    //       ↓
+    // makeRequest()
+    //       ↓
+    // axios()
+    // ========================================================
 
     console.log("[EQUIFAX] Sending request to Surepass...");
 
-    const response = await axios.post(apiUrl, payload, {
-      headers,
-      timeout: 30000,
-    });
+    const response = await surepassClient.makeCreditCheckRequest(
+      surepassApiKey,
+      apiUrl,
+      requestData,
+    );
 
-    const apiData = response.data;
+    const apiData = response?.data;
 
-    console.log("[EQUIFAX] Response:", JSON.stringify(apiData, null, 2));
+    console.log(
+      "[EQUIFAX] Surepass Response:",
+      JSON.stringify(apiData, null, 2),
+    );
 
-    // ==========================================
-    // 13. CHECK API SUCCESS
-    // ==========================================
+    // ========================================================
+    // 14. CHECK API FAILURE
+    // ========================================================
 
     if (apiData?.success === false || apiData?.status === false) {
       creditReport.status = "Failed";
@@ -1967,14 +2161,16 @@ const EquifaxReport = async (req, res) => {
 
       await creditReport.save();
 
-      // Definitive bureau rejection — flat ₹30 fail fee
       const eqFailCharge = await debitFailedPull(
         creditReport,
         "equifax",
         "EQUIFAX",
       );
+
       return res.status(400).json({
         success: false,
+
+        status: "failed",
 
         message: apiData?.message || "Equifax credit report request failed",
 
@@ -1990,9 +2186,9 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // 14. GET REPORT URL
-    // ==========================================
+    // ========================================================
+    // 15. GET REPORT URL
+    // ========================================================
 
     const reportUrl =
       apiData?.reportUrl ||
@@ -2001,20 +2197,27 @@ const EquifaxReport = async (req, res) => {
       apiData?.data?.pdfUrl ||
       apiData?.data?.result?.reportUrl ||
       apiData?.data?.result?.pdfUrl ||
+      apiData?.data?.report_url ||
+      apiData?.data?.pdf_url ||
+      apiData?.data?.credit_report_link ||
+      apiData?.data?.report_link ||
       null;
 
     console.log("[EQUIFAX] Report URL:", reportUrl);
 
-    // ==========================================
-    // 15. GET SCORE
-    // ==========================================
+    // ========================================================
+    // 16. GET CREDIT SCORE
+    // ========================================================
 
     let score = null;
 
     const possibleScore =
       apiData?.score ??
+      apiData?.credit_score ??
       apiData?.data?.score ??
+      apiData?.data?.credit_score ??
       apiData?.data?.result?.score ??
+      apiData?.data?.result?.credit_score ??
       null;
 
     if (
@@ -2029,9 +2232,11 @@ const EquifaxReport = async (req, res) => {
       }
     }
 
-    // ==========================================
-    // 16. GET REPORT ID
-    // ==========================================
+    console.log("[EQUIFAX] Score:", score);
+
+    // ========================================================
+    // 17. GET REPORT ID
+    // ========================================================
 
     const reportId =
       apiData?.reportId ||
@@ -2042,9 +2247,11 @@ const EquifaxReport = async (req, res) => {
       apiData?.data?.result?.reportID ||
       null;
 
-    // ==========================================
-    // 17. SAVE REPORT LOCALLY
-    // ==========================================
+    console.log("[EQUIFAX] Report ID:", reportId);
+
+    // ========================================================
+    // 18. SAVE REPORT LOCALLY
+    // ========================================================
 
     let localPath = null;
 
@@ -2061,16 +2268,17 @@ const EquifaxReport = async (req, res) => {
       } catch (fileError) {
         console.error("[EQUIFAX] Local report save failed:", fileError.message);
 
-        // API successful hone par sirf file
-        // save fail ki wajah se report fail nahi hogi.
+        // API succeeded.
+        // File saving failure should not
+        // make the entire report fail.
       }
     } else {
       console.log("[EQUIFAX] No report URL received from API");
     }
 
-    // ==========================================
-    // 18. UPDATE CREDIT REPORT
-    // ==========================================
+    // ========================================================
+    // 19. UPDATE CREDIT REPORT
+    // ========================================================
 
     creditReport.reportId = reportId;
 
@@ -2088,12 +2296,15 @@ const EquifaxReport = async (req, res) => {
 
     console.log("[EQUIFAX] Credit Report Updated:", creditReport._id);
 
-    // Wallet debit (Equifax = ₹50 + GST) — post-success only
+    // ========================================================
+    // 20. WALLET DEBIT
+    // ========================================================
+
     await debitReportPull(creditReport, "equifax", "EQUIFAX");
 
-    // ==========================================
-    // 19. FINAL RESPONSE
-    // ==========================================
+    // ========================================================
+    // 21. FINAL RESPONSE
+    // ========================================================
 
     return res.status(200).json({
       success: true,
@@ -2119,15 +2330,15 @@ const EquifaxReport = async (req, res) => {
       data: creditReport,
     });
   } catch (error) {
-    // ==========================================
-    // 20. ERROR
-    // ==========================================
+    // ========================================================
+    // 22. ERROR HANDLING
+    // ========================================================
 
     console.error("[EQUIFAX] Error:", error.message);
 
-    // ==========================================
+    // ========================================================
     // UPDATE PENDING -> FAILED
-    // ==========================================
+    // ========================================================
 
     if (creditReport) {
       try {
@@ -2146,9 +2357,9 @@ const EquifaxReport = async (req, res) => {
       }
     }
 
-    // ==========================================
-    // API RESPONSE ERROR
-    // ==========================================
+    // ========================================================
+    // SUREPASS HTTP ERROR
+    // ========================================================
 
     if (error.response) {
       console.error("[EQUIFAX] HTTP STATUS:", error.response.status);
@@ -2158,12 +2369,44 @@ const EquifaxReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
-      // Bureau answered with an error — flat ₹30 fail fee
-      const eqCatchCharge = await debitFailedPull(
-        creditReport,
-        "equifax",
-        "EQUIFAX",
-      );
+      // ======================================================
+      // AUTHENTICATION ERROR
+      // ======================================================
+
+      if (error.response.status === 401 || error.response.status === 403) {
+        return res.status(error.response.status).json({
+          success: false,
+
+          status: "failed",
+
+          message:
+            "Surepass authentication failed. Please verify the Surepass API key.",
+
+          creditReportId: creditReport?._id || null,
+
+          userId: creditReport?.userId || null,
+
+          error: error.response.data,
+        });
+      }
+
+      // ======================================================
+      // OTHER BUREAU/API ERROR
+      // ======================================================
+
+      let eqCatchCharge = {
+        ok: false,
+        total: 0,
+      };
+
+      if (creditReport) {
+        eqCatchCharge = await debitFailedPull(
+          creditReport,
+          "equifax",
+          "EQUIFAX",
+        );
+      }
+
       return res.status(error.response.status || 500).json({
         success: false,
 
@@ -2181,11 +2424,24 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // NO RESPONSE
-    // ==========================================
+    // ========================================================
+    // NO RESPONSE FROM SUREPASS
+    // ========================================================
 
     if (error.request) {
+      let timeoutCharge = {
+        ok: false,
+        total: 0,
+      };
+
+      if (creditReport) {
+        timeoutCharge = await debitFailedPull(
+          creditReport,
+          "equifax",
+          "EQUIFAX",
+        );
+      }
+
       return res.status(504).json({
         success: false,
 
@@ -2200,12 +2456,14 @@ const EquifaxReport = async (req, res) => {
         errorCode: error.code,
 
         errorMessage: error.message,
+
+        failureCharge: timeoutCharge.ok ? timeoutCharge.total : 0,
       });
     }
 
-    // ==========================================
+    // ========================================================
     // INTERNAL ERROR
-    // ==========================================
+    // ========================================================
 
     return res.status(500).json({
       success: false,
