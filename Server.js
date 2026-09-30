@@ -13,6 +13,15 @@ console.log(
   "[DIGI] Token Status:",
   process.env.DIGI_API_TOKEN ? "FOUND" : "MISSING",
 );
+// Presence only (never values): CIBIL/Digi signing needs all three.
+// A missing/empty var here fails fast instead of surfacing as a
+// provider "Authentication failed" at request time.
+console.log(
+  "[DIGI] CIBIL config:",
+  `baseUrl=${process.env.DIGI_BASE_URL ? "SET" : "MISSING"}`,
+  `partnerId=${process.env.DIGI_PARTNER_ID ? `SET(${(process.env.DIGI_PARTNER_ID || "").trim().length} chars)` : "MISSING"}`,
+  `secretKey=${process.env.DIGI_SECRET_KEY ? `SET(${(process.env.DIGI_SECRET_KEY || "").trim().length} chars)` : "MISSING"}`,
+);
 console.log("=================================");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");

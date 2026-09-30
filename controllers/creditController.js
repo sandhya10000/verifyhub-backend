@@ -205,15 +205,22 @@ const CibilReportFromDigi = async (req, res) => {
     }
 
     // ============================================================
-    // 3. GENERATE JWT
+    // 3. GENERATE JWT (per DigiVerification auth docs)
+    // Contract: HS256 signed with the partner secret; payload MUST be
+    // { timestamp (unix seconds, valid <= 5 min), partnerId, reqid (random) }.
+    // Signed fresh on every request — never cached/reused.
     // ============================================================
+
+    const cleanPartnerId = String(partnerId || "").trim();
+    const cleanSecretKey = String(secretKey || "").trim();
 
     const jwtToken = jwt.sign(
       {
-        partnerId: partnerId,
-        secret: secretKey,
+        timestamp: Math.floor(Date.now() / 1000),
+        partnerId: cleanPartnerId,
+        reqid: Math.floor(Math.random() * 1000000000),
       },
-      secretKey,
+      cleanSecretKey,
     );
 
     console.log("[CIBIL] JWT generated", jwtToken);
@@ -390,11 +397,22 @@ const CibilReportFromDigi = async (req, res) => {
       console.error("[CIBIL] Digi API response:", error.response.data);
     }
 
-    return res.status(error.response?.status || 500).json({
+    // Provider auth failures (bad/rotated secret, IP/geo block, inactive
+    // product) surface as Digi 401s. Don't leak raw provider strings
+    // (which embed server IPs) to the UI — full body stays server-side above.
+    const digiStatus = error.response?.status;
+    const isDigiAuthFailure =
+      digiStatus === 401 ||
+      /authentication failed/i.test(
+        String(error.response?.data?.message || ""),
+      );
+
+    return res.status(digiStatus || 500).json({
       success: false,
 
-      message:
-        error.response?.data?.message || "Failed to generate CIBIL report",
+      message: isDigiAuthFailure
+        ? "Bureau authentication failed. Please contact support."
+        : error.response?.data?.message || "Failed to generate CIBIL report",
 
       error: error.response?.data || error.message,
     });
