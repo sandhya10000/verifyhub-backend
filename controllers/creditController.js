@@ -25,6 +25,32 @@ const {
 } = require("../utils/wallet");
 const { generateCibilPdf } = require("../services/cibilPdf.service");
 
+// CIBIL score extractor — mirrors the path the PDF service already uses
+// (TrueLinkCreditReport.Borrower.CreditScore.riskScore), with fallbacks for
+// legacy flat shapes. Returns a Number in CIBIL range or null.
+// NOTE: the old code read cibilData.score / cibilData.cibilScore, keys Digi
+// never sends — every CIBIL row saved score: null because of it.
+const extractCibilScore = (apiData) => {
+  const cibilData = apiData?.data?.cibilData;
+  console.log(cibilData,"CIBIL")
+  if (!cibilData) return null;
+  const candidates = [
+    cibilData?.GetCustomerAssetsResponse?.GetCustomerAssetsSuccess?.Asset
+      ?.TrueLinkCreditReport?.Borrower?.CreditScore?.riskScore,
+    cibilData?.TrueLinkCreditReport?.Borrower?.CreditScore?.riskScore,
+    cibilData?.Borrower?.CreditScore?.riskScore,
+    cibilData?.score,
+    cibilData?.cibilScore,
+    cibilData?.creditScore,
+  ];
+  for (const raw of candidates) {
+    if (raw === null || raw === undefined || raw === "" || raw === "-") continue;
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n >= 300 && n <= 900) return n;
+  }
+  return null;
+};
+
 // Wallet affordability gate — run after input validation, before any paid
 // bureau call. Sends 402 when the partner cannot cover one pull.
 const affordOr402 = async (req, res, productKey) => {
@@ -310,12 +336,17 @@ const CibilReportFromDigi = async (req, res) => {
 
       reportData: apiData,
 
-      score: cibilData?.score || cibilData?.cibilScore || null,
+      score: extractCibilScore(apiData),
 
       isPublic: false,
     });
 
-    console.log("[CIBIL] CreditReport saved:", creditReport._id);
+    console.log(
+      "[CIBIL] CreditReport saved:",
+      creditReport._id,
+      "score:",
+      creditReport.score,
+    );
 
     // ============================================================
     // 8. GENERATE PDF USING DATABASE ID
@@ -338,6 +369,11 @@ const CibilReportFromDigi = async (req, res) => {
     creditReport.localPath = pdf.filePath;
 
     creditReport.reportUrl = pdf.relativePath;
+
+    // Re-derive score at completion (same extractor as creation) so the
+    // final Success row can never carry a stale null.
+    const finalScore = extractCibilScore(apiData);
+    if (finalScore !== null) creditReport.score = finalScore;
 
     creditReport.status = "Success";
 
@@ -364,6 +400,8 @@ const CibilReportFromDigi = async (req, res) => {
         filePath: pdf.filePath,
 
         bureau: "CIBIL",
+
+        score: creditReport.score ?? null,
 
         status: "Success",
       },
