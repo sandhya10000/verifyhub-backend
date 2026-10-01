@@ -167,7 +167,15 @@ const CibilReportFromDigi = async (req, res) => {
       firstName,
       lastName,
       mobile,
+      email,
       pan,
+      gender,
+      dob,
+      address,
+      state,
+      city,
+      pincode,
+      reportType,
       consent,
       creditReportId,
       orderId,
@@ -194,6 +202,54 @@ const CibilReportFromDigi = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "PAN number is required",
+      });
+    }
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    if (!gender) {
+      return res.status(400).json({
+        success: false,
+        message: "Gender is required",
+      });
+    }
+
+    if (!dob) {
+      return res.status(400).json({
+        success: false,
+        message: "Date of birth is required",
+      });
+    }
+
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        message: "Address is required",
+      });
+    }
+
+    if (!state) {
+      return res.status(400).json({
+        success: false,
+        message: "State is required",
+      });
+    }
+
+    if (!city) {
+      return res.status(400).json({
+        success: false,
+        message: "City is required",
+      });
+    }
+
+    if (!pincode) {
+      return res.status(400).json({
+        success: false,
+        message: "Pincode is required",
       });
     }
 
@@ -273,7 +329,7 @@ const CibilReportFromDigi = async (req, res) => {
     if (!cibilData) {
       return res.status(400).json({
         success: false,
-        message: "CIBIL data not found in Digi API response",
+        message: "CIBIL data not found in API response",
         data: apiData,
       });
     }
@@ -287,16 +343,39 @@ const CibilReportFromDigi = async (req, res) => {
 
       orderId: orderId || null,
 
+      // ============================================================
+      // CUSTOMER DETAILS
+      // ============================================================
+
       name: customerName,
 
       firstName: firstName || null,
+
       lastName: lastName || null,
 
-      mobile: mobile.toString().trim(),
+      mobile: mobile?.toString().trim() || null,
 
-      pan: pan.toString().trim().toUpperCase(),
+      email: email?.toString().trim().toLowerCase() || null,
 
-      reportType: "CIBIL",
+      pan: pan?.toString().trim().toUpperCase() || null,
+
+      gender: gender || null,
+
+      dob: dob || null,
+
+      address: address || null,
+
+      state: state || null,
+
+      city: city || null,
+
+      pincode: pincode?.toString().trim() || null,
+
+      // ============================================================
+      // REPORT DETAILS
+      // ============================================================
+
+      reportType: reportType || "CIBIL",
 
       consent: "Y",
 
@@ -1908,7 +1987,20 @@ const EquifaxReport = async (req, res) => {
     // 2. GET REQUEST DATA
     // ========================================================
 
-    const { name, panNumber, mobile, gender, consent, orderId } = req.body;
+    const {
+      name,
+      panNumber,
+      mobile,
+      gender,
+      dob,
+      email,
+      address,
+      state,
+      city,
+      pincode,
+      consent,
+      orderId,
+    } = req.body;
 
     // ========================================================
     // 3. ENVIRONMENT VALIDATION
@@ -1944,6 +2036,12 @@ const EquifaxReport = async (req, res) => {
       panNumber,
       mobile,
       gender,
+      dob,
+      email,
+      address,
+      state,
+      city,
+      pincode,
       consent,
     };
 
@@ -2062,6 +2160,12 @@ const EquifaxReport = async (req, res) => {
       mobile: cleanMobile,
 
       pan: cleanPan,
+      dob: dob || null,
+      email: email?.trim() || null,
+      address: address?.trim() || "",
+      state: state?.trim() || "",
+      city: city?.trim() || "",
+      pincode: pincode?.trim() || "",
 
       reportType: "EQUIFAX",
 
