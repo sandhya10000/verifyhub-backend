@@ -1,7 +1,27 @@
 const axios = require("axios");
 const RcVerification = require("../models/RcVerification");
+const User = require("../models/User");
 const { canAfford, chargeForReport } = require("../utils/wallet");
 const { generateRcPdf } = require("../services/rcPdf.service");
+
+const RC_DETAIL_PROJECTION =
+  "vehicleNumber ownerName status reportUrl localPath failureReason failureCategory createdAt " +
+  "rcData.reg_date rcData.status rcData.model rcData.vehicle_manufacturer_name " +
+  "rcData.vehicle_insurance_upto rcData.vehicle_tax_upto rcData.permit_valid_upto " +
+  "rcData.rc_expiry_date rcData.rc_financer rcData.blacklist_status";
+
+const getUserIdFilter = async (partnerSearch) => {
+  if (!partnerSearch) return null;
+  const users = await User.find({
+    $or: [
+      { name: { $regex: partnerSearch, $options: "i" } },
+      { email: { $regex: partnerSearch, $options: "i" } },
+      { partner_id: { $regex: partnerSearch, $options: "i" } },
+      { phone: { $regex: partnerSearch, $options: "i" } },
+    ],
+  }).select("_id");
+  return users.map((u) => u._id);
+};
 
 const VEHICLE_RE = /^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}$/;
 
@@ -205,12 +225,7 @@ const getMyVerifications = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .select(
-          "vehicleNumber ownerName status reportUrl localPath failureReason createdAt " +
-          "rcData.reg_date rcData.status rcData.model rcData.vehicle_manufacturer_name " +
-          "rcData.vehicle_insurance_upto rcData.vehicle_tax_upto rcData.permit_valid_upto " +
-          "rcData.rc_expiry_date rcData.rc_financer rcData.blacklist_status",
-        )
+        .select(RC_DETAIL_PROJECTION)
         .lean(),
     ]);
     res.json({
@@ -226,4 +241,58 @@ const getMyVerifications = async (req, res) => {
   }
 };
 
-module.exports = { verifyRc, getMyVerifications };
+// GET /api/admin/rc-reports?page&limit&search&partnerSearch&status&startDate&endDate
+// All partners' RC verifications, newest first. Admin only.
+const getAllRcVerifications = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+    const search = String(req.query.search || "").trim();
+    const partnerSearch = String(req.query.partnerSearch || "").trim();
+    const status = String(req.query.status || "All");
+    const { startDate, endDate } = req.query;
+
+    const query = {};
+    if (search) {
+      query.$or = [
+        { vehicleNumber: { $regex: search, $options: "i" } },
+        { ownerName: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (partnerSearch) {
+      const userIds = await getUserIdFilter(partnerSearch);
+      query.userId = { $in: userIds };
+    }
+    if (status && status !== "All") {
+      query.status = status;
+    }
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    const [total, rows] = await Promise.all([
+      RcVerification.countDocuments(query),
+      RcVerification.find(query)
+        .populate("userId", "name email partner_id phone")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select(RC_DETAIL_PROJECTION)
+        .lean(),
+    ]);
+    res.json({
+      success: true,
+      data: rows,
+      total,
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+    });
+  } catch (err) {
+    console.error("[RC] admin rc-reports error:", err);
+    res.status(500).json({ success: false, message: "Could not fetch RC reports" });
+  }
+};
+
+module.exports = { verifyRc, getMyVerifications, getAllRcVerifications };
