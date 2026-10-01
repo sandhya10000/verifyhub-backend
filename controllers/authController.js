@@ -96,7 +96,7 @@ const register = async (req, res) => {
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
     });
   } catch (error) {
     // Race-condition safety: unique index violation on email/phone
@@ -118,10 +118,17 @@ const login = async (req, res) => {
     if (!user) return res.status(500).json({ success: false, message: "Invalid Email or Password" });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ success: false, message: "Invalid Email or Password" });
+    // Block suspended partners at login (checked after credential match
+    // so wrong-password attempts don't leak account status).
+    if (user.isActive === false) {
+      return res.status(403).json({ success: false, code: "ACCOUNT_DEACTIVATED", message: "Your account has been deactivated. Please contact support." });
+    }
+    // Stamp last login (fire-and-forget — never blocks the response).
+    User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } }).exec().catch(() => {});
     res.json({
       success: true,
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
