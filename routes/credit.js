@@ -13,6 +13,7 @@ const {
 } = require("../controllers/creditController");
 
 // CIBIL
+//  /api/credit/generate-cibil-report
 router.post("/generate-cibil-report", auth, CibilReportFromDigi);
 
 // CRIF

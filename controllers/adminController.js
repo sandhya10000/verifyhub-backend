@@ -150,9 +150,15 @@ const getUserIdFilter = async (partnerSearch) => {
 
 exports.getAllAiAnalyses = async (req, res) => {
   try {
-    const { page = 1, limit = 50, startDate, endDate, partnerSearch } = req.query;
-    
-    let query = { status: 'completed' };
+    const { page = 1, limit = 50, startDate, endDate, partnerSearch, status } = req.query;
+
+    // No status filter by default — the admin AI tab shows every upload
+    // (uploaded / processing / completed / failed); pass ?status=completed
+    // to restore the old completed-only view.
+    let query = {};
+    if (status && status !== "All") {
+      query.status = status;
+    }
 
     if (startDate || endDate) {
       query.createdAt = {};

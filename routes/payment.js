@@ -23,9 +23,9 @@ router.post("/wallet-recharge/payment", auth, createWalletRechargeOrder);
 // @access  Private/User
 router.post("/verify/payment", auth, verifyPayment);
 
-// Plan activation from wallet balance (no Razorpay).
+// Free plan selection gated by wallet balance (no Razorpay, no debit).
 // @route   POST /api/plan/activate
-// @desc    debit plan price from wallet, set activePlan (upgrades only)
+// @desc    set activePlan when balance covers the tier slab (upgrades + downgrades)
 // @access  Private/User
 router.post("/plan/activate", auth, activatePlan);
 module.exports = router;

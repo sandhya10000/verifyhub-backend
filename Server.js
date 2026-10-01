@@ -13,6 +13,15 @@ console.log(
   "[DIGI] Token Status:",
   process.env.DIGI_API_TOKEN ? "FOUND" : "MISSING",
 );
+// Presence only (never values): CIBIL/Digi signing needs all three.
+// A missing/empty var here fails fast instead of surfacing as a
+// provider "Authentication failed" at request time.
+console.log(
+  "[DIGI] CIBIL config:",
+  `baseUrl=${process.env.DIGI_BASE_URL ? "SET" : "MISSING"}`,
+  `partnerId=${process.env.DIGI_PARTNER_ID ? `SET(${(process.env.DIGI_PARTNER_ID || "").trim().length} chars)` : "MISSING"}`,
+  `secretKey=${process.env.DIGI_SECRET_KEY ? `SET(${(process.env.DIGI_SECRET_KEY || "").trim().length} chars)` : "MISSING"}`,
+);
 console.log("=================================");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
@@ -131,6 +140,13 @@ app.use(express.json());
 // =========================
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+// AI bureau uploads live under ./uploads/ai-analysis, inside the served
+// uploads tree. The /ai-uploads alias below points at the same dir as a
+// fallback. The /uploads line above is untouched.
+const { UPLOAD_DIR: AI_UPLOAD_DIR } = require("./config/uploadConfig");
+app.use("/ai-uploads", express.static(AI_UPLOAD_DIR));
+console.log("[AI] upload dir:", AI_UPLOAD_DIR, "(served at /uploads/ai-analysis)");
 // Default Route
 app.get("/", (req, res) => {
   res.json({
