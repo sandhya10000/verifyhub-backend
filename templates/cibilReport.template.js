@@ -102,7 +102,7 @@ const renderHeader = (data) => {
         </div>
 
         <div class="header-value">
-          ${safe(data.controlNumber)}
+          ${safe(data.ReferenceKey)}
         </div>
 
         <div class="header-label report-version-label">
@@ -136,6 +136,7 @@ const renderPersonalInformation = (data) => {
   return `
     ${sectionTitle("Personal Information")}
 
+    <!-- Personal Information -->
     <div class="info-grid">
 
       ${infoItem("Full Name", borrower.fullName)}
@@ -144,9 +145,8 @@ const renderPersonalInformation = (data) => {
 
       ${infoItem("Gender", borrower.gender)}
 
-      
-
     </div>
+
 
     <!-- Mobile Numbers -->
     <div class="contact-section">
@@ -155,32 +155,46 @@ const renderPersonalInformation = (data) => {
         Mobile Number
       </div>
 
-      <div class="contact-list">
+      <div class="contact-grid">
+
         ${
           phones.length
             ? phones
                 .map(
                   (phone, index) => `
                     <div class="contact-box">
+
                       <div class="contact-label">
                         Mobile ${index + 1}
                       </div>
+
                       <div class="contact-value">
                         ${safe(phone)}
                       </div>
+
                     </div>
                   `,
                 )
                 .join("")
             : `
                 <div class="contact-box">
-                  <div class="contact-value">-</div>
+
+                  <div class="contact-label">
+                    Mobile Number
+                  </div>
+
+                  <div class="contact-value">
+                    -
+                  </div>
+
                 </div>
               `
         }
+
       </div>
 
     </div>
+
 
     <!-- Email IDs -->
     <div class="contact-section">
@@ -189,29 +203,42 @@ const renderPersonalInformation = (data) => {
         Email ID
       </div>
 
-      <div class="contact-list">
+      <div class="contact-grid">
+
         ${
           emails.length
             ? emails
                 .map(
                   (email, index) => `
                     <div class="contact-box">
+
                       <div class="contact-label">
                         Email ${index + 1}
                       </div>
+
                       <div class="contact-value">
                         ${safe(email)}
                       </div>
+
                     </div>
                   `,
                 )
                 .join("")
             : `
                 <div class="contact-box">
-                  <div class="contact-value">-</div>
+
+                  <div class="contact-label">
+                    Email ID
+                  </div>
+
+                  <div class="contact-value">
+                    -
+                  </div>
+
                 </div>
               `
         }
+
       </div>
 
     </div>
@@ -1180,57 +1207,75 @@ const buildCibilReportHtml = (data) => {
   }
 
   /* ============================================================
-     INFO GRID
-  ============================================================ */
+   PERSONAL INFORMATION
+============================================================ */
 
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid #d9e1ec;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
 
-    overflow: hidden;
+.info-grid > div {
+  min-height: 70px;
+  padding: 12px 16px;
+  border-right: 1px solid #d9e1ec;
+}
 
-    border: 1px solid #dbe3ec;
-    border-radius: 7px;
+.info-grid > div:last-child {
+  border-right: none;
+}
 
-    background: #ffffff;
-  }
 
-  .info-item {
-    min-height: 48px;
+/* ============================================================
+   MOBILE / EMAIL SECTION
+============================================================ */
 
-    padding: 8px 10px;
+.contact-section {
+  margin-top: 12px;
+}
 
-    background: #ffffff;
+.contact-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d4f91;
+  margin-bottom: 7px;
+}
 
-    border-right: 1px solid #e5eaf0;
-    border-bottom: 1px solid #e5eaf0;
-  }
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
 
-  .info-item:nth-child(3n) {
-    border-right: none;
-  }
+.contact-box {
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 14px;
+  min-height: 55px;
+  box-sizing: border-box;
+}
 
-  .info-label {
-    margin-bottom: 4px;
+.contact-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #718096;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
 
-    font-size: 7px;
-    font-weight: 700;
-
-    color: #64748b;
-
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-  }
-
-  .info-value {
-    font-size: 9px;
-    font-weight: 700;
-
-    color: #1e293b;
-
-    word-break: break-word;
-  }
-
+.contact-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #172033;
+  word-break: break-word;
+}
+   
   /* ============================================================
      CREDIT SCORE
   ============================================================ */
