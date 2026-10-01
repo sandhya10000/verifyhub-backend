@@ -50,6 +50,29 @@ const creditReportSchema = new mongoose.Schema(
     email: {
       type: String,
     },
+    address: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    state: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    city: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    pincode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
 
     // =========================
     // REPORT DETAILS

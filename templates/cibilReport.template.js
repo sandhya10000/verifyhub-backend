@@ -98,11 +98,11 @@ const renderHeader = (data) => {
 
       <div class="header-right">
         <div class="header-label">
-          Reference Key
+          Control Number
         </div>
 
         <div class="header-value">
-          ${safe(data.referenceKey)}
+          ${safe(data.controlNumber)}
         </div>
 
         <div class="header-label report-version-label">
@@ -130,6 +130,9 @@ const renderHeader = (data) => {
 const renderPersonalInformation = (data) => {
   const borrower = data.borrower || {};
 
+  const emails = borrower.emails || [];
+  const phones = borrower.phones || [];
+
   return `
     ${sectionTitle("Personal Information")}
 
@@ -137,19 +140,79 @@ const renderPersonalInformation = (data) => {
 
       ${infoItem("Full Name", borrower.fullName)}
 
-      ${infoItem("First Name", borrower.firstName)}
-
-      ${infoItem("Last Name", borrower.lastName)}
-
       ${infoItem("Date of Birth", formatDate(borrower.dob))}
 
       ${infoItem("Gender", borrower.gender)}
 
-      ${infoItem("Email", borrower.emails?.join(", ") || "-")}
+      
 
-      ${infoItem("Mobile", borrower.phones?.join(", ") || "-")}
+    </div>
 
-      ${infoItem("Borrower Key", borrower.borrowerKey)}
+    <!-- Mobile Numbers -->
+    <div class="contact-section">
+
+      <div class="contact-title">
+        Mobile Number
+      </div>
+
+      <div class="contact-list">
+        ${
+          phones.length
+            ? phones
+                .map(
+                  (phone, index) => `
+                    <div class="contact-box">
+                      <div class="contact-label">
+                        Mobile ${index + 1}
+                      </div>
+                      <div class="contact-value">
+                        ${safe(phone)}
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("")
+            : `
+                <div class="contact-box">
+                  <div class="contact-value">-</div>
+                </div>
+              `
+        }
+      </div>
+
+    </div>
+
+    <!-- Email IDs -->
+    <div class="contact-section">
+
+      <div class="contact-title">
+        Email ID
+      </div>
+
+      <div class="contact-list">
+        ${
+          emails.length
+            ? emails
+                .map(
+                  (email, index) => `
+                    <div class="contact-box">
+                      <div class="contact-label">
+                        Email ${index + 1}
+                      </div>
+                      <div class="contact-value">
+                        ${safe(email)}
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("")
+            : `
+                <div class="contact-box">
+                  <div class="contact-value">-</div>
+                </div>
+              `
+        }
+      </div>
 
     </div>
   `;
@@ -424,6 +487,10 @@ const PAYMENT_MONTHS = [
   "December",
 ];
 
+// ============================================================
+// PAYMENT HISTORY HELPERS
+// ============================================================
+
 // Get year/month from different possible date formats
 const getPaymentYearMonth = (value) => {
   if (!value) return null;
@@ -483,7 +550,10 @@ const getPaymentYearMonth = (value) => {
   return null;
 };
 
-// Get payment status
+// ============================================================
+// GET PAYMENT STATUS
+// ============================================================
+
 const getPaymentDisplayStatus = (item) => {
   if (!item) return "-";
 
@@ -503,18 +573,72 @@ const getPaymentDisplayStatus = (item) => {
 };
 
 // ============================================================
-// PAYMENT HISTORY
+// LATEST MONTHS FIRST
+// Dec → Nov → Oct → ... → Jan
 // ============================================================
 
+const PAYMENT_MONTH_NUMBERS = Array.from(
+  { length: 12 },
+  (_, index) => 12 - index,
+);
+
 // ============================================================
-// PAYMENT HISTORY - YEAR WISE / MONTH WISE
+// PAYMENT STATUS CLASS
+// ============================================================
+
+const getPaymentStatusClass = (status) => {
+  if (
+    status === null ||
+    status === undefined ||
+    status === "-" ||
+    status === ""
+  ) {
+    return "";
+  }
+
+  const value = String(status).trim().toUpperCase();
+
+  // Good / Standard
+  if (
+    value === "0" ||
+    value === "000" ||
+    value === "STD" ||
+    value === "000/STD"
+  ) {
+    return "status-good";
+  }
+
+  // Unknown / Not Reported
+  if (value === "XXX" || value === "NA" || value === "N/A") {
+    return "status-unknown";
+  }
+
+  // Asset Classification / Overdue
+  if (value.includes("SUB") || value.includes("DBT") || value.includes("LSS")) {
+    return "status-warning";
+  }
+
+  // Numeric DPD
+  const numeric = Number(value);
+
+  if (!Number.isNaN(numeric) && numeric > 0) {
+    return "status-warning";
+  }
+
+  return "";
+};
+
+// ============================================================
+// PAYMENT HISTORY
+// YEAR WISE / MONTH WISE
+// LATEST YEAR FIRST
+// LATEST MONTH FIRST
 // ============================================================
 
 const renderPaymentHistory = (history) => {
   if (!history || !history.length) {
     return `
       <div class="payment-history">
-
         <div class="payment-title">
           Payment History / Asset Classification
         </div>
@@ -522,7 +646,6 @@ const renderPaymentHistory = (history) => {
         <div class="empty-box">
           No payment history available.
         </div>
-
       </div>
     `;
   }
@@ -544,6 +667,11 @@ const renderPaymentHistory = (history) => {
 
     const { year, month } = dateInfo;
 
+    // Ignore invalid months
+    if (month < 1 || month > 12) {
+      return;
+    }
+
     if (!yearlyData[year]) {
       yearlyData[year] = {};
     }
@@ -552,14 +680,28 @@ const renderPaymentHistory = (history) => {
     yearlyData[year][month] = getPaymentDisplayStatus(item);
   });
 
+  // ============================================================
+  // SORT YEARS
+  // LATEST YEAR FIRST
+  //
+  // Example:
+  // 2026
+  // 2025
+  // 2024
+  // 2023
+  // ============================================================
+
   const years = Object.keys(yearlyData)
     .map(Number)
-    .sort((a, b) => a - b);
+    .sort((a, b) => b - a);
+
+  // ============================================================
+  // NO VALID DATA
+  // ============================================================
 
   if (!years.length) {
     return `
       <div class="payment-history">
-
         <div class="payment-title">
           Payment History / Asset Classification
         </div>
@@ -567,13 +709,16 @@ const renderPaymentHistory = (history) => {
         <div class="empty-box">
           Payment history dates could not be processed.
         </div>
-
       </div>
     `;
   }
 
   // ============================================================
   // BUILD YEAR ROWS
+  //
+  // Latest month first:
+  //
+  // Dec | Nov | Oct | Sep | ... | Jan
   // ============================================================
 
   const yearRows = years
@@ -587,9 +732,7 @@ const renderPaymentHistory = (history) => {
             ${safe(year)}
           </td>
 
-          ${Array.from({ length: 12 }, (_, index) => {
-            const monthNumber = index + 1;
-
+          ${PAYMENT_MONTH_NUMBERS.map((monthNumber) => {
             const status = months[monthNumber] ?? "-";
 
             return `
@@ -603,6 +746,20 @@ const renderPaymentHistory = (history) => {
       `;
     })
     .join("");
+
+  // ============================================================
+  // BUILD MONTH HEADERS
+  //
+  // Dec | Nov | Oct | Sep | ... | Jan
+  // ============================================================
+
+  const monthHeaders = PAYMENT_MONTH_NUMBERS.map((monthNumber) => {
+    return `
+        <th>
+          ${PAYMENT_MONTHS[monthNumber - 1]}
+        </th>
+      `;
+  }).join("");
 
   // ============================================================
   // FINAL PAYMENT HISTORY UI
@@ -631,13 +788,7 @@ const renderPaymentHistory = (history) => {
                 Year
               </th>
 
-              ${PAYMENT_MONTHS.map(
-                (month) => `
-                    <th>
-                      ${month}
-                    </th>
-                  `,
-              ).join("")}
+              ${monthHeaders}
 
             </tr>
 
@@ -654,55 +805,15 @@ const renderPaymentHistory = (history) => {
       </div>
 
       <div class="payment-note">
+
         Payment status is displayed based on the bureau response.
-        Values such as 000/STD, XXX, SUB, DBT, LSS, etc. are displayed
-        as received wherever available.
+        Values such as 000/STD, XXX, SUB, DBT, LSS, etc.
+        are displayed as received wherever available.
+
       </div>
 
     </div>
   `;
-};
-
-const getPaymentStatusClass = (status) => {
-  if (
-    status === null ||
-    status === undefined ||
-    status === "-" ||
-    status === ""
-  ) {
-    return "";
-  }
-
-  const value = String(status).trim().toUpperCase();
-
-  // Good / Standard
-  if (
-    value === "0" ||
-    value === "000" ||
-    value === "STD" ||
-    value === "000/STD"
-  ) {
-    return "status-good";
-  }
-
-  // Unknown / not reported
-  if (value === "XXX" || value === "NA" || value === "N/A") {
-    return "status-unknown";
-  }
-
-  // Asset classification / overdue
-  if (value.includes("SUB") || value.includes("DBT") || value.includes("LSS")) {
-    return "status-warning";
-  }
-
-  // Numeric DPD
-  const numeric = Number(value);
-
-  if (!Number.isNaN(numeric) && numeric > 0) {
-    return "status-warning";
-  }
-
-  return "";
 };
 
 // ============================================================

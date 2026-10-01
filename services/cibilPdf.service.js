@@ -46,13 +46,7 @@ const maskAccountNumber = (value) => {
     return "-";
   }
 
-  const str = String(value);
-
-  if (str.length <= 4) {
-    return str;
-  }
-
-  return `${"*".repeat(str.length - 4)}${str.slice(-4)}`;
+  return String(value);
 };
 
 // ============================================================
