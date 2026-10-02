@@ -386,7 +386,6 @@ const renderAddresses = (data) => {
         <thead>
           <tr>
             <th>#</th>
-            <th>Address</th>
             <th>City</th>
             <th>State</th>
             <th>PIN Code</th>
@@ -402,7 +401,6 @@ const renderAddresses = (data) => {
               (item, index) => `
                 <tr>
                   <td>${index + 1}</td>
-                  <td>${safe(item.address)}</td>
                   <td>${safe(item.city)}</td>
                   <td>${safe(item.state)}</td>
                   <td>${safe(item.pincode)}</td>

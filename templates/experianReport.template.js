@@ -376,12 +376,9 @@ const experianReportTemplate = (result) => {
             : [],
         )
         .map((address) => {
+          // Founder rule: show only City / State / PIN — never street lines.
           const addressParts = [
-            address?.First_Line_Of_Address_non_normalized,
-            address?.Second_Line_Of_Address_non_normalized,
-            address?.Third_Line_Of_Address_non_normalized,
             address?.City_non_normalized,
-            address?.Fifth_Line_Of_Address_non_normalized,
             address?.State_non_normalized,
             address?.ZIP_Postal_Code_non_normalized,
           ]
@@ -2379,7 +2376,7 @@ ${capsApplications
                       ${index + 1}
                     </div>
 
-                    <!-- Address -->
+                    <!-- City -->
                     <div style="
                       flex:1;
                       padding-right:15px;
@@ -2392,7 +2389,7 @@ ${capsApplications
                         margin-bottom:4px;
                         font-weight:600;
                       ">
-                        Address
+                        City
                       </div>
 
                       <div style="
@@ -2402,7 +2399,7 @@ ${capsApplications
                         font-weight:500;
                         word-break:break-word;
                       ">
-                        ${escapeHtml(address.fullAddress || "-")}
+                        ${escapeHtml(address?.City_non_normalized ?? "-")}
                       </div>
 
                     </div>

@@ -53,6 +53,17 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     return String(val);
   };
 
+  // Founder rule: bureau PDFs show only State / City / PIN — strip street lines.
+  // CRIF addresses arrive as opaque strings, so keep the trailing segments
+  // (typically City, State, PIN) and drop the leading street detail.
+  const maskStreetAddress = (raw) => {
+    const s = String(raw ?? "").trim();
+    if (!s || s === "-") return "-";
+    const parts = s.split(",").map((x) => x.trim()).filter(Boolean);
+    if (parts.length <= 3) return parts.join(", ") || "-";
+    return parts.slice(-3).join(", ");
+  };
+
   const escapeHtml = (val, fallback = "-") => {
     return value(val, fallback)
       .replace(/&/g, "&amp;")
@@ -1010,7 +1021,7 @@ const generateCrifPdf = async (apiData, creditReportId) => {
 
             <thead>
               <tr>
-                <th>Address</th>
+                <th>City · State · PIN</th>
                 <th>Reported Date</th>
               </tr>
             </thead>
@@ -1023,7 +1034,7 @@ const generateCrifPdf = async (apiData, creditReportId) => {
                     <tr>
 
                       <td>
-                        ${escapeHtml(item.value)}
+                        ${escapeHtml(maskStreetAddress(item.value))}
                       </td>
 
                       <td>
@@ -2025,11 +2036,11 @@ body {
     <div class="info-card info-card-wide">
 
       <div class="info-label">
-        Current / Requested Address
+        Current / Requested Address (City · State · PIN only)
       </div>
 
       <div class="info-value address-value">
-        ${escapeHtml(primaryAddress)}
+        ${escapeHtml(maskStreetAddress(primaryAddress))}
       </div>
 
     </div>
