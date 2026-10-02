@@ -885,6 +885,18 @@ const CrifReport = async (req, res) => {
 
       pan: String(panNumber).trim().toUpperCase(),
 
+      email: email?.toString().trim().toLowerCase() || null,
+
+      dob: dob || null,
+
+      address: "",
+
+      state: stateName?.toString().trim() || "",
+
+      city: cityName?.toString().trim() || "",
+
+      pincode: pincode?.toString().trim() || "",
+
       reportType: "CRIF",
 
       consent: "Y",
@@ -1503,6 +1515,18 @@ const ExperianReport = async (req, res) => {
       name: String(fullName).trim(),
       mobile,
       pan,
+
+      email: email?.toString().trim().toLowerCase() || null,
+
+      dob: dob || null,
+
+      address: "",
+
+      state: stateName?.toString().trim() || "",
+
+      city: cityName?.toString().trim() || "",
+
+      pincode: pincode?.toString().trim() || "",
 
       reportType: "EXPERIAN",
       consent: "Y",

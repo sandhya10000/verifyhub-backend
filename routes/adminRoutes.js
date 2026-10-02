@@ -31,6 +31,12 @@ router.get('/transactions', auth, isAdmin, adminController.getAllTransactions);
 router.get('/pricing', auth, isAdmin, adminController.getPricing);
 router.patch('/pricing', auth, isAdmin, adminController.updatePricing);
 
+// Google Sheets export (Admin → Settings)
+const sheetsController = require('../controllers/sheetsController');
+router.get('/integrations/google-sheets', auth, isAdmin, sheetsController.getSheetsSettings);
+router.put('/integrations/google-sheets', auth, isAdmin, sheetsController.updateSheetsSettings);
+router.post('/integrations/google-sheets/sync-now', auth, isAdmin, sheetsController.triggerSheetsSync);
+
 // Support Ticket routes
 router.get('/tickets/unread-count', auth, isAdmin, ticketController.getUnreadCount);
 router.post('/tickets/mark-seen', auth, isAdmin, ticketController.markTicketsSeen);
