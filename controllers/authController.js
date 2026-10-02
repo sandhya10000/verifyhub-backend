@@ -4,6 +4,7 @@ const User = require("../models/User");
 const Otp = require("../models/Otp");
 const generateToken = require("../utils/generateToken");
 const { sendOtpMail } = require("../utils/sendMail");
+const { sendWhatsAppOtp } = require("../utils/sendWhatsApp");
 const { validateEmailFormat, hasMx, isMailboxNotFoundError } = require("../utils/emailValidation");
 
 const OTP_EXPIRY_MIN = Number(process.env.OTP_EXPIRY_MIN || 10);
@@ -17,12 +18,21 @@ function makeOtp() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-async function issueOtp(email, purpose) {
+async function issueOtp(email, purpose, phone = null) {
   const otp = makeOtp();
   const otpHash = await bcrypt.hash(otp, 10);
   // Send FIRST – only persist OTP doc on success so failures leave
   // no orphan doc and no false resend-cooldown.
   await sendOtpMail(email, otp, purpose);
+  // WhatsApp OTP rides along best-effort: mail remains the delivery gate,
+  // a Wasimple outage must never block signup/password-reset.
+  if (phone) {
+    try {
+      await sendWhatsAppOtp(phone, otp, purpose);
+    } catch (waErr) {
+      console.error("[whatsapp] OTP send failed (mail already sent):", waErr.message);
+    }
+  }
   await Otp.deleteMany({ email, purpose });
   await Otp.create({
     email,
@@ -96,7 +106,7 @@ const register = async (req, res) => {
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null, pendingPlanChoice: user.pendingPlanChoice ?? false },
     });
   } catch (error) {
     // Race-condition safety: unique index violation on email/phone
@@ -128,7 +138,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null, pendingPlanChoice: user.pendingPlanChoice ?? false },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -155,7 +165,7 @@ const sendSignupOtp = async (req, res) => {
     const wait = await checkCooldown(em, "signup");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
     try {
-      await issueOtp(em, "signup");
+      await issueOtp(em, "signup", ph || null);
     } catch (sendErr) {
       console.error("sendSignupOtp send:", sendErr);
       const mapped = mapSendError(sendErr);
@@ -208,7 +218,7 @@ const requestPasswordReset = async (req, res) => {
     const wait = await checkCooldown(em, "reset");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
     try {
-      await issueOtp(em, "reset");
+      await issueOtp(em, "reset", user.phone || null);
     } catch (sendErr) {
       console.error("requestPasswordReset send:", sendErr);
       const mapped = mapSendError(sendErr);

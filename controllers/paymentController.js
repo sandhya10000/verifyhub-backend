@@ -221,7 +221,7 @@ const verifyPayment = async (req, res) => {
     if (transaction.purpose === "WALLET_RECHARGE") {
       const pricing = await Pricing.findOne({ key: "default" }).lean();
 
-      const current = await User.findById(transaction.userId).select("activePlan email name partner_id").lean();
+      const current = await User.findById(transaction.userId).select("activePlan email name phone partner_id").lean();
       if (!current) {
         return res.status(404).json({
           success: false,
@@ -250,6 +250,8 @@ const verifyPayment = async (req, res) => {
         status: "SUCCESS",
         _id: { $ne: transaction._id },
       }));
+      // Pure top-ups (no plan attached) force a plan pick on next use;
+      // plan-attached checkouts just changed the tier, so clear any stale flag.
       const updatedUser = await User.findByIdAndUpdate(
         transaction.userId,
         {
@@ -258,6 +260,7 @@ const verifyPayment = async (req, res) => {
           },
           $set: {
             activePlan: effectivePlan,
+            pendingPlanChoice: !plan,
           },
         },
         {
@@ -287,6 +290,14 @@ const verifyPayment = async (req, res) => {
           partnerId: current.partner_id, date: new Date(),
         }).catch((e) => console.error("[mail] recharge receipt failed:", e.message));
       }
+      if (current.phone) {
+        const { sendRechargeSuccessWhatsApp } = require("../utils/sendWhatsApp");
+        sendRechargeSuccessWhatsApp(current.phone, {
+          credited: walletCredit,
+          walletBalance: updatedUser.walletBalance,
+          activePlan: updatedUser.activePlan,
+        }).catch((e) => console.error("[whatsapp] recharge receipt failed:", e.message));
+      }
       const _threshold = pricing?.lowBalanceThreshold ?? 500;
       if ((updatedUser.walletBalance ?? 0) >= _threshold) {
         User.updateOne({ _id: transaction.userId }, { $set: { lowBalanceLastAlertAt: null } }).exec().catch(() => {});
@@ -302,6 +313,7 @@ const verifyPayment = async (req, res) => {
         planFee,
         credited: walletCredit,
         autoAssigned,
+        pendingPlanChoice: updatedUser.pendingPlanChoice ?? false,
       });
     }
 
@@ -381,7 +393,7 @@ async function activatePlan(req, res) {
     }
     const switched = await User.updateOne(
       { _id: userId, activePlan: user.activePlan || null },
-      { $set: { activePlan: plan } },
+      { $set: { activePlan: plan, pendingPlanChoice: false } },
     );
     if (switched.modifiedCount === 0) {
       const fresh = await User.findById(userId).select("activePlan walletBalance").lean();
@@ -389,6 +401,8 @@ async function activatePlan(req, res) {
         return res.status(404).json({ success: false, message: "User not found" });
       }
       if ((fresh.activePlan || null) === plan) {
+        // Already on the plan — still clears any stale forced-pick flag.
+        await User.updateOne({ _id: userId }, { $set: { pendingPlanChoice: false } });
         return res.status(200).json({
           success: true, duplicate: true,
           message: `You are already on the ${plan} plan`,
@@ -404,7 +418,7 @@ async function activatePlan(req, res) {
     // No ledger row: free selections move no money, so the ledger stays
     // money-only (recharges in, report charges out).
 
-    const updated = await User.findById(userId).select("walletBalance activePlan email name partner_id").lean();
+    const updated = await User.findById(userId).select("walletBalance activePlan email name phone partner_id").lean();
     if (updated?.email) {
       sendPlanActivationMail(updated.email, {
         name: updated.name, plan, planFee: 0,
@@ -412,6 +426,12 @@ async function activatePlan(req, res) {
         transactionId: `plan_${String(userId)}`,
         partnerId: updated.partner_id, date: new Date(),
       }).catch((e) => console.error("[mail] plan activation receipt failed:", e.message));
+    }
+    if (updated?.phone) {
+      const { sendPlanActivationWhatsApp } = require("../utils/sendWhatsApp");
+      sendPlanActivationWhatsApp(updated.phone, {
+        plan, walletBalance: updated.walletBalance,
+      }).catch((e) => console.error("[whatsapp] plan activation receipt failed:", e.message));
     }
     return res.status(200).json({
       success: true,

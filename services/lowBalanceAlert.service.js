@@ -24,7 +24,7 @@ async function runLowBalanceAlerts() {
       isActive: true,
       walletBalance: { $lt: threshold },
       $or: [{ lowBalanceLastAlertAt: null }, { lowBalanceLastAlertAt: { $lte: cutoff } }],
-    }).select("name email walletBalance lowBalanceLastAlertAt").lean();
+    }).select("name email phone walletBalance lowBalanceLastAlertAt").lean();
 
     let sent = 0, failed = 0;
     for (const u of due) {
@@ -33,6 +33,14 @@ async function runLowBalanceAlerts() {
         const r = await sendLowBalanceMail(u.email, {
           name: u.name, balance: u.walletBalance, threshold,
         });
+        if (u.phone) {
+          try {
+            const { sendLowBalanceWhatsApp } = require("../utils/sendWhatsApp");
+            await sendLowBalanceWhatsApp(u.phone, { balance: u.walletBalance, threshold });
+          } catch (waErr) {
+            console.error("[low-balance] whatsapp failed for", u.phone, ":", waErr.message);
+          }
+        }
         if (r?.skipped) continue;
         await User.updateOne({ _id: u._id }, { $set: { lowBalanceLastAlertAt: new Date() } });
         sent++;
