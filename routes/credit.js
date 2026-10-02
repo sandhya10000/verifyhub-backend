@@ -1,5 +1,6 @@
 const express = require("express");
 const auth = require("../middleware/auth");
+const requirePlanChosen = require("../middleware/requirePlanChosen");
 const router = express.Router();
 
 const {
@@ -14,16 +15,16 @@ const {
 
 // CIBIL
 //  /api/credit/generate-cibil-report
-router.post("/generate-cibil-report", auth, CibilReportFromDigi);
+router.post("/generate-cibil-report", auth, requirePlanChosen, CibilReportFromDigi);
 
 // CRIF
-router.post("/generate-crif-report", auth, CrifReport);
+router.post("/generate-crif-report", auth, requirePlanChosen, CrifReport);
 
 // EQUIFAX
-router.post("/generate-equifax-report", auth, EquifaxReport);
+router.post("/generate-equifax-report", auth, requirePlanChosen, EquifaxReport);
 
 // EXPERIAN
-router.post("/generate-experian-report", auth, ExperianReport);
+router.post("/generate-experian-report", auth, requirePlanChosen, ExperianReport);
 
 //get user detail from credti and user
 //api/credit/user/details

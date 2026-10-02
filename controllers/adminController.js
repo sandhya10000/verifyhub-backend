@@ -406,6 +406,10 @@ exports.setPartnerStatus = async (req, res) => {
           ? `Hi ${updated.name || "Partner"}, your VerifyHub account is active again.`
           : `Hi ${updated.name || "Partner"}, your VerifyHub account has been suspended. Please contact support.`,
       }).catch((e) => console.error("[mail] partner status mail failed:", e.message));
+      if (updated?.phone) {
+        const { sendAccountStatusWhatsApp } = require("../utils/sendWhatsApp");
+        sendAccountStatusWhatsApp(updated.phone, { name: updated.name, active }).catch((e) => console.error("[whatsapp] partner status failed:", e.message));
+      }
     }
 
     res.json({ success: true, data: updated });
@@ -471,6 +475,12 @@ exports.addFundsToPartner = async (req, res) => {
         transactionId: String(txn._id),
         partnerId: updated.partner_id, date: new Date(),
       }).catch((e) => console.error("[mail] admin top-up mail failed:", e.message));
+      if (updated?.phone) {
+        const { sendAdminTopupWhatsApp } = require("../utils/sendWhatsApp");
+        sendAdminTopupWhatsApp(updated.phone, {
+          amount, prevBalance: target.walletBalance ?? 0, walletBalance: updated.walletBalance,
+        }).catch((e) => console.error("[whatsapp] admin top-up failed:", e.message));
+      }
     }
 
     res.json({
@@ -549,6 +559,12 @@ exports.deductFundsFromPartner = async (req, res) => {
         transactionId: String(txn._id),
         partnerId: updated.partner_id, date: new Date(),
       }).catch((e) => console.error("[mail] admin deduct mail failed:", e.message));
+      if (updated?.phone) {
+        const { sendAdminDeductWhatsApp } = require("../utils/sendWhatsApp");
+        sendAdminDeductWhatsApp(updated.phone, {
+          amount, prevBalance: target.walletBalance ?? 0, walletBalance: updated.walletBalance,
+        }).catch((e) => console.error("[whatsapp] admin deduct failed:", e.message));
+      }
     }
 
     res.json({

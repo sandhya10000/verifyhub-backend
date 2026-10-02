@@ -68,6 +68,13 @@ const userSchema = new mongoose.Schema(
       enum: ["startup", "starter", "growth", "pro", "enterprise"],
       default: null,
     },
+    // Forced plan selection: set after a wallet top-up that did not change
+    // the plan; cleared on any successful plan activation. Report pulls are
+    // blocked server-side while true (see requirePlanChosen middleware).
+    pendingPlanChoice: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

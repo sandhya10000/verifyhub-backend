@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const rcController = require('../controllers/rcController');
+const gstController = require('../controllers/gstController');
 const ticketController = require('../controllers/ticketController');
 const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/adminMiddleware');
@@ -17,6 +18,7 @@ router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalys
 router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCreditReports);
 router.get('/reports/failed-reports', auth, isAdmin, adminController.getFailedCreditReports);
 router.get('/rc-reports', auth, isAdmin, rcController.getAllRcVerifications);
+router.get('/gst-reports', auth, isAdmin, gstController.getAllGstVerifications);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
