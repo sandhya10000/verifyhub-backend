@@ -174,6 +174,13 @@ const LOW_BALANCE_SWEEP_MS = Number(process.env.LOW_BALANCE_SWEEP_MS) || 24 * 60
 setTimeout(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] startup run failed:", e.message)), 30 * 1000);
 setInterval(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] sweep failed:", e.message)), LOW_BALANCE_SWEEP_MS);
 
+// Google Sheets export: seed default config + start the scheduled sync.
+// Failures never affect verification APIs (the job only logs).
+const { ensureSheetsConfigSeeded } = require("./utils/googleSheets");
+const { startSheetsScheduler } = require("./jobs/sheetsScheduler");
+ensureSheetsConfigSeeded().catch((e) => console.error("[sheets] config seed failed:", e.message));
+startSheetsScheduler();
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 

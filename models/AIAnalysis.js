@@ -59,6 +59,8 @@ const AIAnalysisSchema = new mongoose.Schema(
     // Full merged account list from all chunks — stored so generateFullHtmlReport()
     // can produce the rich HTML without re-sending the PDF a second time.
     mergedData: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Google Sheets export watermark (set by the scheduled sync job).
+    sheetSyncedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true }
 );

@@ -96,6 +96,12 @@ const rcVerificationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Google Sheets export watermark (set by the scheduled sync job).
+    sheetSyncedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
