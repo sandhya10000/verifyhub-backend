@@ -57,6 +57,7 @@ const pricingSchema = new mongoose.Schema(
     },
     ai: { type: productPriceSchema, default: { base: 100, gstRate: 18 } },
     rc: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
+    gst: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
     minRecharge: { type: Number, default: 200, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
@@ -66,7 +67,7 @@ const pricingSchema = new mongoose.Schema(
 );
 
 const PLAN_KEYS = ["startup", "starter", "growth", "pro", "enterprise"];
-const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax", "rc"];
+const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax", "rc", "gst"];
 
 // Recharge amount -> plan tier (floor-mapped, sticky upgrades).
 // Amounts below the cheapest plan return null (rejected upstream).
@@ -102,6 +103,12 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
     if (kind === "fail") return totalsFor(0, 0);
     const rc = pricing.rc || { base: 10, gstRate: 0 };
     return totalsFor(rc.base, rc.gstRate);
+  }
+  if (key === "gst") {
+    // Flat ₹10 any tier; failures currently free (fail-fee deferred).
+    if (kind === "fail") return totalsFor(0, 0);
+    const gst = pricing.gst || { base: 10, gstRate: 0 };
+    return totalsFor(gst.base, gst.gstRate);
   }
   if (["cibil", "crif", "experian", "equifax"].includes(key)) {
     if (kind === "fail") {

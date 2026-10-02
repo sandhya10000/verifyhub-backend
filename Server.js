@@ -33,6 +33,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
 const partnerRoutes = require("./routes/partnerRoutes");
 const rcRoutes = require("./routes/rc");
+const gstRoutes = require("./routes/gst");
 
 // Connect Database
 connectDB();
@@ -164,6 +165,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/partner", partnerRoutes);
 app.use("/api/rc", rcRoutes);
+app.use("/api/gst", gstRoutes);
 
 // Low-balance mail sweep (cron-only): daily + once shortly after boot.
 // Per-user dedup (max once per lowBalanceAlertIntervalDays) lives in the service.
