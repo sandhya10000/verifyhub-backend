@@ -251,13 +251,6 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
-    if (!address) {
-      return res.status(400).json({
-        success: false,
-        message: "Address is required",
-      });
-    }
-
     if (!state) {
       return res.status(400).json({
         success: false,
@@ -762,8 +755,6 @@ const CrifReport = async (req, res) => {
       pincode,
       stateName,
       cityName,
-      addressLine1,
-      addressLine2,
       customerConsent,
     };
 
@@ -833,9 +824,10 @@ const CrifReport = async (req, res) => {
 
       cityName: String(cityName).trim(),
 
-      addressLine1: String(addressLine1).trim(),
+      // Street address no longer collected — send empty (bureau matches on PAN/mobile/DOB).
+      addressLine1: "",
 
-      addressLine2: String(addressLine2).trim(),
+      addressLine2: "",
 
       customerConsent: "Y",
     };
@@ -1197,8 +1189,6 @@ const ExperianReport = async (req, res) => {
       pincode,
       stateName,
       cityName,
-      addressLine1,
-      addressLine2,
       customerConsent,
     };
 
@@ -2081,7 +2071,6 @@ const EquifaxReport = async (req, res) => {
       gender,
       dob,
       email,
-      address,
       state,
       city,
       pincode,

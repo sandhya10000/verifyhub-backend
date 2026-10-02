@@ -275,12 +275,20 @@ exports.getPublicPlans = async (req, res) => {
     const otherFailed = pricing
       ? quoteForProduct(pricing, "experian", "starter", "fail")
       : { base: 30, gstRate: 0, gstAmount: 0, total: 30 };
+    const rc = pricing
+      ? quoteForProduct(pricing, "rc", "starter", "success")
+      : { base: 10, gstRate: 0, gstAmount: 0, total: 10 };
+    const gst = pricing
+      ? quoteForProduct(pricing, "gst", "starter", "success")
+      : { base: 10, gstRate: 0, gstAmount: 0, total: 10 };
     res.json({
       success: true,
       data: {
         plans,
         ai: { base: ai.base, gstRate: ai.gstRate, total: ai.total },
         otherFailedCharge: otherFailed.total,
+        rc: { base: rc.base, gstRate: rc.gstRate, total: rc.total },
+        gst: { base: gst.base, gstRate: gst.gstRate, total: gst.total },
         minRecharge: pricing?.minRecharge ?? 100,
       },
     });
