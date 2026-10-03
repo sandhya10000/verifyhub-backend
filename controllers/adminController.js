@@ -362,7 +362,7 @@ exports.getAllPartners = async (req, res) => {
 };
 
 const Pricing = require("../models/Pricing");
-const { PLAN_KEYS, PRODUCT_KEYS } = require("../models/Pricing");
+const { PLAN_KEYS, PRODUCT_KEYS, SINGLE_PLAN_MODE, SINGLE_PLAN_KEY } = require("../models/Pricing");
 const { resetPricingCache } = require("../utils/wallet");
 const { sendMail } = require("../utils/sendMail");
 
@@ -804,6 +804,29 @@ exports.updatePricing = async (req, res) => {
     for (const field of ["minRecharge", "lowBalanceThreshold", "lowBalanceAlertIntervalDays"]) {
       const n = num(req.body?.[field]);
       if (n !== undefined && Number.isFinite(n) && n >= 0) set[field] = n;
+    }
+
+    // Single-plan mode: mirror the single plan row to all tiers so stale
+    // activePlan values keep billing identically. Admin edits any tier row —
+    // every row is synced to the starter values.
+    // TODO(multi-plan-restore): remove this mirroring block.
+    if (SINGLE_PLAN_MODE) {
+      const source = req.body?.plans?.[SINGLE_PLAN_KEY];
+      const anyTierEdit = PLAN_KEYS.some((p) => req.body?.plans?.[p]);
+      const mirrorFrom = source || (() => {
+        const edited = PLAN_KEYS.map((p) => req.body?.plans?.[p]).find((r) => r && typeof r === "object");
+        return edited || null;
+      })();
+      if (mirrorFrom) {
+        for (const p of PLAN_KEYS) {
+          for (const field of ["recharge", "cibil", "experian", "crif", "equifax", "cibilFailed"]) {
+            const n = Number(mirrorFrom[field]);
+            if (Number.isFinite(n) && n >= 0) set[`plans.${p}.${field}`] = n;
+          }
+        }
+      } else if (anyTierEdit) {
+        // Tier edits without parseable values fall through to validation above.
+      }
     }
 
     if (Object.keys(set).length === 0) {

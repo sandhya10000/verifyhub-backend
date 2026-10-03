@@ -42,17 +42,21 @@ connectDB();
 // + one-way migration: older docs (e.g. the v1 flat-price shape without
 // `plans`) get the missing sections backfilled, existing values untouched.
 const Pricing = require("./models/Pricing");
+// Single-plan launch mode: all tiers synced to founder prices (see models/Pricing.js).
+// TODO(multi-plan-restore): restore tiered slabs.
 const PRICING_DEFAULTS = {
   plans: {
-    startup: { recharge: 200, cibil: 120, experian: 95, crif: 95, equifax: 85, cibilFailed: 90 },
-    starter: { recharge: 1000, cibil: 110, experian: 85, crif: 85, equifax: 80, cibilFailed: 80 },
-    growth: { recharge: 5000, cibil: 90, experian: 65, crif: 65, equifax: 60, cibilFailed: 70 },
-    pro: { recharge: 10000, cibil: 80, experian: 50, crif: 55, equifax: 50, cibilFailed: 60 },
-    enterprise: { recharge: 25000, cibil: 65, experian: 35, crif: 45, equifax: 40, cibilFailed: 50 },
+    startup: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
+    starter: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
+    growth: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
+    pro: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
+    enterprise: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
   },
   ai: { base: 100, gstRate: 18 },
+  rc: { base: 10, gstRate: 0 },
+  gst: { base: 10, gstRate: 0 },
   otherFailedCharge: { base: 30, gstRate: 0 },
-  minRecharge: 200,
+  minRecharge: 1000,
   lowBalanceThreshold: 500,
   lowBalanceAlertIntervalDays: 7,
 };
@@ -78,6 +82,31 @@ Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upse
       if (Object.keys(missing).length > 0) {
         await Pricing.updateOne({ key: "default" }, { $set: missing });
         console.log("[Pricing] migrated missing sections:", Object.keys(missing).join(", "));
+      }
+      // Single-plan launch mode: force-sync ALL tier rows + guards to founder
+      // prices on every boot, so stale multi-tier values in the DB can never
+      // survive a deploy. TODO(multi-plan-restore): delete this block.
+      const { SINGLE_PLAN_MODE } = require("./models/Pricing");
+      if (SINGLE_PLAN_MODE) {
+        const sync = { minRecharge: 1000 };
+        for (const tier of ["startup", "starter", "growth", "pro", "enterprise"]) {
+          sync[`plans.${tier}`] = PRICING_DEFAULTS.plans[tier];
+        }
+        const res = await Pricing.updateOne({ key: "default" }, { $set: sync });
+        if (res.modifiedCount > 0) console.log("[Pricing] single-plan prices force-synced (cibil 60 / exp 40 / crif 50 / eq 40)");
+        // No forced plan pick in single-plan mode: unblock anyone stuck on the
+        // legacy gate and land everyone on the single plan.
+        // TODO(multi-plan-restore): delete this unblock.
+        try {
+          const User = require("./models/User");
+          const unblocked = await User.updateMany(
+            { $or: [{ pendingPlanChoice: true }, { activePlan: { $ne: "starter" } }] },
+            { $set: { pendingPlanChoice: false, activePlan: "starter" } },
+          );
+          if (unblocked.modifiedCount > 0) console.log(`[Pricing] single-plan unblocked ${unblocked.modifiedCount} partner(s)`);
+        } catch (e) {
+          console.error("[Pricing] single-plan unblock failed:", e.message);
+        }
       }
     }
     console.log("[Pricing] default config ensured");

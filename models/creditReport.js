@@ -47,6 +47,13 @@ const creditReportSchema = new mongoose.Schema(
       type: String,
       enum: ["Male", "Female", "Other"],
     },
+    // Date of birth (YYYY-MM-DD) — required by every bureau pull and exported
+    // to the Google Sheet Bureau tab. Persists the request input verbatim.
+    dob: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     email: {
       type: String,
     },

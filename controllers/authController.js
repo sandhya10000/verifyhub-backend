@@ -99,7 +99,9 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword, state: st, city: ct, pincode: pc });
+    // Single-plan launch: every partner starts on the single plan, never gated.
+    // TODO(multi-plan-restore): drop these defaults (schema default null + forced pick returns).
+    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword, state: st, city: ct, pincode: pc, activePlan: "starter", pendingPlanChoice: false });
     await Otp.deleteMany({ email: em, purpose: "signup" });
 
     res.status(201).json({

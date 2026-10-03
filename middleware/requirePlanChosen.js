@@ -1,6 +1,6 @@
-// Blocks report pulls while the partner still owes a plan selection
-// (pendingPlanChoice set by wallet top-ups, cleared by /plan/activate).
-// Must run AFTER auth so req.user is populated. Admins are exempt.
+// DISABLED in single-plan mode: single plan auto-applies to everyone, so no
+// plan selection is ever required. Kept (not deleted) for multi-plan restore.
+// TODO(multi-plan-restore): re-attach to report routes in routes/credit.js + aiAnalyzerRoutes.js.
 const requirePlanChosen = (req, res, next) => {
   try {
     if (req.user?.role === "admin") return next();

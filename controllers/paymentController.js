@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const Pricing = require("../models/Pricing");
-const { PLAN_KEYS, tierForAmount } = require("../models/Pricing");
+const { PLAN_KEYS, tierForAmount, SINGLE_PLAN_MODE, SINGLE_PLAN_KEY } = require("../models/Pricing");
 const { sendRechargeSuccessMail, sendPlanActivationMail } = require("../utils/sendMail");
 
 const razorpay = new Razorpay({
@@ -60,7 +60,13 @@ const createWalletRechargeOrder = async (req, res) => {
       if (!PLAN_KEYS.includes(requestedPlan)) {
         return res.status(400).json({ success: false, message: "Unknown plan selected" });
       }
-      plan = requestedPlan;
+      // Single-plan mode: ignore ride-along tier choice, always bill starter.
+      // TODO(multi-plan-restore): remove this override to allow plan switching at checkout.
+      plan = SINGLE_PLAN_MODE ? tierForAmount(baseAmount) || SINGLE_PLAN_KEY : requestedPlan;
+    } else if (SINGLE_PLAN_MODE) {
+      // Single-plan mode: pure top-ups also resolve to the single plan.
+      plan = tierForAmount(baseAmount) || SINGLE_PLAN_KEY;
+      autoAssigned = false;
     }
 
     const planFee = 0;
@@ -236,12 +242,21 @@ const verifyPayment = async (req, res) => {
       const planFee = 0;
       const walletCredit = Math.max(0, Number(transaction.amount));
 
-      // The plan chosen at checkout wins (upgrades and downgrades both
-      // allowed). Pure top-ups never touch the tier at all.
-      const effectivePlan = plan || current.activePlan || null;
-      // Stamp the tier on the ledger row for per-tier revenue (pure top-ups
-      // attribute to the tier the partner currently holds)
-      transaction.planTier = plan || current.activePlan || null;
+      // Single-plan mode: every successful recharge lands on the single plan.
+      // TODO(multi-plan-restore): restore checkout-wins logic below.
+      let effectivePlan;
+      if (SINGLE_PLAN_MODE) {
+        effectivePlan = SINGLE_PLAN_KEY;
+        plan = SINGLE_PLAN_KEY;
+        transaction.planTier = SINGLE_PLAN_KEY;
+      } else {
+        // The plan chosen at checkout wins (upgrades and downgrades both
+        // allowed). Pure top-ups never touch the tier at all.
+        effectivePlan = plan || current.activePlan || null;
+        // Stamp the tier on the ledger row for per-tier revenue (pure top-ups
+        // attribute to the tier the partner currently holds)
+        transaction.planTier = plan || current.activePlan || null;
+      }
       await transaction.save();
       // First funding ever? (no other successful recharge besides this one)
       const autoAssigned = !(await Transaction.exists({
@@ -250,8 +265,9 @@ const verifyPayment = async (req, res) => {
         status: "SUCCESS",
         _id: { $ne: transaction._id },
       }));
-      // Pure top-ups (no plan attached) force a plan pick on next use;
-      // plan-attached checkouts just changed the tier, so clear any stale flag.
+      // Single-plan launch: no forced plan pick — every recharge lands on the
+      // single plan with pendingPlanChoice always false.
+      // TODO(multi-plan-restore): restore pendingPlanChoice: !plan gate.
       const updatedUser = await User.findByIdAndUpdate(
         transaction.userId,
         {
@@ -260,7 +276,7 @@ const verifyPayment = async (req, res) => {
           },
           $set: {
             activePlan: effectivePlan,
-            pendingPlanChoice: !plan,
+            pendingPlanChoice: false,
           },
         },
         {
@@ -351,98 +367,29 @@ module.exports = {
 };
 
 // POST /api/plan/activate { plan }
-// Free tier selection gated by wallet balance: the partner's balance must
-// cover the tier's `recharge` slab (eligibility only — NOTHING is deducted).
-// No Razorpay, no ledger row: the wallet is pure prepaid balance and only
-// per-report generation charges ever move it. Upgrades and downgrades are
-// both allowed; re-selecting the active plan is rejected.
-// Atomic + idempotent per outcome.
+// Single-plan launch: NO-OP back-compat endpoint. Single plan auto-applies to
+// everyone, so any call just ensures activePlan=starter and returns success
+// (no balance gate, no 402, no mails). Old clients calling this never break.
+// TODO(multi-plan-restore): restore balance-gated tier selection below.
 async function activatePlan(req, res) {
   try {
-    const { plan } = req.body;
     const userId = req.user._id;
-
-    if (!plan || !PLAN_KEYS.includes(plan)) {
-      return res.status(400).json({ success: false, message: "Please choose a valid plan" });
-    }
-
-    const user = await User.findById(userId).select("activePlan walletBalance").lean();
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { activePlan: SINGLE_PLAN_KEY, pendingPlanChoice: false } },
+      { new: true },
+    ).select("walletBalance activePlan").lean();
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-
-    if ((user.activePlan || null) === plan) {
-      return res.status(400).json({ success: false, message: `You are already on the ${plan} plan` });
-    }
-
-    const pricing = await Pricing.findOne({ key: "default" }).lean();
-    const threshold = Number(pricing?.plans?.[plan]?.recharge);
-    if (!Number.isFinite(threshold) || threshold < 0) {
-      return res.status(500).json({ success: false, message: "Pricing not configured for this plan" });
-    }
-
-    // Eligibility gate only: balance must cover the slab, but not a rupee
-    // moves. Guarded update keeps concurrent switches race-safe.
-    const balance = Number(user.walletBalance) || 0;
-    if (balance < threshold) {
-      return res.status(402).json({
-        success: false,
-        message: `${plan} needs ₹${threshold} wallet balance to select — please top up first. Nothing is charged for the plan itself.`,
-        required: threshold, balance,
-      });
-    }
-    const switched = await User.updateOne(
-      { _id: userId, activePlan: user.activePlan || null },
-      { $set: { activePlan: plan, pendingPlanChoice: false } },
-    );
-    if (switched.modifiedCount === 0) {
-      const fresh = await User.findById(userId).select("activePlan walletBalance").lean();
-      if (!fresh) {
-        return res.status(404).json({ success: false, message: "User not found" });
-      }
-      if ((fresh.activePlan || null) === plan) {
-        // Already on the plan — still clears any stale forced-pick flag.
-        await User.updateOne({ _id: userId }, { $set: { pendingPlanChoice: false } });
-        return res.status(200).json({
-          success: true, duplicate: true,
-          message: `You are already on the ${plan} plan`,
-          walletBalance: fresh.walletBalance, activePlan: fresh.activePlan,
-        });
-      }
-      return res.status(409).json({
-        success: false,
-        message: "Your plan changed just now — please retry.",
-      });
-    }
-
-    // No ledger row: free selections move no money, so the ledger stays
-    // money-only (recharges in, report charges out).
-
-    const updated = await User.findById(userId).select("walletBalance activePlan email name phone partner_id").lean();
-    if (updated?.email) {
-      sendPlanActivationMail(updated.email, {
-        name: updated.name, plan, planFee: 0,
-        walletBalance: updated.walletBalance,
-        transactionId: `plan_${String(userId)}`,
-        partnerId: updated.partner_id, date: new Date(),
-      }).catch((e) => console.error("[mail] plan activation receipt failed:", e.message));
-    }
-    if (updated?.phone) {
-      const { sendPlanActivationWhatsApp } = require("../utils/sendWhatsApp");
-      sendPlanActivationWhatsApp(updated.phone, {
-        plan, walletBalance: updated.walletBalance,
-      }).catch((e) => console.error("[whatsapp] plan activation receipt failed:", e.message));
-    }
     return res.status(200).json({
       success: true,
-      message: `${plan} plan activated`,
-      walletBalance: updated.walletBalance,
-      activePlan: updated.activePlan,
+      message: `${SINGLE_PLAN_KEY} plan active (single launch plan)`,
+      walletBalance: user.walletBalance,
+      activePlan: user.activePlan,
       planFee: 0,
     });
   } catch (err) {
-    // Genuine duplicate (parallel double-click): the guard above already
-    // resolved it into duplicate:true, so reaching here means a real error.
     console.error("activatePlan Error:", err);
     return res.status(500).json({ success: false, message: "Could not activate plan. Please try again." });
   }
