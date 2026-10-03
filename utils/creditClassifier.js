@@ -255,6 +255,12 @@ function computePortfolioStats(accounts) {
 // Call this AFTER computePortfolioStats so the stats object is already built.
 // ---------------------------------------------------------------------------
 function computeProfileNote(stats) {
+  // If no accounts at all, this is a data/extraction error — return null rather
+  // than "no active credit lines" which would be a false/misleading statement.
+  if (stats.totalAccounts === 0) {
+    return null;
+  }
+
   if (stats.hasActiveBalance) {
     // Numbers are live and meaningful — no explanatory note needed.
     return null;
