@@ -275,6 +275,11 @@ exports.getPublicPlans = async (req, res) => {
     const otherFailed = pricing
       ? quoteForProduct(pricing, "experian", "starter", "fail")
       : { base: 30, gstRate: 0, gstAmount: 0, total: 30 };
+    // Single-plan launch: AI failure is flat ₹100 (base, no GST).
+    // TODO(multi-plan-restore): drop aiFail, frontend falls back to otherFailedCharge.
+    const aiFail = pricing
+      ? quoteForProduct(pricing, "ai", "starter", "fail")
+      : { base: 100, gstRate: 0, gstAmount: 0, total: 100 };
     const rc = pricing
       ? quoteForProduct(pricing, "rc", "starter", "success")
       : { base: 10, gstRate: 0, gstAmount: 0, total: 10 };
@@ -286,6 +291,7 @@ exports.getPublicPlans = async (req, res) => {
       data: {
         plans,
         ai: { base: ai.base, gstRate: ai.gstRate, total: ai.total },
+        aiFail: { base: aiFail.base, gstRate: aiFail.gstRate, total: aiFail.total },
         otherFailedCharge: otherFailed.total,
         rc: { base: rc.base, gstRate: rc.gstRate, total: rc.total },
         gst: { base: gst.base, gstRate: gst.gstRate, total: gst.total },

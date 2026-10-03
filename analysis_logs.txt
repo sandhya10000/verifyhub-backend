@@ -638,3 +638,41 @@
 [ANALYSIS 6abd6e857ce1750ca647ebc4] [2026-09-30T20:18:42.906Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=28909ms
 [ANALYSIS 6abd6e857ce1750ca647ebc4] [2026-09-30T20:18:43.125Z] STEP="Result Persistence Complete" elapsed_step=219ms elapsed_total=29128ms details={"htmlStored":true}
 [ANALYSIS 6abd6e857ce1750ca647ebc4] [2026-09-30T20:18:44.537Z] STEP="Frontend Polling Status" elapsed_step=1412ms elapsed_total=30540ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.049Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"EQUIFAX_6ac0dea4ee8c26325e5574ea_1791024807102.pdf","sizeBytes":123819}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.051Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6ac0e5541ff2943d7bd186b6"}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.062Z] STEP="Trigger Background Processing" elapsed_step=11ms elapsed_total=13ms
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.164Z] STEP="File Parsing Start" elapsed_step=102ms elapsed_total=115ms
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.225Z] STEP="File Parsing Complete" elapsed_step=61ms elapsed_total=176ms details={"mediaType":"application/pdf","fileSizeKB":"120.9","pageCount":3}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:21:57.702Z] STEP="Analysis API Call Start" elapsed_step=477ms elapsed_total=653ms details={"model":"claude-haiku-4-5-20251001","language":"en"}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:01.519Z] STEP="Frontend Polling Status" elapsed_step=3817ms elapsed_total=4470ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:29.845Z] STEP="Analysis API Call Complete" elapsed_step=28326ms elapsed_total=32796ms details={"usage":{"input_tokens":11226,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3500,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:29.850Z] STEP="HTML Template Render Start" elapsed_step=5ms elapsed_total=32801ms
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:29.901Z] STEP="HTML Template Render Complete" elapsed_step=51ms elapsed_total=32852ms details={"durationMs":50,"lengthChars":176785}
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:29.904Z] STEP="Result Persistence Start" elapsed_step=3ms elapsed_total=32855ms
+[ANALYSIS 6ac0e5541ff2943d7bd186b6] [2026-10-03T11:22:30.249Z] STEP="Result Persistence Complete" elapsed_step=345ms elapsed_total=33200ms details={"htmlStored":true}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.037Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"EQUIFAX_6ac0dea4ee8c26325e5574ea_1791024807102.pdf","sizeBytes":123819}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.045Z] STEP="DB Record Created" elapsed_step=8ms elapsed_total=8ms details={"analysisId":"6ac0e57b1ff2943d7bd186b9"}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.049Z] STEP="Trigger Background Processing" elapsed_step=4ms elapsed_total=12ms
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.153Z] STEP="File Parsing Start" elapsed_step=104ms elapsed_total=116ms
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.239Z] STEP="File Parsing Complete" elapsed_step=86ms elapsed_total=202ms details={"mediaType":"application/pdf","fileSizeKB":"120.9","pageCount":3}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:36.384Z] STEP="Analysis API Call Start" elapsed_step=145ms elapsed_total=347ms details={"model":"claude-haiku-4-5-20251001","language":"en"}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:22:39.174Z] STEP="Frontend Polling Status" elapsed_step=2790ms elapsed_total=3137ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:23:09.901Z] STEP="Analysis API Call Complete" elapsed_step=30727ms elapsed_total=33864ms details={"usage":{"input_tokens":11226,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":3571,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:23:09.906Z] STEP="HTML Template Render Start" elapsed_step=5ms elapsed_total=33869ms
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:23:09.932Z] STEP="HTML Template Render Complete" elapsed_step=26ms elapsed_total=33895ms details={"durationMs":25,"lengthChars":177406}
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:23:09.934Z] STEP="Result Persistence Start" elapsed_step=2ms elapsed_total=33897ms
+[ANALYSIS 6ac0e57b1ff2943d7bd186b9] [2026-10-03T11:23:10.899Z] STEP="Result Persistence Complete" elapsed_step=965ms elapsed_total=34862ms details={"htmlStored":true}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.537Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"EQUIFAX_6ac0dea4ee8c26325e5574ea_1791024807102.pdf","sizeBytes":123819}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.538Z] STEP="DB Record Created" elapsed_step=1ms elapsed_total=1ms details={"analysisId":"6ac0e5a11ff2943d7bd186bc"}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.541Z] STEP="Trigger Background Processing" elapsed_step=3ms elapsed_total=4ms
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.645Z] STEP="File Parsing Start" elapsed_step=104ms elapsed_total=108ms
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.739Z] STEP="File Parsing Complete" elapsed_step=94ms elapsed_total=202ms details={"mediaType":"application/pdf","fileSizeKB":"120.9","pageCount":3}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:13.920Z] STEP="Analysis API Call Start" elapsed_step=181ms elapsed_total=383ms details={"model":"claude-haiku-4-5-20251001","language":"en"}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:17.882Z] STEP="Frontend Polling Status" elapsed_step=3962ms elapsed_total=4345ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:40.979Z] STEP="Analysis API Call Complete" elapsed_step=23097ms elapsed_total=27442ms details={"usage":{"input_tokens":11226,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2993,"service_tier":"standard","inference_geo":"not_available"}}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:40.981Z] STEP="HTML Template Render Start" elapsed_step=2ms elapsed_total=27444ms
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:40.989Z] STEP="HTML Template Render Complete" elapsed_step=8ms elapsed_total=27452ms details={"durationMs":8,"lengthChars":174870}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:40.990Z] STEP="Result Persistence Start" elapsed_step=1ms elapsed_total=27453ms
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:23:41.916Z] STEP="Result Persistence Complete" elapsed_step=926ms elapsed_total=28379ms details={"htmlStored":true}
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:30:13.323Z] STEP="User Download Click Received" elapsed_step=391407ms elapsed_total=419786ms
+[ANALYSIS 6ac0e5a11ff2943d7bd186bc] [2026-10-03T11:30:13.572Z] STEP="Download Serving htmlReport" elapsed_step=249ms elapsed_total=420035ms

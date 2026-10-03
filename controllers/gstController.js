@@ -1,7 +1,7 @@
 const axios = require("axios");
 const GstVerification = require("../models/GstVerification");
 const User = require("../models/User");
-const { canAfford, chargeForReport } = require("../utils/wallet");
+const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
 const { generateGstPdf } = require("../services/gstPdf.service");
 
 const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
@@ -38,7 +38,9 @@ const buildGstQuery = (gstin, documentType) =>
   `mutation {\n  verify(\n    input: {\n      gstin: "${gstin}",\n      documentType: "${documentType}"\n    }\n  ) {\n    ok\n    message\n    status\n    result {\n      ... on DTGSTINAdvancedResult {\n          taxpayerDetails\n          taxpayerReturnDetails\n          goods_service\n          business_places\n      }\n    }\n    error {\n      status\n      message\n      decryptedError\n    }\n  }\n}`;
 
 // POST /api/gst/verify-gst { gstin, consent }
-// Failures are recorded with a reason but NEVER charged (fail-fee deferred).
+// Single-plan launch: provider failures bill ₹10 (same as success); only
+// pre-doc validation errors (bad format, missing consent) stay free.
+// TODO(multi-plan-restore): restore free fails (failureCharge 0, no debit).
 const verifyGst = async (req, res) => {
   let verification = null;
   try {
@@ -111,11 +113,18 @@ const verifyGst = async (req, res) => {
       verification.status = "Failed";
       verification.gstData = { error: verify?.error || apiData || "Empty GST response" };
       await verification.save(); // pre-save fills failureReason
+      // Single-plan launch: failed GST pulls bill ₹10. Never throws.
+      let failCharge = { ok: false, total: 0 };
+      try {
+        failCharge = await chargeFailedReport(userId, verification._id, "gst", "GST", true);
+      } catch (err) {
+        console.error(`[wallet] fail-charge error for GST verification ${verification._id}:`, err.message);
+      }
       return res.status(400).json({
         success: false,
         status: "failed",
         verificationId: verification._id,
-        failureCharge: 0,
+        failureCharge: failCharge.ok ? failCharge.total : 0,
         message: verify?.error?.message || verify?.message || "GST verification failed",
         error: verify?.error || null,
       });
@@ -159,12 +168,22 @@ const verifyGst = async (req, res) => {
         await verification.save();
       } catch { /* ignore */ }
     }
+    // Single-plan launch: provider errors/timeouts on an existing doc bill ₹10.
+    // TODO(multi-plan-restore): restore failureCharge 0 below.
+    let catchCharge = { ok: false, total: 0 };
+    if (verification?._id) {
+      try {
+        catchCharge = await chargeFailedReport(verification.userId, verification._id, "gst", "GST", true);
+      } catch (e) {
+        console.error(`[wallet] fail-charge error for GST verification ${verification._id}:`, e.message);
+      }
+    }
     if (err.response) {
       return res.status(err.response.status || 500).json({
         success: false,
         status: "failed",
         verificationId: verification?._id || null,
-        failureCharge: 0,
+        failureCharge: catchCharge.ok ? catchCharge.total : 0,
         error: err.response.data,
       });
     }
@@ -174,7 +193,7 @@ const verifyGst = async (req, res) => {
         status: "failed",
         message: "GST API did not respond",
         verificationId: verification?._id || null,
-        failureCharge: 0,
+        failureCharge: catchCharge.ok ? catchCharge.total : 0,
       });
     }
     return res.status(500).json({

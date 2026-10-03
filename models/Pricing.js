@@ -109,18 +109,37 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
   const key = String(productKey || "").toLowerCase();
   const plan = PLAN_KEYS.includes(tier) ? tier : "starter";
   if (key === "ai") {
-    if (kind === "fail") return totalsFor(pricing.otherFailedCharge.base, pricing.otherFailedCharge.gstRate);
+    // Single-plan launch: AI failure bills flat ₹100 (base, no GST).
+    // TODO(multi-plan-restore): restore otherFailedCharge fallback below.
+    if (kind === "fail") {
+      if (SINGLE_PLAN_MODE) return totalsFor(pricing.ai.base, 0);
+      return totalsFor(pricing.otherFailedCharge.base, pricing.otherFailedCharge.gstRate);
+    }
     return totalsFor(pricing.ai.base, pricing.ai.gstRate);
   }
   if (key === "rc") {
-    // Flat ₹10 any tier; failures currently free (fail-fee deferred).
-    if (kind === "fail") return totalsFor(0, 0);
+    // Single-plan launch: RC failures bill the same ₹10 as success.
+    // TODO(multi-plan-restore): restore free fails (totalsFor(0,0)).
+    if (kind === "fail") {
+      if (SINGLE_PLAN_MODE) {
+        const rc = pricing.rc || { base: 10, gstRate: 0 };
+        return totalsFor(rc.base, rc.gstRate);
+      }
+      return totalsFor(0, 0);
+    }
     const rc = pricing.rc || { base: 10, gstRate: 0 };
     return totalsFor(rc.base, rc.gstRate);
   }
   if (key === "gst") {
-    // Flat ₹10 any tier; failures currently free (fail-fee deferred).
-    if (kind === "fail") return totalsFor(0, 0);
+    // Single-plan launch: GST failures bill the same ₹10 as success.
+    // TODO(multi-plan-restore): restore free fails (totalsFor(0,0)).
+    if (kind === "fail") {
+      if (SINGLE_PLAN_MODE) {
+        const gst = pricing.gst || { base: 10, gstRate: 0 };
+        return totalsFor(gst.base, gst.gstRate);
+      }
+      return totalsFor(0, 0);
+    }
     const gst = pricing.gst || { base: 10, gstRate: 0 };
     return totalsFor(gst.base, gst.gstRate);
   }
