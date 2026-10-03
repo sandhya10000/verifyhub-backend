@@ -7,6 +7,8 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const { logStep } = require('./logger');
 const { renderCreditReport } = require('./reportRenderer');
+const pdfParse = require('pdf-parse');
+const { parseCibilPdfText, buildCompactContext } = require('../services/cibilParser');
 
 // Wallet debit helper — guarded + idempotent, never throws, so background
 // analysis delivery can never break because of a ledger problem.
@@ -411,6 +413,105 @@ async function splitPdfIntoChunks(fileBuffer) {
 }
 
 // ---------------------------------------------------------------------------
+// precountPdfEntries
+// Uses pdf-parse to extract raw text and count account blocks and enquiry rows
+// in a CIBIL/Experian/Equifax PDF.  Wrapped in try/catch — returns null on any
+// failure (scanned PDF, encrypted, etc.) so callers can skip the cross-check.
+//
+// CIBIL account block heuristics:
+//   • Each account starts with a "Member Name" row (captures the lender name
+//     on its own line, or the CIBIL two-column layout where the account type
+//     and account number follow on the same line).
+//   • We count lines that look like account headers:
+//     – A line that contains one of several sentinel phrases printed at the
+//       start of every CIBIL account block.
+// Enquiry heuristic:
+//   • CIBIL enquiry sections have lines of the form  DD/MM/YYYY  (a date).
+//     We count distinct date-looking tokens that appear inside the enquiry
+//     section (after "ENQUIRY INFORMATION" or "ENQUIRIES").
+//
+// Returns: { accountCount: number, enquiryCount: number } | null
+// ---------------------------------------------------------------------------
+async function precountPdfEntries(fileBuffer) {
+  try {
+    // Use the deterministic parser for CIBIL — far more accurate than the heuristic.
+    const parsed = await pdfParse(fileBuffer);
+    const text   = parsed.text || '';
+
+    const parserResult = parseCibilPdfText(text);
+    if (parserResult.isValidCibil && parserResult.accounts.length > 0) {
+      const accountCount = parserResult.accounts.length;
+      const enquiryCount = parserResult.enquiries.length;
+      console.log(`[precountPdfEntries] CIBIL parser: ${accountCount} accounts, ${enquiryCount} enquiries`);
+      return { accountCount, enquiryCount, _parsedText: text };
+    }
+
+    // Fallback heuristic for non-CIBIL formats
+    const lines = text.split(/\r?\n/);
+    const ACCOUNT_SENTINELS = ['MEMBER NAME','Member Name','ACCOUNT NUMBER','Account Number'];
+    let accountCount = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (ACCOUNT_SENTINELS.some((s) => trimmed.includes(s))) accountCount++;
+    }
+    if (accountCount > 0) {
+      const hasBoth =
+        lines.some((l) => l.includes('MEMBER NAME') || l.includes('Member Name')) &&
+        lines.some((l) => l.includes('ACCOUNT NUMBER') || l.includes('Account Number'));
+      if (hasBoth) accountCount = Math.ceil(accountCount / 2);
+    }
+    const DATE_RE = /\b(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})\b/g;
+    let enquiryCount = 0;
+    let inEnquiry = false;
+    for (const line of lines) {
+      if (!inEnquiry && /ENQUIRY INFORMATION|ENQUIRIES/i.test(line)) { inEnquiry = true; continue; }
+      if (inEnquiry) { const m = line.match(DATE_RE); if (m) enquiryCount += m.length; }
+    }
+    console.log(`[precountPdfEntries] heuristic: ${accountCount} accounts, ${enquiryCount} enquiries`);
+    return { accountCount, enquiryCount, _parsedText: text };
+  } catch (err) {
+    console.warn(`[precountPdfEntries] Could not extract text (${err.message}) — skipping cross-check`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// assertExtractionSanity
+// Throws a human-readable error when the extracted counts are suspiciously
+// low compared to the pdf-parse pre-count.  Never throws when precount is null
+// (extraction failed gracefully) or when both sides say zero.
+// threshold: fraction — 0 means ANY non-zero precount with zero extracted fails.
+// ---------------------------------------------------------------------------
+function assertExtractionSanity(label, extracted, precount, threshold = 0.50) {
+  if (precount === null) return; // can't cross-check — skip
+  if (precount.accountCount === 0 && precount.enquiryCount === 0) return; // thin file, valid
+
+  const acctOk =
+    precount.accountCount === 0 ||
+    (extracted.accounts  >= precount.accountCount  * threshold);
+  const enqOk  =
+    precount.enquiryCount === 0 ||
+    (extracted.enquiries >= precount.enquiryCount * threshold);
+
+  if (!acctOk || !enqOk) {
+    const msg =
+      `[${label}] Extraction sanity check FAILED: ` +
+      `extracted ${extracted.accounts} accounts (precount ${precount.accountCount}), ` +
+      `${extracted.enquiries} enquiries (precount ${precount.enquiryCount}). ` +
+      'Response likely truncated due to max_tokens. Marking as failed.';
+    console.error(msg);
+    const err = new Error('Extraction output too sparse — response likely truncated by token limit');
+    err.isSanityFailure = true;
+    throw err;
+  }
+
+  console.log(
+    `[${label}] Sanity OK: ${extracted.accounts}/${precount.accountCount} accounts, ` +
+    `${extracted.enquiries}/${precount.enquiryCount} enquiries`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // extractChunkData
 // One Claude call for one chunk. Retries once on failure, then throws with
 // a page-range-specific error that is surfaced to the user.
@@ -419,10 +520,12 @@ async function extractChunkData(chunk, chunkIndex, totalChunks, analysisId) {
   const label = `[chunk ${chunkIndex + 1}/${totalChunks} pages ${chunk.startPage}-${chunk.endPage}]`;
   console.log(`[claudeService:${analysisId}] ${label} Starting extraction`);
 
+  const CHUNK_MAX_TOKENS = 8000;
+
   async function attempt() {
     const response = await anthropic.messages.create({
       model:      CLAUDE_MODEL,
-      max_tokens: 8000,
+      max_tokens: CHUNK_MAX_TOKENS,
       system:     CHUNK_EXTRACTION_PROMPT,
       messages: [
         {
@@ -442,6 +545,17 @@ async function extractChunkData(chunk, chunkIndex, totalChunks, analysisId) {
       tools:       [CHUNK_EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'submit_chunk_extraction' },
     });
+
+    console.log(`[claudeService] ${label} stop_reason=${response.stop_reason} output_tokens=${response.usage?.output_tokens}`);
+
+    // Fail loudly on truncation
+    if (response.stop_reason === 'max_tokens') {
+      const err = new Error(
+        `${label} Model output truncated (max_tokens hit, output_tokens=${response.usage?.output_tokens}/${CHUNK_MAX_TOKENS})`
+      );
+      err.isTruncation = true;
+      throw err;
+    }
 
     const toolBlock = response.content.find((c) => c.type === 'tool_use');
     if (!toolBlock) {
@@ -580,17 +694,31 @@ async function synthesizeFinalResult(mergedData, analysisId, language = 'en') {
       dpd_months:         (a.dpd_history || a.payment_history || []).length,
     })),
   };
+  return runQualitativeAnalysis(context, analysisId, language);
+}
+
+// ---------------------------------------------------------------------------
+// runQualitativeAnalysis
+// Calls Claude with a COMPACT summary (no full account arrays or DPD history)
+// and returns the qualitative fields via QUALITATIVE_TOOL.
+// Used by both the deterministic parser path and the chunked merge path.
+// ---------------------------------------------------------------------------
+async function runQualitativeAnalysis(compactContext, analysisId, language = 'en') {
+  const contextStr = JSON.stringify(compactContext, null, 2);
+  console.log(`[claudeService:${analysisId}] runQualitativeAnalysis: context size=${contextStr.length} chars`);
 
   const qualitativePrompt =
-    'You are a senior credit analyst. The following JSON contains structured credit data ' +
-    'extracted from a CIBIL report. Produce the qualitative analysis fields using the ' +
-    'submit_qualitative_analysis tool. Be specific — name the lenders and actual figures.' +
+    'You are a senior credit analyst. The following JSON contains structured credit portfolio data. ' +
+    'Produce a thorough qualitative analysis using the submit_qualitative_analysis tool. ' +
+    'Be specific — name the lenders and cite actual figures. ' +
+    'Include concrete, actionable advice in the 90-day action plan.' +
     buildLanguageInstruction(language) +
-    '\n\n```json\n' + JSON.stringify(context, null, 2) + '\n```';
+    '\n\n```json\n' + contextStr + '\n```';
 
+  const QUAL_MAX_TOKENS = 5000;
   const response = await anthropic.messages.create({
     model:      CLAUDE_MODEL,
-    max_tokens: 4000,
+    max_tokens: QUAL_MAX_TOKENS,
     messages: [
       { role: 'user', content: [{ type: 'text', text: qualitativePrompt }] },
     ],
@@ -598,20 +726,21 @@ async function synthesizeFinalResult(mergedData, analysisId, language = 'en') {
     tool_choice: { type: 'tool', name: 'submit_qualitative_analysis' },
   });
 
-  const toolBlock = response.content.find((c) => c.type === 'tool_use');
-  if (!toolBlock) {
-    console.error(`[claudeService:${analysisId}] synthesizeFinalResult: no tool_use block.`);
-    // Return safe defaults so render still works
-    return {
-      risk_factors: [], action_month_1: '', action_month_2: '', action_month_3: '',
-      risk_concentration_paragraph: '', projection_assumptions: '',
-      projected_scores: [mergedData.credit_score || 0, 0, 0, 0],
-      recommendation: '',
-      whats_helping: '', whats_hurting: '', top_priority: '',
-    };
+  console.log(`[claudeService:${analysisId}] runQualitativeAnalysis: stop_reason=${response.stop_reason} output_tokens=${response.usage?.output_tokens}`);
+
+  if (response.stop_reason === 'max_tokens') {
+    const err = new Error(
+      `Qualitative analysis truncated (max_tokens=${QUAL_MAX_TOKENS}, output=${response.usage?.output_tokens})`
+    );
+    err.isTruncation = true;
+    throw err;
   }
 
-  console.log(`[claudeService:${analysisId}] Qualitative synthesis complete.`);
+  const toolBlock = response.content.find((c) => c.type === 'tool_use');
+  if (!toolBlock) {
+    throw new Error(`runQualitativeAnalysis: no tool_use block (stop_reason=${response.stop_reason})`);
+  }
+  console.log(`[claudeService:${analysisId}] Qualitative analysis complete.`);
   return toolBlock.input;
 }
 
@@ -698,8 +827,127 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
     
     logStep(analysisId, 'File Parsing Complete', { mediaType, fileSizeKB, pageCount });
 
+    // ---- 3b. PDF pre-count for sanity-check later (wrapped — never fatal) ----
+    let precount = null;
+    if (mediaType === 'application/pdf') {
+      precount = await precountPdfEntries(fileBuffer);
+      if (precount) {
+        console.log(`[claudeService:${analysisId}] PDF pre-count: ${precount.accountCount} accounts, ${precount.enquiryCount} enquiries`);
+      }
+    }
 
     const useChunkedPath = pageCount !== null && pageCount > CHUNK_PAGE_LIMIT;
+
+    // ==========================================================================
+    // PATH P -- DETERMINISTIC PARSER PATH (CIBIL format, any size)
+    // Uses the cibilParser module for extraction (no Claude call for accounts)
+    // then calls Claude with a compact qualitative-only context.
+    // Falls through to PATH A only if isValidCibil=false.
+    // ==========================================================================
+    const parsedText = precount?._parsedText;
+    if (parsedText) {
+      const parserResult = parseCibilPdfText(parsedText);
+      if (parserResult.isValidCibil && parserResult.accounts.length > 0) {
+        console.log(
+          `[claudeService:${analysisId}] Path: DETERMINISTIC PARSER ` +
+          `(${parserResult.accounts.length} accounts, ${parserResult.enquiries.length} enquiries, ` +
+          `${parserResult.parseWarnings.length} warnings)`
+        );
+        if (parserResult.parseWarnings.length) {
+          parserResult.parseWarnings.forEach(w =>
+            console.warn(`[claudeService:${analysisId}]   Parser warning: ${w}`)
+          );
+        }
+
+        // Sanity: parser count must match precount
+        if (precount) {
+          assertExtractionSanity(
+            `claudeService:${analysisId}:PARSER`,
+            { accounts: parserResult.accounts.length, enquiries: parserResult.enquiries.length },
+            precount,
+            0.85  // tighter threshold — parser should be near-exact
+          );
+        }
+
+        // Build compact context for qualitative LLM call
+        const compactCtx = buildCompactContext(
+          parserResult.header,
+          parserResult.accounts,
+          parserResult.enquiries
+        );
+
+        console.log(`[claudeService:${analysisId}] Calling qualitative LLM with compact context (${JSON.stringify(compactCtx).length} chars)...`);
+        logStep(analysisId, 'Qualitative Analysis Start (parser path)');
+        const qualStart = Date.now();
+        const qualFields = await runQualitativeAnalysis(compactCtx, analysisId, language);
+        logStep(analysisId, 'Qualitative Analysis Complete (parser path)', { durationMs: Date.now() - qualStart });
+
+        // Merge: parser data + qualitative fields + header
+        const fullData = Object.assign(
+          {},
+          parserResult.header,
+          {
+            accounts:  parserResult.accounts,
+            enquiries: parserResult.enquiries,
+            language,
+          },
+          qualFields
+        );
+
+        // Compute aggregates that renderCreditReport expects
+        const active   = parserResult.accounts.filter(a => (a.status||'').toLowerCase() === 'active');
+        fullData.total_accounts    = parserResult.accounts.length;
+        fullData.active_accounts   = active.length;
+        fullData.total_outstanding = parserResult.accounts.reduce((s,a) => s + (a.current_balance   ||0), 0);
+        fullData.total_overdue     = parserResult.accounts.reduce((s,a) => s + (a.overdue_amount    ||0), 0);
+        fullData.total_sanctioned  = parserResult.accounts.reduce((s,a) => s + (a.sanctioned_amount ||0), 0);
+        fullData.total_written_off = parserResult.accounts.reduce((s,a) => s + (a.written_off_amount||0), 0);
+
+        // Render HTML — fatal on this path too
+        logStep(analysisId, 'HTML Template Render Start (parser path)');
+        const renderStart = Date.now();
+        const htmlReport = await renderCreditReport(fullData);
+        logStep(analysisId, 'HTML Template Render Complete (parser path)', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
+        console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
+
+        // Persist
+        const hasOverdueParsed = parserResult.accounts.some(a => (a.overdue_amount||0) > 0);
+        await saveToCreditReport(analysisId, analysis.userId, fullData);
+        await AIAnalysis.findByIdAndUpdate(analysisId, {
+          status:    'completed',
+          isChunked: false,
+          mergedData: fullData,
+          debugError: null,
+          result: {
+            score:             fullData.credit_score,
+            scoreBand:         fullData.score_band,
+            activeLoans:       active.length,
+            overdueStatus:     hasOverdueParsed ? 'Overdue' : 'Clear',
+            enquiries6m:       null,
+            enquiriesRating:   null,
+            foirPercent:       qualFields.foir_percent,
+            foirRating:        qualFields.foir_rating,
+            maxEligibleAmount: qualFields.max_eligible_amount,
+            recommendation:    qualFields.recommendation,
+          },
+          htmlReport,
+          htmlGenerating: false,
+          htmlStatus:     'completed',
+        });
+        logStep(analysisId, 'Result Persistence Complete (parser path)', { htmlStored: true });
+        console.log(`[claudeService:${analysisId}] Status -> completed (parser path)`);
+        await debitAiPull(analysis.userId, analysisId);
+        return;  // ← done — do NOT fall through to PATH A
+      }
+
+      console.log(
+        `[claudeService:${analysisId}] Parser path skipped — ` +
+        `isValidCibil=${parserResult.isValidCibil} accounts=${parserResult.accounts.length}. ` +
+        'Falling through to PATH A (LLM extraction).'
+      );
+    } else {
+      console.log(`[claudeService:${analysisId}] No parsedText available — skipping parser path, going to PATH A.`);
+    }
 
     // ==========================================================================
     // PATH A -- SHORT FILE (<=100 pages) -- single Claude call, unchanged
@@ -714,14 +962,15 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
       console.log(`[claudeService:${analysisId}]   base64 len: ${base64Data.length} chars`);
       console.log(`[claudeService:${analysisId}] Calling Claude API...`);
       console.log(`[claudeService:${analysisId}]   model     : ${CLAUDE_MODEL}`);
-      console.log(`[claudeService:${analysisId}]   max_tokens: 12000`);
+      const PATH_A_MAX_TOKENS = 16000;
+      console.log(`[claudeService:${analysisId}]   max_tokens: ${PATH_A_MAX_TOKENS}`);
 
       let response;
       try {
         logStep(analysisId, 'Analysis API Call Start', { model: CLAUDE_MODEL, language });
         response = await anthropic.messages.create({
           model:      CLAUDE_MODEL,
-          max_tokens: 12000,
+          max_tokens: PATH_A_MAX_TOKENS,
           system:     EXTRACTION_PROMPT + buildLanguageInstruction(language),
           messages: [
             {
@@ -760,7 +1009,18 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
       console.log(`[claudeService:${analysisId}] Claude response received`);
       console.log(`[claudeService:${analysisId}]   stop_reason   : ${response.stop_reason}`);
       console.log(`[claudeService:${analysisId}]   content blocks: ${response.content.length}`);
-      console.log(`[claudeService:${analysisId}]   usage         :`, response.usage);
+      console.log(`[claudeService:${analysisId}]   input_tokens  : ${response.usage?.input_tokens}`);
+      console.log(`[claudeService:${analysisId}]   output_tokens : ${response.usage?.output_tokens}`);
+
+      // ── FAIL LOUDLY: truncation guard ────────────────────────────────────
+      if (response.stop_reason === 'max_tokens') {
+        const truncErr = new Error(
+          `Model output truncated (stop_reason=max_tokens, output_tokens=${response.usage?.output_tokens}/${PATH_A_MAX_TOKENS}). ` +
+          'The report likely has too many accounts or enquiries for a single call. Failing loudly.'
+        );
+        truncErr.isTruncation = true;
+        throw truncErr;
+      }
 
       const toolUseBlock = response.content.find((c) => c.type === 'tool_use');
       if (!toolUseBlock) {
@@ -771,32 +1031,25 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
 
       const result = toolUseBlock.input;
       result.language = language; // ensure language is passed to EJS template
-      
-      // STEP 0 LOGGING
-      console.log(`[claudeService:${analysisId}] STEP 0 DIAGNOSTICS:`);
-      console.log(`  stop_reason: ${response.stop_reason}`);
-      console.log(`  usage.input_tokens: ${response.usage?.input_tokens}`);
-      console.log(`  usage.output_tokens: ${response.usage?.output_tokens}`);
-      console.log(`  model: ${CLAUDE_MODEL}`);
-      console.log(`  keys: ${Object.keys(result).join(', ')}`);
-      console.log(`  accounts.length: ${(result.accounts||[]).length}`);
-      console.log(`  enquiries.length: ${(result.enquiries||[]).length}`);
-      console.log(`  JSON payload length: ${JSON.stringify(result).length}`);
 
-      console.log(`[claudeService:${analysisId}] Extracted ${(result.accounts||[]).length} accounts, ${(result.enquiries||[]).length} enquiries`);
+      const extractedAccounts  = (result.accounts  || []).length;
+      const extractedEnquiries = (result.enquiries || []).length;
+      console.log(`[claudeService:${analysisId}] PATH A extracted: ${extractedAccounts} accounts, ${extractedEnquiries} enquiries`);
+
+      // ── Cross-check against pdf-parse pre-count ───────────────────────
+      assertExtractionSanity(
+        `claudeService:${analysisId}:PATH_A`,
+        { accounts: extractedAccounts, enquiries: extractedEnquiries },
+        precount
+      );
 
       // ── Render HTML immediately from structured data (no second Claude call) ──
       logStep(analysisId, 'HTML Template Render Start');
       const renderStart = Date.now();
-      let htmlReport = null;
-      try {
-        htmlReport = await renderCreditReport(result);
-        logStep(analysisId, 'HTML Template Render Complete', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
-        console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
-      } catch (renderErr) {
-        console.error(`[claudeService:${analysisId}] HTML render failed:`, renderErr.message);
-        // Non-fatal: store result without HTML, download will show an error
-      }
+      // Render is fatal on PATH A — if it fails we must not store 'completed'
+      const htmlReport = await renderCreditReport(result);
+      logStep(analysisId, 'HTML Template Render Complete', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
+      console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
 
       // ── Single atomic DB write: result + HTML together ──
       logStep(analysisId, 'Result Persistence Start');
@@ -880,17 +1133,12 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
     const fullData = Object.assign({}, mergedData, qualitativeFields);
     fullData.language = language; // ensure language is passed to EJS template
 
-    // B4c. Render HTML from merged structured data
+    // B4c. Render HTML from merged structured data — fatal on chunked path too
     logStep(analysisId, 'HTML Template Render Start (chunked path)');
     const renderStart = Date.now();
-    let htmlReport = null;
-    try {
-      htmlReport = await renderCreditReport(fullData);
-      logStep(analysisId, 'HTML Template Render Complete (chunked path)', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
-      console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
-    } catch (renderErr) {
-      console.error(`[claudeService:${analysisId}] HTML render failed (chunked path):`, renderErr.message);
-    }
+    const htmlReport = await renderCreditReport(fullData);
+    logStep(analysisId, 'HTML Template Render Complete (chunked path)', { durationMs: Date.now() - renderStart, lengthChars: htmlReport.length });
+    console.log(`[claudeService:${analysisId}] HTML rendered in ${Date.now() - renderStart}ms (${htmlReport.length} chars)`);
 
     // B5. Persist completed result — single atomic write with HTML
     const activeLoansChunked = (mergedData.accounts || []).filter(
@@ -946,7 +1194,14 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
     ].filter(Boolean).join('\n');
 
     let userFacingMessage;
-    if (isPdfPageLimitError(err)) {
+    if (err.isTruncation || err.isSanityFailure) {
+      // The report has more data than can be processed in one call.
+      // A clear, actionable message is shown to the user.
+      userFacingMessage =
+        "We couldn't fully analyse this report — it contains more accounts or enquiries " +
+        'than can be processed in one pass. Please retry; if the problem persists, contact support.';
+      console.error(`[claudeService:${analysisId}] -> Classified as truncation/sanity failure.`);
+    } else if (isPdfPageLimitError(err)) {
       // Safety net -- chunked path should prevent this, but kept for edge cases.
       userFacingMessage =
         'This report has too many pages to analyze (limit: 100 pages per chunk). ' +
@@ -968,15 +1223,21 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
       debugError,
     });
 
-    // Flat ₹30 AI fail fee (any tier) — Claude was still called
-    try {
-      const { chargeFailedReport } = require('./wallet');
-      const charge = await chargeFailedReport(analysis.userId, analysisId, 'ai', 'AI', true);
-      if (charge.ok && !charge.free) {
-        console.log(`[wallet] charged ₹${charge.total} AI fail fee for analysis ${analysisId}`);
+    // Flat ₹30 AI fail fee (any tier) — Claude was still called.
+    // Skip for sanity/truncation failures where the model call itself may not
+    // have produced valid output worth charging for.
+    if (!err.isSanityFailure) {
+      try {
+        const { chargeFailedReport } = require('./wallet');
+        const charge = await chargeFailedReport(analysis.userId, analysisId, 'ai', 'AI', true);
+        if (charge.ok && !charge.free) {
+          console.log(`[wallet] charged ₹${charge.total} AI fail fee for analysis ${analysisId}`);
+        }
+      } catch (walletErr) {
+        console.error(`[wallet] AI fail-charge error for analysis ${analysisId}:`, walletErr.message);
       }
-    } catch (walletErr) {
-      console.error(`[wallet] AI fail-charge error for analysis ${analysisId}:`, walletErr.message);
+    } else {
+      console.log(`[wallet] Skipping AI fail-charge for sanity/truncation failure (analysis ${analysisId}) — model output was unusable.`);
     }
   }
 }
