@@ -714,7 +714,7 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
       console.log(`[claudeService:${analysisId}]   base64 len: ${base64Data.length} chars`);
       console.log(`[claudeService:${analysisId}] Calling Claude API...`);
       console.log(`[claudeService:${analysisId}]   model     : ${CLAUDE_MODEL}`);
-      console.log(`[claudeService:${analysisId}]   max_tokens: 4000`);
+      console.log(`[claudeService:${analysisId}]   max_tokens: 12000`);
 
       let response;
       try {
@@ -771,6 +771,18 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
 
       const result = toolUseBlock.input;
       result.language = language; // ensure language is passed to EJS template
+      
+      // STEP 0 LOGGING
+      console.log(`[claudeService:${analysisId}] STEP 0 DIAGNOSTICS:`);
+      console.log(`  stop_reason: ${response.stop_reason}`);
+      console.log(`  usage.input_tokens: ${response.usage?.input_tokens}`);
+      console.log(`  usage.output_tokens: ${response.usage?.output_tokens}`);
+      console.log(`  model: ${CLAUDE_MODEL}`);
+      console.log(`  keys: ${Object.keys(result).join(', ')}`);
+      console.log(`  accounts.length: ${(result.accounts||[]).length}`);
+      console.log(`  enquiries.length: ${(result.enquiries||[]).length}`);
+      console.log(`  JSON payload length: ${JSON.stringify(result).length}`);
+
       console.log(`[claudeService:${analysisId}] Extracted ${(result.accounts||[]).length} accounts, ${(result.enquiries||[]).length} enquiries`);
 
       // ── Render HTML immediately from structured data (no second Claude call) ──
