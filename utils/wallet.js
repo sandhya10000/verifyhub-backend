@@ -115,12 +115,15 @@ async function chargeForReport(userId, reportId, productKey, bureau) {
 }
 
 // Charge a failed pull.
-//  - CIBIL: free when inputs match history (mismatched=false); otherwise
-//    the tier's cibilFailed rate.
-//  - Every other product (incl. AI): flat otherFailedCharge, any tier.
+// Single-plan launch: every failed bureau pull bills the SAME as success
+// (no free matched-input retry, no 30 flat fallback for bureaus).
+//  - AI: flat otherFailedCharge (unchanged).
+//  - RC/GST fails: still free (unchanged).
+// TODO(multi-plan-restore): restore CIBIL matched-free + cibilFailed/30 fallback.
 async function chargeFailedReport(userId, reportId, productKey, bureau, mismatched = true) {
   const key = String(productKey || "").toLowerCase();
-  if (key === "cibil" && !mismatched) {
+  const { SINGLE_PLAN_MODE } = require("../models/Pricing");
+  if (key === "cibil" && !mismatched && !SINGLE_PLAN_MODE) {
     return { ok: true, free: true, total: 0 };
   }
   const { tier } = await userTier(userId);

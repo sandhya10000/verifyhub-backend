@@ -107,8 +107,9 @@ const debitReportPull = async (creditReport, productKey, bureauLabel) => {
   }
 };
 
-// Post-failure debit — same guards as success. CIBIL is mismatch-gated
-// (matched inputs fail free); every other product bills the flat fallback.
+// Post-failure debit — same guards as success. Single-plan launch: failed
+// bureau pulls bill the SAME as success (see models/Pricing.js).
+// TODO(multi-plan-restore): restore mismatch-gated CIBIL + flat fallback.
 // Never throws; returns the charge result for response transparency.
 const debitFailedPull = async (
   creditReport,

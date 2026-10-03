@@ -30,36 +30,44 @@ const productPriceSchema = new mongoose.Schema(
 // otherwise.
 // AI + failure fallbacks stay flat across all tiers:
 //   AI success = base + GST, any other failure = otherFailedCharge.
+// Single-plan launch mode: one effective plan ("starter") with founder prices.
+// All 5 tier rows are kept identical so stale activePlan values still bill
+// correctly. Flip SINGLE_PLAN_MODE to false to restore multi-tier slabs.
+// TODO(multi-plan-restore): restore tiered recharge/cibil/experian/crif/equifax values.
+const SINGLE_PLAN_MODE = true;
+const SINGLE_PLAN_KEY = "starter";
+const SINGLE_PLAN_ROW = { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 };
+
 const pricingSchema = new mongoose.Schema(
   {
     key: { type: String, default: "default", unique: true },
     plans: {
       startup: {
         type: tierPricesSchema,
-        default: { recharge: 200, cibil: 120, experian: 95, crif: 95, equifax: 85, cibilFailed: 90 },
+        default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
       starter: {
         type: tierPricesSchema,
-        default: { recharge: 1000, cibil: 110, experian: 85, crif: 85, equifax: 80, cibilFailed: 80 },
+        default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
       growth: {
         type: tierPricesSchema,
-        default: { recharge: 5000, cibil: 90, experian: 65, crif: 65, equifax: 60, cibilFailed: 70 },
+        default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
       pro: {
         type: tierPricesSchema,
-        default: { recharge: 10000, cibil: 80, experian: 50, crif: 55, equifax: 50, cibilFailed: 60 },
+        default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
       enterprise: {
         type: tierPricesSchema,
-        default: { recharge: 25000, cibil: 65, experian: 35, crif: 45, equifax: 40, cibilFailed: 50 },
+        default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
     },
     ai: { type: productPriceSchema, default: { base: 100, gstRate: 18 } },
     rc: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     gst: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
-    minRecharge: { type: Number, default: 200, min: 0 },
+    minRecharge: { type: Number, default: 1000, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
     lowBalanceAlertIntervalDays: { type: Number, default: 7, min: 1 },
   },
@@ -69,10 +77,16 @@ const pricingSchema = new mongoose.Schema(
 const PLAN_KEYS = ["startup", "starter", "growth", "pro", "enterprise"];
 const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax", "rc", "gst"];
 
-// Recharge amount -> plan tier (floor-mapped, sticky upgrades).
-// Amounts below the cheapest plan return null (rejected upstream).
+// Recharge amount -> plan tier.
+// Single-plan mode: any amount >= minRecharge maps to SINGLE_PLAN_KEY.
+// TODO(multi-plan-restore): restore floor-mapped slabs (25000 enterprise,
+// 10000 pro, 5000 growth, 1000 starter, 200 startup).
 function tierForAmount(amount) {
   const amt = Number(amount) || 0;
+  if (SINGLE_PLAN_MODE) {
+    if (amt >= SINGLE_PLAN_ROW.recharge) return SINGLE_PLAN_KEY;
+    return null;
+  }
   if (amt >= 25000) return "enterprise";
   if (amt >= 10000) return "pro";
   if (amt >= 5000) return "growth";
@@ -112,13 +126,20 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
   }
   if (["cibil", "crif", "experian", "equifax"].includes(key)) {
     if (kind === "fail") {
+      // Single-plan launch: failed bureau pulls bill the SAME as success
+      // (cibil 60 / experian 40 / crif 50 / equifax 40).
+      // TODO(multi-plan-restore): restore tiered fail pricing (cibilFailed row + 30 flat fallback).
+      if (SINGLE_PLAN_MODE) {
+        const row = pricing.plans[plan] || pricing.plans[SINGLE_PLAN_KEY] || pricing.plans.starter;
+        return totalsFor(row[key], 0);
+      }
       if (key === "cibil") {
-        const row = pricing.plans[plan];
+        const row = pricing.plans[plan] || pricing.plans[SINGLE_PLAN_KEY] || pricing.plans.starter;
         return totalsFor(row.cibilFailed, 0);
       }
       return totalsFor(pricing.otherFailedCharge.base, pricing.otherFailedCharge.gstRate);
     }
-    const row = pricing.plans[plan];
+    const row = pricing.plans[plan] || pricing.plans[SINGLE_PLAN_KEY] || pricing.plans.starter;
     return totalsFor(row[key], 0);
   }
   throw new Error(`Unknown product: ${productKey}`);
@@ -130,3 +151,6 @@ module.exports.PRODUCT_KEYS = PRODUCT_KEYS;
 module.exports.tierForAmount = tierForAmount;
 module.exports.totalsFor = totalsFor;
 module.exports.quoteForProduct = quoteForProduct;
+module.exports.SINGLE_PLAN_MODE = SINGLE_PLAN_MODE;
+module.exports.SINGLE_PLAN_KEY = SINGLE_PLAN_KEY;
+module.exports.SINGLE_PLAN_ROW = SINGLE_PLAN_ROW;

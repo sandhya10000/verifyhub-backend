@@ -289,7 +289,9 @@ exports.getPublicPlans = async (req, res) => {
         otherFailedCharge: otherFailed.total,
         rc: { base: rc.base, gstRate: rc.gstRate, total: rc.total },
         gst: { base: gst.base, gstRate: gst.gstRate, total: gst.total },
-        minRecharge: pricing?.minRecharge ?? 100,
+        minRecharge: pricing?.minRecharge ?? 1000,
+        singlePlanMode: true, // TODO(multi-plan-restore): remove flag once multi-tier returns
+        singlePlanKey: "starter",
       },
     });
   } catch (err) {
