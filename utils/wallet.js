@@ -115,11 +115,10 @@ async function chargeForReport(userId, reportId, productKey, bureau) {
 }
 
 // Charge a failed pull.
-// Single-plan launch: every failed bureau pull bills the SAME as success
-// (no free matched-input retry, no 30 flat fallback for bureaus).
-//  - AI: flat otherFailedCharge (unchanged).
-//  - RC/GST fails: still free (unchanged).
-// TODO(multi-plan-restore): restore CIBIL matched-free + cibilFailed/30 fallback.
+// Single-plan launch: bureaus bill the SAME as success (no free matched-input
+// retry, no 30 flat fallback); AI bills flat ₹100 (base, no GST); RC/GST bill
+// ₹10 (same as success).
+// TODO(multi-plan-restore): restore CIBIL matched-free + cibilFailed/30 fallback + free RC/GST fails.
 async function chargeFailedReport(userId, reportId, productKey, bureau, mismatched = true) {
   const key = String(productKey || "").toLowerCase();
   const { SINGLE_PLAN_MODE } = require("../models/Pricing");
