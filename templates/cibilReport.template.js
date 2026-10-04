@@ -102,7 +102,7 @@ const renderHeader = (data) => {
         </div>
 
         <div class="header-value">
-        ${safe(data.ReferenceKey)}
+       ${safe(data.referenceKey)}
         </div>
 
         <div class="header-label report-version-label">
