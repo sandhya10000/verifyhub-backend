@@ -775,9 +775,10 @@ exports.getPricing = async (req, res) => {
   }
 };
 
-// PATCH /api/admin/pricing � whitelisted matrix edits only.
-// Body may contain any subset of: plans.{starter,growth,pro,enterprise}.{recharge,cibil,experian,crif,equifax,cibilFailed},
-// ai.{base,gstRate}, otherFailedCharge.{base,gstRate}, minRecharge, lowBalanceThreshold.
+// PATCH /api/admin/pricing — whitelisted matrix edits only.
+// Body may contain any subset of: plans.{tiers}.{recharge,cibil,experian,crif,equifax,cibilFailed},
+// ai.{base,gstRate}, rc.{base,gstRate}, gst.{base,gstRate}, otherFailedCharge.{base,gstRate},
+// minRecharge, lowBalanceThreshold, lowBalanceAlertIntervalDays.
 exports.updatePricing = async (req, res) => {
   try {
     const set = {};
@@ -792,7 +793,7 @@ exports.updatePricing = async (req, res) => {
         }
       }
     }
-    for (const key of ["ai", "otherFailedCharge"]) {
+    for (const key of ["ai", "rc", "gst", "otherFailedCharge"]) {
       const obj = req.body?.[key];
       if (obj && typeof obj === "object") {
         for (const field of ["base", "gstRate"]) {
