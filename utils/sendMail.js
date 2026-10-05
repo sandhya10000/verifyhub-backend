@@ -149,17 +149,18 @@ function metaRow(label, value) {
 
 // --- Recharge / plan receipts ---
 
+// Single-plan launch: NO plan names anywhere in live mails — one rate card
+// for everyone, so receipts talk wallet + standard rates only.
+// TODO(multi-plan-restore): revive plan branches below.
 function rechargeInvoiceHtml(d) {
   const invoiceRows = [
     row("Wallet top-up (GST-inclusive)", inr(d.baseAmount)),
-    ...(d.plan && Number(d.planFee) > 0 ? [row(`Plan fee — ${String(d.plan).toUpperCase()} (adjusted from top-up)`, `− ${inr(d.planFee)}`)] : []),
     ...(Number(d.gstAmount) > 0 ? [row(`GST @ 18% on top-up`, inr(d.gstAmount))] : []),
   ].join("");
   const totals = [
     totalRow("Paid via Razorpay", inr(d.totalPaid), false),
     totalRow("Wallet credited", inr(d.walletCredit), false),
     totalRow("New wallet balance", inr(d.walletBalance), true),
-    ...(d.activePlan ? [totalRow("Active plan", String(d.activePlan).toUpperCase(), false)] : []),
   ].join("");
   const meta = [
     metaRow("Order ID", d.orderId || "—"),
@@ -168,31 +169,30 @@ function rechargeInvoiceHtml(d) {
     metaRow("Date (IST)", istDate(d.date)),
     ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
   ].join("");
-  const intro = d.plan
-    ? `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. Your <b>${esc(String(d.plan).toUpperCase())}</b> plan is now active and <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet.`
-    : `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet.`;
+  const intro = `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet — pull any report, anytime; every report is billed per pull at standard rates.`;
   return receiptShell({
-    title: d.plan ? "Payment Receipt — Plan + Wallet Top-up" : "Payment Receipt — Wallet Top-up",
+    title: "Payment Receipt — Wallet Top-up",
     preheader: `Wallet credited ${inr(d.walletCredit)} · Balance ${inr(d.walletBalance)}`,
     name: d.name, introHtml: intro, invoiceRowsHtml: invoiceRows, totalsHtml: totals, metaRowsHtml: meta,
   });
 }
 
 async function sendRechargeSuccessMail(to, d) {
-  const subject = d.plan
-    ? `VerifyHub: ${String(d.plan).toUpperCase()} plan active — ${inr(d.walletCredit)} credited`
-    : `VerifyHub: wallet recharged — ${inr(d.walletCredit)} credited`;
+  const subject = `VerifyHub: wallet recharged — ${inr(d.walletCredit)} credited`;
   const html = rechargeInvoiceHtml(d);
   const text = [
     `Hi ${d.name || "Partner"},`,
-    d.plan ? `Your ${String(d.plan).toUpperCase()} plan is now active (free selection — nothing deducted).` : `Your wallet top-up was successful.`,
+    `Your wallet top-up was successful. Pull any report, anytime; every report is billed per pull at standard rates.`,
     ...(Number(d.gstAmount) > 0 ? [`Base: ${inr(d.baseAmount)} | GST: ${inr(d.gstAmount)} | Paid: ${inr(d.totalPaid)}`] : [`Paid (GST-inclusive): ${inr(d.totalPaid)}`]),
-    d.plan && Number(d.planFee) > 0 ? `Plan fee: ${inr(d.planFee)} | ` : "", `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
+    `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
     `Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
   ].join("\n");
   return sendMail({ to, subject, html, text });
 }
 
+// DEAD in single-plan mode (activatePlan no-op never sends this). Kept for
+// multi-plan restore — do not delete.
+// TODO(multi-plan-restore): revive plan-activation mails.
 function planActivationInvoiceHtml(d) {
   const invoiceRows = [row(`Plan selected — ${String(d.plan).toUpperCase()} (free, no amount deducted)`, inr(0))].join("");
   const totals = [totalRow("Wallet balance (untouched)", inr(d.walletBalance), true), totalRow("Active plan", String(d.plan).toUpperCase(), false)].join("");
@@ -308,7 +308,50 @@ async function sendAdminDeductMail(to, d) {
   });
 }
 
+// --- Partner top-up alert for platform + admins (short, no receipt) ---
+// Sent on every successful partner-initiated WALLET_RECHARGE, in addition to
+// the partner's own receipt. Never blocks the recharge response (fire-and-forget).
+
+function topupAlertHtml(d) {
+  const meta = [
+    metaRow("Partner", `${d.name || "—"}${d.partnerId ? ` (${d.partnerId})` : ""}`),
+    metaRow("Email", d.email || "—"),
+    ...(d.phone ? [metaRow("Phone", d.phone)] : []),
+    metaRow("Credited", inr(d.walletCredit)),
+    metaRow("New balance", inr(d.walletBalance)),
+    metaRow("Order ID", d.orderId || "—"),
+    metaRow("Payment ID", d.paymentId || "—"),
+    metaRow("Receipt / Txn ID", d.transactionId || "—"),
+    metaRow("Date (IST)", istDate(d.date)),
+  ].join("");
+  return receiptShell({
+    title: "Wallet Top-up Alert — Partner Payment Received",
+    preheader: `${d.name || "Partner"} credited ${inr(d.walletCredit)} · Balance ${inr(d.walletBalance)}`,
+    name: "Admin",
+    introHtml: `Partner <b>${esc(d.name || "")}</b> topped up <b>${esc(inr(d.walletCredit))}</b> via Razorpay. New wallet balance is <b>${esc(inr(d.walletBalance))}</b>.`,
+    invoiceRowsHtml: row("Wallet credited (partner payment)", inr(d.walletCredit)),
+    totalsHtml: totalRow("New wallet balance", inr(d.walletBalance), true),
+    metaRowsHtml: meta,
+    ctaUrl: process.env.ADMIN_URL || process.env.FRONTEND_URL || "https://verifyhub.in",
+    ctaLabel: "Open Admin Panel",
+  });
+}
+
+async function sendTopupAdminNotifyMail(to, d) {
+  const subject = `Top-up alert: ${d.name || "Partner"} credited ${inr(d.walletCredit)} — balance ${inr(d.walletBalance)}`;
+  return sendMail({
+    to,
+    subject,
+    html: topupAlertHtml(d),
+    text: [
+      `Partner ${d.name || ""}${d.partnerId ? ` (${d.partnerId})` : ""} topped up ${inr(d.walletCredit)} via Razorpay.`,
+      `New wallet balance: ${inr(d.walletBalance)}.`,
+      `Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
+    ].join("\n"),
+  });
+}
+
 module.exports = {
-  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail,
+  sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail, sendTopupAdminNotifyMail,
   getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml, adminDeductInvoiceHtml,
 };

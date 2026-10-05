@@ -314,6 +314,37 @@ const verifyPayment = async (req, res) => {
           activePlan: updatedUser.activePlan,
         }).catch((e) => console.error("[whatsapp] recharge receipt failed:", e.message));
       }
+      // Platform + admin top-up alert (short, in addition to the partner's
+      // own receipt above). Fully fire-and-forget: failures here never affect
+      // the recharge response. One recipient failing never blocks the others.
+      (async () => {
+        try {
+          const { sendTopupAdminNotifyMail } = require("../utils/sendMail");
+          const platform = String(process.env.TOPUP_NOTIFY_EMAILS || "info@verifyhub.in")
+            .split(",").map((s) => s.trim()).filter(Boolean);
+          const admins = await User.find({ role: "admin", isActive: { $ne: false } })
+            .select("email").lean();
+          const recipients = new Set([
+            ...platform,
+            ...admins.map((a) => a && a.email).filter(Boolean),
+          ]);
+          if (current.email) recipients.delete(current.email); // partner already got the receipt
+          const payload = {
+            name: current.name, email: current.email, phone: current.phone,
+            walletCredit, walletBalance: updatedUser.walletBalance,
+            activePlan: updatedUser.activePlan,
+            paymentId: transaction.paymentId, orderId: transaction.orderId,
+            transactionId: String(transaction._id),
+            partnerId: current.partner_id, date: new Date(),
+          };
+          await Promise.allSettled([...recipients].map((to) =>
+            sendTopupAdminNotifyMail(to, payload).catch((e) =>
+              console.error("[mail] top-up admin notify failed:", to, e.message)),
+          ));
+        } catch (e) {
+          console.error("[mail] top-up admin notify failed:", e.message);
+        }
+      })();
       const _threshold = pricing?.lowBalanceThreshold ?? 500;
       if ((updatedUser.walletBalance ?? 0) >= _threshold) {
         User.updateOne({ _id: transaction.userId }, { $set: { lowBalanceLastAlertAt: null } }).exec().catch(() => {});
