@@ -1207,6 +1207,35 @@ const buildCibilReportHtml = (data) => {
   /* ============================================================
    PERSONAL INFORMATION
 ============================================================ */
+/* ============================================================
+   KEY / VALUE COMMON STYLE
+============================================================ */
+
+.info-item {
+  min-height: 55px;
+  padding: 11px 12px;
+  background: #ffffff;
+  border-right: 1px solid #d9e1ec;
+  border-bottom: 1px solid #d9e1ec;
+}
+
+.info-label {
+  color: #94a3b8;
+  font-size: 7.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.3;
+}
+
+.info-value {
+  margin-top: 4px;
+  color: #172033;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  word-break: break-word;
+}
 
 .info-grid {
   display: grid;
@@ -1217,13 +1246,12 @@ const buildCibilReportHtml = (data) => {
   margin-bottom: 14px;
 }
 
-.info-grid > div {
+.info-grid > .info-item {
   min-height: 70px;
   padding: 12px 16px;
-  border-right: 1px solid #d9e1ec;
 }
 
-.info-grid > div:last-child {
+.info-grid > .info-item:last-child {
   border-right: none;
 }
 
@@ -1259,17 +1287,17 @@ const buildCibilReportHtml = (data) => {
 }
 
 .contact-label {
-  font-size: 10px;
+  font-size: 7.5px;
   font-weight: 700;
-  color: #718096;
+  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   margin-bottom: 5px;
 }
 
 .contact-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 800;
   color: #172033;
   word-break: break-word;
 }
@@ -1420,17 +1448,14 @@ const buildCibilReportHtml = (data) => {
     letter-spacing: 0.3px;
   }
 
-  .summary-value {
-    margin-top: 7px;
-    padding-left: 3px;
-
-    font-size: 14px;
-    font-weight: 800;
-
-    color: #123d70;
-
-    word-break: break-word;
-  }
+ .summary-value {
+  margin-top: 7px;
+  padding-left: 3px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #172033;
+  word-break: break-word;
+}
 
   /* ============================================================
      TABLES
@@ -1457,47 +1482,25 @@ const buildCibilReportHtml = (data) => {
     background: #ffffff;
   }
 
-  th {
-    padding: 7px 6px;
+th {
+  color: #64748B;
+  background: #F1F6FB;
+  font-size: 7.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 
-    background: #eef4fb;
-
-    border-right: 1px solid #d8e1ec;
-    border-bottom: 1px solid #cbd5e1;
-
-    color: #1e3a5f;
-
-    font-size: 7px;
-    font-weight: 800;
-
-    text-align: left;
-
-    text-transform: uppercase;
-    letter-spacing: 0.2px;
-  }
+td {
+  color: #172033;
+  font-size: 8.5px;
+  font-weight: 700;
+}
 
   th:last-child {
     border-right: none;
   }
 
-  td {
-    padding: 7px 6px;
-
-    border-right: 1px solid #e5eaf0;
-    border-bottom: 1px solid #e5eaf0;
-
-    color: #334155;
-
-    font-size: 8px;
-
-    vertical-align: middle;
-
-    word-break: break-word;
-  }
-
-  td:last-child {
-    border-right: none;
-  }
+ 
 
   tbody tr:nth-child(even) td {
     background: #fafcff;

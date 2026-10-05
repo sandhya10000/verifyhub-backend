@@ -766,20 +766,18 @@ body {
 
 .score-info-label {
   color: #94A3B8;
-
   font-size: 7px;
-
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .score-info-value {
   color: #172033;
-
-  font-weight: bold;
-
   font-size: 9px;
-
-  margin-top: 2px;
+  font-weight: 800;
+  margin-top: 3px;
+  line-height: 1.4;
 }
 
 
@@ -896,42 +894,28 @@ body {
 }
 
 .card {
-  background: white;
-
-  border:
-    1px solid
-    #E2E8F0;
-
-  border-radius: 9px;
-
-  padding: 10px;
-
-  box-shadow:
-    0 2px 7px
-    rgba(15,23,42,0.03);
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 11px 12px;
+  box-shadow: none;
 }
 
-.label {
+ .label {
   color: #94A3B8;
-
   font-size: 7.5px;
-
   text-transform: uppercase;
-
   letter-spacing: 0.5px;
-
-  font-weight: bold;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .value {
   color: #172033;
-
-  font-size: 10.5px;
-
-  font-weight: 700;
-
+  font-size: 10px;
+  font-weight: 800;
   margin-top: 4px;
-
+  line-height: 1.4;
   word-break: break-word;
 }
 
@@ -972,24 +956,21 @@ body {
   background: #F1F5F9;
 }
 
-.metric-number {
-  font-size: 20px;
-
-  font-weight: 800;
-
-  color: #123B66;
-
-  margin-top: 3px;
-}
-
 .metric-label {
   font-size: 7.5px;
-
-  color: #64748B;
-
+  color: #94A3B8;
   text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+  line-height: 1.3;
+}
 
-  letter-spacing: 0.3px;
+.metric-number {
+  font-size: 20px;
+  font-weight: 800;
+  color: #172033;
+  margin-top: 5px;
+  line-height: 1.2;
 }
 
 
@@ -1064,37 +1045,25 @@ thead {
   background: #F1F6FB;
 }
 
+ 
+
 th {
-  color: #475569;
-
+  color: #94A3B8;
   font-size: 7.5px;
-
-  font-weight: 800;
-
+  font-weight: 700;
   text-transform: uppercase;
-
   letter-spacing: 0.3px;
-
   padding: 8px;
-
-  border-bottom:
-    1px solid
-    #DCE5EF;
-
+  border-bottom: 1px solid #DCE5EF;
   text-align: left;
 }
 
 td {
-  color: #334155;
-
+  color: #172033;
   font-size: 8.5px;
-
+  font-weight: 700;
   padding: 7px 8px;
-
-  border-bottom:
-    1px solid
-    #EEF2F7;
-
+  border-bottom: 1px solid #EEF2F7;
   vertical-align: top;
 }
 
@@ -1157,11 +1126,10 @@ tbody tr:last-child td {
 }
 
 .account-number {
-  color: #64748B;
-
+  color: #475569;
   font-size: 8px;
-
-  margin-top: 2px;
+  font-weight: 700;
+  margin-top: 3px;
 }
 
 .account-body {
@@ -1178,38 +1146,29 @@ tbody tr:last-child td {
 
   margin-bottom: 8px;
 }
-
+ 
 .account-field {
-  padding: 6px 7px;
-
-  background: #F8FAFC;
-
+  padding: 7px 8px;
+  background: #FFFFFF;
   border-radius: 6px;
-
-  border:
-    1px solid
-    #EEF2F7;
+  border: 1px solid #E8EDF3;
 }
 
 .account-field-label {
   color: #94A3B8;
-
-  font-size: 6.8px;
-
+  font-size: 7px;
   text-transform: uppercase;
-
-  font-weight: bold;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .account-field-value {
-  color: #334155;
-
-  font-size: 8.5px;
-
-  font-weight: 700;
-
-  margin-top: 2px;
-
+  color: #172033;
+  font-size: 9px;
+  font-weight: 800;
+  margin-top: 4px;
+  line-height: 1.4;
   word-break: break-word;
 }
 
@@ -2382,23 +2341,24 @@ ${capsApplications
                       padding-right:15px;
                     ">
 
-                      <div style="
-                        font-size:9px;
-                        color:#777;
-                        text-transform:uppercase;
-                        margin-bottom:4px;
-                        font-weight:600;
-                      ">
-                        City
-                      </div>
+                    <div style="
+  font-size:7.5px;
+  color:#94A3B8;
+  text-transform:uppercase;
+  margin-bottom:4px;
+  font-weight:700;
+  letter-spacing:0.4px;
+">
+  City
+</div>
 
                       <div style="
-                        font-size:11px;
-                        color:#222;
-                        line-height:1.5;
-                        font-weight:500;
-                        word-break:break-word;
-                      ">
+  font-size:10px;
+  color:#172033;
+  line-height:1.4;
+  font-weight:800;
+  word-break:break-word;
+">
                         ${escapeHtml(address?.City_non_normalized ?? "-")}
                       </div>
 
@@ -2412,11 +2372,12 @@ ${capsApplications
                     ">
 
                       <div style="
-                        font-size:9px;
-                        color:#777;
-                        margin-bottom:4px;
-                        font-weight:600;
-                      ">
+  font-size:10px;
+  color:#172033;
+  line-height:1.4;
+  font-weight:800;
+  word-break:break-word;
+">
                         PIN Code
                       </div>
 
@@ -2438,13 +2399,13 @@ ${capsApplications
                       min-width:90px;
                       padding-left:10px;
                     ">
-
-                      <div style="
-                        font-size:9px;
-                        color:#777;
-                        margin-bottom:4px;
-                        font-weight:600;
-                      ">
+<div style="
+  font-size:10px;
+  color:#172033;
+  line-height:1.4;
+  font-weight:800;
+  word-break:break-word;
+">
                         State
                       </div>
 
@@ -2465,12 +2426,13 @@ ${capsApplications
                       padding-left:10px;
                     ">
 
-                      <div style="
-                        font-size:9px;
-                        color:#777;
-                        margin-bottom:4px;
-                        font-weight:600;
-                      ">
+                    <div style="
+  font-size:10px;
+  color:#172033;
+  line-height:1.4;
+  font-weight:800;
+  word-break:break-word;
+">
                         Country
                       </div>
 
@@ -2494,11 +2456,12 @@ ${capsApplications
                     ">
 
                       <div style="
-                        font-size:9px;
-                        color:#777;
-                        margin-bottom:4px;
-                        font-weight:600;
-                      ">
+  font-size:10px;
+  color:#172033;
+  line-height:1.4;
+  font-weight:800;
+  word-break:break-word;
+">
                         Indicator
                       </div>
 

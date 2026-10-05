@@ -32,7 +32,7 @@ const { generateCibilPdf } = require("../services/cibilPdf.service");
 // never sends — every CIBIL row saved score: null because of it.
 const extractCibilScore = (apiData) => {
   const cibilData = apiData?.data?.cibilData;
-  console.log(cibilData,"CIBIL")
+  console.log(cibilData, "CIBIL");
   if (!cibilData) return null;
   const candidates = [
     cibilData?.GetCustomerAssetsResponse?.GetCustomerAssetsSuccess?.Asset
@@ -44,7 +44,8 @@ const extractCibilScore = (apiData) => {
     cibilData?.creditScore,
   ];
   for (const raw of candidates) {
-    if (raw === null || raw === undefined || raw === "" || raw === "-") continue;
+    if (raw === null || raw === undefined || raw === "" || raw === "-")
+      continue;
     const n = Number(raw);
     if (!Number.isNaN(n) && n >= 300 && n <= 900) return n;
   }
@@ -349,7 +350,7 @@ const CibilReportFromDigi = async (req, res) => {
     if (!cibilData) {
       return res.status(400).json({
         success: false,
-        message: "CIBIL data not found in API response",
+        message: "CIBIL data not found in Bureau",
         data: apiData,
       });
     }
@@ -787,7 +788,7 @@ const CrifReport = async (req, res) => {
 
     // Wallet gate (CRIF = ₹50 + GST) — fresh pulls only; Q&A answers
     // reuse the already-gated report above
-    if (!(await affordOr402(req, res, "crif"))) return;
+    // uncomment karna hai testing ke baad if (!(await affordOr402(req, res, "crif"))) return;
 
     // ============================================================
     // STEP 9: DOB
@@ -2591,7 +2592,8 @@ const EquifaxReport = async (req, res) => {
 
         status: "failed",
 
-        message: "Equifax API request failed",
+        message:
+          "Customer details could not be verified. Please check the entered details and try again",
 
         creditReportId: creditReport?._id || null,
 

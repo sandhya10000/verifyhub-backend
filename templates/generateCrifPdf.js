@@ -59,7 +59,10 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   const maskStreetAddress = (raw) => {
     const s = String(raw ?? "").trim();
     if (!s || s === "-") return "-";
-    const parts = s.split(",").map((x) => x.trim()).filter(Boolean);
+    const parts = s
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
     if (parts.length <= 3) return parts.join(", ") || "-";
     return parts.slice(-3).join(", ");
   };
@@ -1329,31 +1332,23 @@ body {
 .info-card-wide {
   grid-column: 1 / -1;
 }
-
 .info-label {
   font-size: 7.5px;
-
-  font-weight: 800;
-
-  color: #70879a;
-
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
-
   letter-spacing: 0.4px;
-
   margin-bottom: 4px;
+  line-height: 1.3;
 }
 
 .info-value {
-  font-size: 9.5px;
-
-  font-weight: 600;
-
-  color: #18324b;
-
+  font-size: 10px;
+  font-weight: 800;
+  color: #172033;
   overflow-wrap: anywhere;
-
   word-break: break-word;
+  line-height: 1.4;
 }
 
 .address-value {
@@ -1412,18 +1407,16 @@ body {
 
 .score-number {
   font-size: 30px;
-
   font-weight: 800;
-
-  color: #173f62;
+  color: #172033;
 }
 
 .score-label {
   font-size: 8px;
-
-  color: #70879a;
-
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .score-status {
@@ -1472,23 +1465,19 @@ body {
 }
 
 .summary-label {
-  font-size: 7px;
-
-  color: #70879a;
-
-  font-weight: 800;
-
+  font-size: 7.5px;
+  color: #94A3B8;
+  font-weight: 700;
   text-transform: uppercase;
-
+  letter-spacing: 0.4px;
   margin-bottom: 5px;
+  line-height: 1.3;
 }
 
 .summary-value {
   font-size: 14px;
-
   font-weight: 800;
-
-  color: #173f62;
+  color: #172033;
 }
 
 /* ============================================================
@@ -1536,13 +1525,7 @@ body {
     #d8e6ef;
 }
 
-.account-title {
-  font-size: 10px;
-
-  font-weight: 800;
-
-  color: #173f62;
-}
+ 
 
 .account-separator {
   margin: 0 4px;
@@ -1550,13 +1533,16 @@ body {
   color: #8aa2b5;
 }
 
+ .account-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: #172033;
+}
+
 .account-status {
   font-size: 7.5px;
-
   font-weight: 800;
-
   color: #2879c5;
-
   text-transform: uppercase;
 }
 
@@ -1588,28 +1574,24 @@ body {
 }
 
 .account-field-label {
-  font-size: 6.8px;
-
-  font-weight: 800;
-
-  color: #8194a4;
-
+  font-size: 7px;
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
-
+  letter-spacing: 0.4px;
   margin-bottom: 3px;
+  line-height: 1.3;
 }
 
 .account-field-value {
-  font-size: 8px;
-
-  font-weight: 600;
-
-  color: #234e70;
-
+  font-size: 9px;
+  font-weight: 800;
+  color: #172033;
   overflow-wrap: anywhere;
-
   word-break: break-word;
-}/* ============================================================
+  line-height: 1.4;
+}
+  /* ============================================================
    PAYMENT HISTORY - CRIF MONTHLY GRID
 ============================================================ */
 
@@ -1657,30 +1639,35 @@ body {
   padding: 5px 3px;
   height: 25px;
 }
-
 .payment-history-table thead th {
-  background: #e5e9f7;
-  color: #164878;
+  background: #f1f6fb;
+  color: #94A3B8;
   font-size: 7px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.payment-history-table tbody td {
+  font-size: 7.5px;
+  color: #172033;
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.payment-history-table tbody td.year-cell {
+  background: #f7fbfe;
   font-weight: 800;
+  color: #172033;
 }
 
 .payment-history-table th.year-header {
   width: 32px;
 }
 
-.payment-history-table tbody td {
-  font-size: 7.5px;
-  color: #18324b;
-  font-weight: 600;
-  background: #ffffff;
-}
+ 
 
-.payment-history-table tbody td.year-cell {
-  background: #f2f2f2;
-  font-weight: 800;
-  color: #18324b;
-}
+ 
 
 .payment-history-table tbody tr:nth-child(even) td:not(.year-cell) {
   background: #fbfdff;
@@ -1809,6 +1796,40 @@ body {
     page-break-inside: avoid;
   }
 
+}
+  .address-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.address-table th,
+.address-table td {
+  border: 1px solid #dce7ef;
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.address-table th {
+  background: #f1f6fb;
+  color: #94A3B8;
+  font-size: 7.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.address-table td {
+  background: #ffffff;
+  color: #172033;
+  font-size: 8.5px;
+  font-weight: 800;
+}
+
+.address-table-wrap {
+  width: 100%;
+  margin-top: 4px;
 }
 
 </style>
