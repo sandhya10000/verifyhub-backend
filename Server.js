@@ -53,6 +53,7 @@ const PRICING_DEFAULTS = {
     enterprise: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
   },
   ai: { base: 100, gstRate: 18 },
+  aiFail: { base: 100, gstRate: 0 },
   rc: { base: 10, gstRate: 0 },
   gst: { base: 10, gstRate: 0 },
   otherFailedCharge: { base: 30, gstRate: 0 },

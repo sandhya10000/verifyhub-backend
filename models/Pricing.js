@@ -64,6 +64,9 @@ const pricingSchema = new mongoose.Schema(
       },
     },
     ai: { type: productPriceSchema, default: { base: 100, gstRate: 18 } },
+    // Dedicated AI failure price (flat total — GST inputs are hidden on the
+    // Admin Pricing page, so gstRate stays 0 here; totals show GST-inclusive).
+    aiFail: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
     rc: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     gst: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
@@ -109,10 +112,14 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
   const key = String(productKey || "").toLowerCase();
   const plan = PLAN_KEYS.includes(tier) ? tier : "starter";
   if (key === "ai") {
-    // Single-plan launch: AI failure bills flat ₹100 (base, no GST).
+    // Single-plan launch: AI failure bills the dedicated aiFail flat price
+    // (admin-editable, no GST shown anywhere).
     // TODO(multi-plan-restore): restore otherFailedCharge fallback below.
     if (kind === "fail") {
-      if (SINGLE_PLAN_MODE) return totalsFor(pricing.ai.base, 0);
+      if (SINGLE_PLAN_MODE) {
+        const aiFail = pricing.aiFail || { base: pricing.ai.base, gstRate: 0 };
+        return totalsFor(aiFail.base, aiFail.gstRate);
+      }
       return totalsFor(pricing.otherFailedCharge.base, pricing.otherFailedCharge.gstRate);
     }
     return totalsFor(pricing.ai.base, pricing.ai.gstRate);
