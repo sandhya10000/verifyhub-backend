@@ -280,6 +280,10 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
+    // Wallet gate: 0/insufficient balance par Digi API hit hi nahi hogi —
+    // na Pending doc banega, na provider cost lagegi.
+    if (!(await affordOr402(req, res, "cibil"))) return;
+
     // ============================================================
     // 3. GENERATE JWT (per DigiVerification auth docs)
     // Contract: HS256 signed with the partner secret; payload MUST be
@@ -2167,6 +2171,10 @@ const EquifaxReport = async (req, res) => {
         message: "Invalid mobile number",
       });
     }
+
+    // Wallet gate: 0/insufficient balance par Surepass API hit hi nahi hogi —
+    // na Pending doc banega, na provider cost lagegi.
+    if (!(await affordOr402(req, res, "equifax"))) return;
 
     // ========================================================
     // 9. SUREPASS PAYLOAD
