@@ -2696,7 +2696,8 @@ const getAllCreditReports = async (req, res) => {
     // Example:
     // /credit-reports?bureau=Experian
     // /credit-reports?bureau=CIBIL
-    const { bureau } = req.query;
+    // status=Success|Failed filters the list (tabs in the partner UI).
+    const { bureau, status } = req.query;
 
     // Base filter
     const filter = {
@@ -2706,6 +2707,9 @@ const getAllCreditReports = async (req, res) => {
     // Agar bureau diya gaya hai tab sirf us bureau ke reports fetch karo
     if (bureau) {
       filter.bureau = bureau;
+    }
+    if (status && status !== "All") {
+      filter.status = status;
     }
 
     const reports = await CreditReport.find(filter).sort({
