@@ -60,7 +60,12 @@ function getTranslator(lang) {
     }
 
     let str = resolve(dict, key);
-    if (str === undefined) str = resolve(enDict, key);
+    if (str === undefined) {
+      if (lang !== 'en') {
+        console.warn(`[Locale Warning] Missing key '${key}' in locale '${lang}'. Falling back to English.`);
+      }
+      str = resolve(enDict, key);
+    }
     if (str === undefined) return key; // last-resort: return the key itself
 
     // Interpolation: replace {varName} with vars.varName
@@ -156,6 +161,12 @@ const SEVERITY_MAP = {
   'উচ্চ': 'severity_high',
   'মাঝারি': 'severity_medium',
   'নিম্ন': 'severity_low',
+
+  // hi
+  'गंभीर': 'severity_critical',
+  'उच्च': 'severity_high',
+  'मध्यम': 'severity_medium',
+  'कम': 'severity_low',
 };
 
 const STATUS_MAP = {
@@ -186,6 +197,10 @@ const STATUS_MAP = {
   // bn
   'সক্রিয়': 'status_active',
   'বন্ধ': 'status_closed',
+
+  // hi
+  'सक्रिय': 'status_active',
+  'बंद': 'status_closed',
 };
 
 const OWNERSHIP_MAP = {
@@ -224,6 +239,11 @@ const OWNERSHIP_MAP = {
   'ব্যক্তিগত': 'ownership_individual',
   'যৌথ': 'ownership_joint',
   'গ্যারান্টার': 'ownership_guarantor',
+
+  // hi
+  'व्यक्तिगत': 'ownership_individual',
+  'संयुक्त': 'ownership_joint',
+  'गारंटर': 'ownership_guarantor',
 };
 
 const SCORE_BAND_MAP = {
@@ -287,6 +307,15 @@ const SCORE_BAND_MAP = {
   'গড়ের নিচে': 'band_below_average',
   'খুব খারাপ': 'band_very_poor',
   'কোনো ইতিহাস নেই': 'band_no_history',
+
+  // hi
+  'उत्कृष्ट': 'band_excellent',
+  'अच्छा': 'band_good',
+  'औसत': 'band_fair',
+  'खराब': 'band_poor',
+  'औसत से नीचे': 'band_below_average',
+  'बहुत खराब': 'band_very_poor',
+  'कोई इतिहास नहीं': 'band_no_history',
 };
 
 /**

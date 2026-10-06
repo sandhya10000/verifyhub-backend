@@ -77,6 +77,10 @@ const LANGUAGE_NAMES = {
 function buildLanguageInstruction(code) {
   const name = LANGUAGE_NAMES[code] || 'English';
   if (!code || code === 'en') return '';
+  let extraRule = '';
+  if (code === 'hi') {
+    extraRule = ' For Hindi: write natural, simple Hindi for a general borrower; use standard Hindi terms for financial concepts; keep lender names, account numbers, and abbreviations like DPD and EMI in Latin script; do not leave full English sentences or English section headings in the output.';
+  }
   return (
     `\n\nOUTPUT LANGUAGE: Write ALL human-readable text in ${name} (${code}), ` +
     'using natural, simple wording a lending customer can understand. This includes ' +
@@ -85,7 +89,7 @@ function buildLanguageInstruction(code) {
     'Do NOT translate or change: JSON keys, enum values, numbers, currency amounts, ' +
     'dates, account numbers, lender/bank names, credit score bands used as enum values, ' +
     'or bureau names. Use standard Latin digits (0-9) for all numbers. ' +
-    'Return valid JSON only, matching the tool schema exactly.'
+    'Return valid JSON only, matching the tool schema exactly.' + extraRule
   );
 }
 
@@ -154,6 +158,8 @@ const ANALYSIS_TOOL = {
       bureau_control_no: { type: ['string', 'null'] },
       credit_score:      { type: 'number' },
       score_band:        { type: 'string' },
+      reported_total_accounts:  { type: ['number', 'null'] },
+      reported_total_enquiries: { type: ['number', 'null'] },
       foir_percent:      { type: ['number', 'null'] },
       foir_rating:       { type: ['string', 'null'] },
       max_eligible_amount: { type: ['number', 'null'] },
@@ -460,15 +466,9 @@ async function precountPdfEntries(fileBuffer) {
         lines.some((l) => l.includes('ACCOUNT NUMBER') || l.includes('Account Number'));
       if (hasBoth) accountCount = Math.ceil(accountCount / 2);
     }
-    const DATE_RE = /\b(\d{2}[\/\-]\d{2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})\b/g;
-    let enquiryCount = 0;
-    let inEnquiry = false;
-    for (const line of lines) {
-      if (!inEnquiry && /ENQUIRY INFORMATION|ENQUIRIES/i.test(line)) { inEnquiry = true; continue; }
-      if (inEnquiry) { const m = line.match(DATE_RE); if (m) enquiryCount += m.length; }
-    }
-    console.log(`[precountPdfEntries] heuristic: ${accountCount} accounts, ${enquiryCount} enquiries`);
-    return { accountCount, enquiryCount, _parsedText: text };
+    console.log(`[DEBUG-EXTRACT] precountPdfEntries: final result => accountCount=${accountCount}, enquiryCount=null (heuristic — enquiry count withheld as unreliable)`);
+    console.log(`[precountPdfEntries] heuristic: ${accountCount} accounts, enquiryCount=null (not counted for non-CIBIL)`);
+    return { accountCount, enquiryCount: null, _parsedText: text };
   } catch (err) {
     console.warn(`[precountPdfEntries] Could not extract text (${err.message}) — skipping cross-check`);
     return null;
@@ -482,33 +482,78 @@ async function precountPdfEntries(fileBuffer) {
 // (extraction failed gracefully) or when both sides say zero.
 // threshold: fraction — 0 means ANY non-zero precount with zero extracted fails.
 // ---------------------------------------------------------------------------
-function assertExtractionSanity(label, extracted, precount, threshold = 0.50) {
-  if (precount === null) return; // can't cross-check — skip
-  if (precount.accountCount === 0 && precount.enquiryCount === 0) return; // thin file, valid
+function assertExtractionSanity(label, extracted, precount, meta = {}, reported = {}) {
+  const { stop_reason, output_tokens, max_tokens } = meta;
+  const metaStr = [
+    stop_reason   ? `stop_reason=${stop_reason}` : null,
+    output_tokens != null ? `output_tokens=${output_tokens}` : null,
+    max_tokens    != null ? `max_tokens=${max_tokens}` : null,
+  ].filter(Boolean).join(', ');
 
-  const acctOk =
-    precount.accountCount === 0 ||
-    (extracted.accounts  >= precount.accountCount  * threshold);
-  const enqOk  =
-    precount.enquiryCount === 0 ||
-    (extracted.enquiries >= precount.enquiryCount * threshold);
+  // One combined diagnostic line
+  console.log(
+    `[${label}] extraction-validation: ` +
+    `extracted_accounts=${extracted.accounts}, extracted_enquiries=${extracted.enquiries} | ` +
+    `reported_total_accounts=${reported.accounts ?? 'null'}, reported_total_enquiries=${reported.enquiries ?? 'null'} | ` +
+    `precount_accounts=${precount?.accountCount ?? 'null'}, precount_enquiries=${precount?.enquiryCount ?? 'null'} | ` +
+    (metaStr || 'no-meta')
+  );
 
-  if (!acctOk || !enqOk) {
-    const msg =
-      `[${label}] Extraction sanity check FAILED: ` +
-      `extracted ${extracted.accounts} accounts (precount ${precount.accountCount}), ` +
-      `${extracted.enquiries} enquiries (precount ${precount.enquiryCount}). ` +
-      'Response likely truncated due to max_tokens. Marking as failed.';
-    console.error(msg);
-    const err = new Error('Extraction output too sparse — response likely truncated by token limit');
+  // ── (a) Truncation: only case that uses "token limit" wording ───────────────
+  if (stop_reason === 'max_tokens') {
+    const err = new Error(
+      `Extraction truncated by token limit ` +
+      `(stop_reason=max_tokens, output_tokens=${output_tokens}, max_tokens=${max_tokens}). ` +
+      `Extracted ${extracted.accounts} accounts, ${extracted.enquiries} enquiries before cutoff.`
+    );
     err.isSanityFailure = true;
     throw err;
   }
 
-  console.log(
-    `[${label}] Sanity OK: ${extracted.accounts}/${precount.accountCount} accounts, ` +
-    `${extracted.enquiries}/${precount.enquiryCount} enquiries`
-  );
+  // ── (b) Hard failure: zero accounts when report is clearly non-empty ─────────
+  // Trigger when EITHER the reported total OR the precount says there should be accounts.
+  const reportedNonZeroAccounts =
+    (reported.accounts != null && reported.accounts > 0) ||
+    (precount?.accountCount != null && precount.accountCount > 0);
+
+  if (extracted.accounts === 0 && reportedNonZeroAccounts) {
+    const expected = reported.accounts ?? precount?.accountCount ?? 'unknown';
+    const err = new Error(
+      `Extraction incomplete — 0 accounts extracted but report indicates ${expected} accounts. ` +
+      `[${metaStr || 'no-meta'}]`
+    );
+    err.isSanityFailure = true;
+    throw err;
+  }
+
+  // ── (c) Reported-total mismatch: warn only ───────────────────────────────
+  if (reported.accounts != null && extracted.accounts < reported.accounts) {
+    console.warn(
+      `[${label}] Account count mismatch (non-fatal): ` +
+      `extracted ${extracted.accounts}, report summary says ${reported.accounts}. ` +
+      `Possible partial extraction or joint/guarantor accounts excluded.`
+    );
+  }
+  if (reported.enquiries != null && extracted.enquiries < reported.enquiries) {
+    console.warn(
+      `[${label}] Enquiry count mismatch (non-fatal): ` +
+      `extracted ${extracted.enquiries}, report summary says ${reported.enquiries}. ` +
+      `Enquiry section may span multiple pages or include historical rows.`
+    );
+  }
+
+  // ── (d) Precount advisory log only ───────────────────────────────────
+  if (precount !== null) {
+    const acctAdvisory = precount.accountCount != null
+      ? `extracted_accounts=${extracted.accounts} vs precount=${precount.accountCount}`
+      : 'precount_accounts=n/a';
+    const enqAdvisory = precount.enquiryCount != null
+      ? `extracted_enquiries=${extracted.enquiries} vs precount=${precount.enquiryCount}`
+      : 'precount_enquiries=n/a (withheld as unreliable)';
+    console.log(`[${label}] pdf-parse advisory: ${acctAdvisory}; ${enqAdvisory}`);
+  }
+
+  console.log(`[${label}] Validation passed.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -787,6 +832,22 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
   console.log(`[claudeService:${analysisId}] Background job started at ${new Date().toISOString()}`);
   console.log('='.repeat(60));
 
+  try {
+    const { executePipeline } = require('./newPipelineAi');
+    await executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, saveToCreditReport, debitAiPull, buildLanguageInstruction, QUALITATIVE_TOOL);
+    return; // Exit here, bypassing the old logic completely
+  } catch (err) {
+    console.error(`[claudeService:${analysisId}] ai newPipeline failed:`, err);
+    // Mark as failed and exit
+    const AIAnalysis = require('../models/AIAnalysis');
+    await AIAnalysis.findByIdAndUpdate(analysisId, {
+      status: 'failed',
+      errorMessage: 'Analysis could not be completed. Please try again or contact support.',
+      debugError: err.stack || err.message
+    });
+    return;
+  }
+
   const analysis = await AIAnalysis.findById(analysisId);
   if (!analysis) {
     console.error(`[claudeService:${analysisId}] Analysis record not found in DB -- aborting.`);
@@ -865,7 +926,8 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
             `claudeService:${analysisId}:PARSER`,
             { accounts: parserResult.accounts.length, enquiries: parserResult.enquiries.length },
             precount,
-            0.85  // tighter threshold — parser should be near-exact
+            { stop_reason: 'deterministic_parser' },
+            {}
           );
         }
 
@@ -1040,7 +1102,16 @@ async function processAnalysisInBackground(analysisId, language = 'en') {
       assertExtractionSanity(
         `claudeService:${analysisId}:PATH_A`,
         { accounts: extractedAccounts, enquiries: extractedEnquiries },
-        precount
+        precount,
+        {
+          stop_reason:   response.stop_reason,
+          output_tokens: response.usage?.output_tokens,
+          max_tokens:    PATH_A_MAX_TOKENS,
+        },
+        {
+          accounts:  result.reported_total_accounts,
+          enquiries: result.reported_total_enquiries,
+        }
       );
 
       // ── Render HTML immediately from structured data (no second Claude call) ──
