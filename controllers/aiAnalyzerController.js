@@ -218,7 +218,12 @@ exports.downloadUpload = async (req, res) => {
 
 exports.listAnalyses = async (req, res) => {
   try {
-    const analyses = await AIAnalysis.find({ userId: req.user._id })
+    // status=completed|failed filters the list (tabs in the partner UI).
+    const filter = { userId: req.user._id };
+    if (req.query.status && req.query.status !== "All") {
+      filter.status = req.query.status;
+    }
+    const analyses = await AIAnalysis.find(filter)
       .sort({ createdAt: -1 })
       .select('-rawModelResponse -filePath');
     res.json({ success: true, data: analyses });

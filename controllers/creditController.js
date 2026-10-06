@@ -280,6 +280,10 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
+    // Wallet gate: 0/insufficient balance par Digi API hit hi nahi hogi —
+    // na Pending doc banega, na provider cost lagegi.
+    if (!(await affordOr402(req, res, "cibil"))) return;
+
     // ============================================================
     // 3. GENERATE JWT (per DigiVerification auth docs)
     // Contract: HS256 signed with the partner secret; payload MUST be
@@ -2168,6 +2172,10 @@ const EquifaxReport = async (req, res) => {
       });
     }
 
+    // Wallet gate: 0/insufficient balance par Surepass API hit hi nahi hogi —
+    // na Pending doc banega, na provider cost lagegi.
+    if (!(await affordOr402(req, res, "equifax"))) return;
+
     // ========================================================
     // 9. SUREPASS PAYLOAD
     // ========================================================
@@ -2696,7 +2704,8 @@ const getAllCreditReports = async (req, res) => {
     // Example:
     // /credit-reports?bureau=Experian
     // /credit-reports?bureau=CIBIL
-    const { bureau } = req.query;
+    // status=Success|Failed filters the list (tabs in the partner UI).
+    const { bureau, status } = req.query;
 
     // Base filter
     const filter = {
@@ -2706,6 +2715,9 @@ const getAllCreditReports = async (req, res) => {
     // Agar bureau diya gaya hai tab sirf us bureau ke reports fetch karo
     if (bureau) {
       filter.bureau = bureau;
+    }
+    if (status && status !== "All") {
+      filter.status = status;
     }
 
     const reports = await CreditReport.find(filter).sort({

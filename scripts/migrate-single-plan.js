@@ -27,7 +27,7 @@ async function main() {
   fs.writeFileSync(backupPath, JSON.stringify(before || {}, null, 2));
   console.log("[migrate-single-plan] backup written:", backupPath);
 
-  const set = { minRecharge: 1000, "ai.base": 100, "ai.gstRate": 18, "rc.base": 10, "rc.gstRate": 0, "gst.base": 10, "gst.gstRate": 0, "otherFailedCharge.base": 30, "otherFailedCharge.gstRate": 0 };
+  const set = { minRecharge: 1000, "ai.base": 100, "ai.gstRate": 18, "aiFail.base": 100, "aiFail.gstRate": 0, "rc.base": 10, "rc.gstRate": 0, "gst.base": 10, "gst.gstRate": 0, "otherFailedCharge.base": 30, "otherFailedCharge.gstRate": 0 };
   for (const tier of ["startup", "starter", "growth", "pro", "enterprise"]) {
     for (const [f, v] of Object.entries(SINGLE_ROW)) set[`plans.${tier}.${f}`] = v;
   }

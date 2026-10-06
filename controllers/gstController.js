@@ -204,7 +204,8 @@ const verifyGst = async (req, res) => {
   }
 };
 
-// GET /api/gst/my-verifications?page&limit&search — own GST history, newest first.
+// GET /api/gst/my-verifications?page&limit&search&status — own GST history, newest first.
+// status=Success|Failed filters the list (tabs in the partner UI).
 const getMyVerifications = async (req, res) => {
   try {
     const userId = req.user?._id;
@@ -214,8 +215,10 @@ const getMyVerifications = async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
     const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "All");
 
     const query = { userId };
+    if (status && status !== "All") query.status = status;
     if (search) {
       query.$or = [
         { gstin: { $regex: search, $options: "i" } },

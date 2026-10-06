@@ -75,18 +75,23 @@ async function sendWhatsAppOtp(phone, otp, purpose = "signup") {
   });
 }
 
+// Single-plan launch: no plan names — one rate card for everyone.
+// TODO(multi-plan-restore): revive plan lines below.
 async function sendRechargeSuccessWhatsApp(phone, d) {
   return sendWhatsApp({
     to: phone,
     text:
       `Payment Successful \u2705\n` +
       `Dear Partner, ${inr(d.credited)} has been credited to your VerifyHub wallet.\n` +
-      `New wallet balance: *${inr(d.walletBalance)}*` +
-      `${d.activePlan ? `\nActive plan: *${String(d.activePlan).toUpperCase()}*` : ""}\n\n` +
+      `New wallet balance: *${inr(d.walletBalance)}*\n` +
+      `Reports are billed per pull at standard rates.\n\n` +
       `Thank you for choosing VerifyHub.`,
   });
 }
 
+// DEAD in single-plan mode (activatePlan no-op never sends this). Kept for
+// multi-plan restore — do not delete.
+// TODO(multi-plan-restore): revive plan-activation messages.
 async function sendPlanActivationWhatsApp(phone, d) {
   return sendWhatsApp({
     to: phone,
