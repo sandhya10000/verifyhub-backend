@@ -3,6 +3,8 @@ const CreditReport = require('../models/creditReport');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
+const RcVerification = require('../models/RcVerification');
+const GstVerification = require('../models/GstVerification');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
@@ -895,52 +897,18 @@ exports.getMoneyTimeseries = async (req, res) => {
   }
 };
 
-// GET /api/admin/overview/plan-distribution
-// Partners per tier + collected/consumed per tier (from stamped ledger rows).
-exports.getPlanDistribution = async (req, res) => {
-  try {
-    const [partners, money] = await Promise.all([
-      User.aggregate([
-        { $match: { role: { $ne: "admin" } } },
-        { $group: { _id: "$activePlan", count: { $sum: 1 }, float: { $sum: "$walletBalance" } } },
-      ]),
-      Transaction.aggregate([
-        { $match: { status: "SUCCESS", planTier: { $ne: null } } },
-        { $group: { _id: { tier: "$planTier", type: "$type" }, total: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", "$totalAmount"] } } } },
-      ]),
-    ]);
-    const tiers = ["startup", "starter", "growth", "pro", "enterprise"];
-    const pMap = Object.fromEntries(partners.map((p) => [p._id || "starter", p]));
-    const collected = {}, consumed = {};
-    money.forEach((m) => {
-      if (m._id.type === "CREDIT") collected[m._id.tier] = m.total;
-      else consumed[m._id.tier] = m.total;
-    });
-    res.json({
-      success: true,
-      data: tiers.map((t) => ({
-        tier: t,
-        partners: pMap[t]?.count || 0,
-        float: pMap[t]?.float || 0,
-        collected: collected[t] || 0,
-        consumed: consumed[t] || 0,
-      })),
-    });
-  } catch (err) {
-    console.error("getPlanDistribution Error:", err);
-    res.status(500).json({ success: false, message: "Could not fetch plan distribution" });
-  }
-};
-
-// GET /api/admin/overview/bureau-split � always lists every bureau (zero-filled)
+// GET /api/admin/overview/bureau-split — always lists every bureau (zero-filled),
+// plus RC + GST verification counts (all statuses).
 exports.getBureauSplit = async (req, res) => {
   try {
-    const [ai, bureaus] = await Promise.all([
+    const [ai, bureaus, rc, gst] = await Promise.all([
       AIAnalysis.countDocuments({ status: "completed" }),
       CreditReport.aggregate([
         { $match: { status: "Success" } },
         { $group: { _id: "$bureau", count: { $sum: 1 } } },
       ]),
+      RcVerification.countDocuments({}),
+      GstVerification.countDocuments({}),
     ]);
     const ORDER = ["EXPERIAN", "CRIF", "CIBIL", "EQUIFAX"];
     const counts = Object.fromEntries(bureaus.map((b) => [String(b._id || "Unknown").toUpperCase(), b.count]));
@@ -950,38 +918,13 @@ exports.getBureauSplit = async (req, res) => {
       ...Object.entries(counts)
         .filter(([name]) => name !== "UNKNOWN" && !ORDER.includes(name))
         .map(([name, value]) => ({ name, value })),
+      { name: "RC Verification", value: rc },
+      { name: "GST Verification", value: gst },
     ];
     res.json({ success: true, data });
   } catch (err) {
     console.error("getBureauSplit Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch bureau split" });
-  }
-};
-
-// GET /api/admin/overview/score-mix
-exports.getScoreMix = async (req, res) => {
-  try {
-    const [crScores, aiScores] = await Promise.all([
-      CreditReport.find({ status: "Success", score: { $ne: null } }).select("score").lean(),
-      AIAnalysis.find({ status: "completed", "result.score": { $ne: null } }).select("result.score").lean(),
-    ]);
-    const buckets = [
-      { name: "< 650", count: 0 },
-      { name: "650�749", count: 0 },
-      { name: "750+", count: 0 },
-    ];
-    const put = (val) => {
-      if (val == null) return;
-      if (val < 650) buckets[0].count++;
-      else if (val < 750) buckets[1].count++;
-      else buckets[2].count++;
-    };
-    crScores.forEach((r) => put(r.score));
-    aiScores.forEach((r) => put(r.result?.score));
-    res.json({ success: true, data: buckets });
-  } catch (err) {
-    console.error("getScoreMix Error:", err);
-    res.status(500).json({ success: false, message: "Could not fetch score mix" });
   }
 };
 
@@ -1012,14 +955,14 @@ exports.getTopPartners = async (req, res) => {
     });
     const spendMap = Object.fromEntries(spendAgg.map((r) => [String(r._id), r.total]));
     const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit);
-    const users = await User.find({ _id: { $in: topIds.map(([id]) => id) } }).select("name email activePlan").lean();
+    const users = await User.find({ _id: { $in: topIds.map(([id]) => id) } }).select("name email").lean();
     const uMap = Object.fromEntries(users.map((u) => [String(u._id), u]));
     // Merge duplicate display names (e.g. several deleted partners -> "Unknown")
     const merged = new Map();
     topIds.forEach(([id, count]) => {
       const u = uMap[id];
       const name = u?.name || u?.email || "Unknown";
-      const prev = merged.get(name) || { name, reports: 0, spent: 0, tier: u?.activePlan || null };
+      const prev = merged.get(name) || { name, reports: 0, spent: 0 };
       prev.reports += count;
       prev.spent += spendMap[id] || 0;
       merged.set(name, prev);
@@ -1037,18 +980,22 @@ exports.getRecentActivity = async (req, res) => {
   try {
     const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
     const lowAt = pricing?.lowBalanceThreshold ?? 500;
-    const [recentCr, recentAi, recentTickets, lowWallets] = await Promise.all([
+    const [recentCr, recentAi, recentTickets, lowWallets, failedCr, failedAi] = await Promise.all([
       CreditReport.find({}).sort({ createdAt: -1 }).limit(8)
-        .populate("userId", "name email activePlan").select("bureau score status createdAt userId name").lean(),
+        .populate("userId", "name email").select("bureau score status createdAt userId name").lean(),
       AIAnalysis.find({}).sort({ createdAt: -1 }).limit(8)
-        .populate("userId", "name email activePlan").select("status createdAt userId fileName result.score").lean(),
+        .populate("userId", "name email").select("status createdAt userId fileName result.score").lean(),
       Ticket.find({}).sort({ createdAt: -1 }).limit(3)
         .populate("partnerId", "name email").select("category status createdAt partnerId").lean(),
       User.find({ role: { $ne: "admin" }, walletBalance: { $lt: lowAt } })
-        .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance activePlan").lean(),
+        .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance").lean(),
+      CreditReport.find({ status: "Failed" }).sort({ createdAt: -1 }).limit(5)
+        .populate("userId", "name email").select("bureau status createdAt userId name").lean(),
+      AIAnalysis.find({ status: "failed" }).sort({ createdAt: -1 }).limit(5)
+        .populate("userId", "name email").select("status createdAt userId fileName").lean(),
     ]);
     const chargeMap = {};
-    const ids = [...recentCr.map((r) => r._id), ...recentAi.map((r) => r._id)];
+    const ids = [...recentCr.map((r) => r._id), ...recentAi.map((r) => r._id), ...failedCr.map((r) => r._id), ...failedAi.map((r) => r._id)];
     if (ids.length > 0) {
       const charges = await Transaction.find({ reportId: { $in: ids }, purpose: { $in: ["REPORT_CHARGE", "REPORT_FAIL_CHARGE"] } })
         .select("reportId totalAmount purpose").lean();
@@ -1058,7 +1005,6 @@ exports.getRecentActivity = async (req, res) => {
       ...recentCr.map((r) => ({
         id: r._id, type: "Credit Report", customer: r.name || "�",
         partner: r.userId?.name || r.userId?.email || "Unknown",
-        tier: r.userId?.activePlan || null,
         bureau: r.bureau || "�", score: r.score ?? "�",
         status: r.status, charge: chargeMap[String(r._id)]?.totalAmount ?? null,
         createdAt: r.createdAt,
@@ -1066,7 +1012,6 @@ exports.getRecentActivity = async (req, res) => {
       ...recentAi.map((r) => ({
         id: r._id, type: "AI Analysis", customer: (r.fileName || "").replace(/\.[^/.]+$/, "") || "�",
         partner: r.userId?.name || r.userId?.email || "Unknown",
-        tier: r.userId?.activePlan || null,
         bureau: "AI", score: r.result?.score ?? "�",
         status: r.status === "completed" ? "Success" : r.status,
         charge: chargeMap[String(r._id)]?.totalAmount ?? null,
@@ -1074,7 +1019,25 @@ exports.getRecentActivity = async (req, res) => {
       })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8);
 
-    res.json({ success: true, data: { pulls, recentTickets, lowWallets } });
+    // Latest failures with their fail-fee — powers the "Failed pulls" card detail.
+    const failedPulls = [
+      ...failedCr.map((r) => ({
+        id: r._id, type: "Credit Report", customer: r.name || "—",
+        partner: r.userId?.name || r.userId?.email || "Unknown",
+        bureau: r.bureau || "—",
+        charge: chargeMap[String(r._id)]?.totalAmount ?? null,
+        createdAt: r.createdAt,
+      })),
+      ...failedAi.map((r) => ({
+        id: r._id, type: "AI Analysis", customer: (r.fileName || "").replace(/\.[^/.]+$/, "") || "—",
+        partner: r.userId?.name || r.userId?.email || "Unknown",
+        bureau: "AI",
+        charge: chargeMap[String(r._id)]?.totalAmount ?? null,
+        createdAt: r.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+
+    res.json({ success: true, data: { pulls, recentTickets, lowWallets, failedPulls } });
   } catch (err) {
     console.error("getRecentActivity Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch recent activity" });
@@ -1082,10 +1045,10 @@ exports.getRecentActivity = async (req, res) => {
 };
 
 // GET /api/admin/transactions � full money ledger with filters + summary.
-// Query: page, limit, startDate, endDate, type, status, purpose, tier, partnerSearch
+// Query: page, limit, startDate, endDate, type, status, purpose, partnerSearch
 exports.getAllTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 50, startDate, endDate, type, status, purpose, tier, partnerSearch } = req.query;
+    const { page = 1, limit = 50, startDate, endDate, type, status, purpose, partnerSearch } = req.query;
 
     const query = {};
     if (startDate || endDate) {
@@ -1096,7 +1059,6 @@ exports.getAllTransactions = async (req, res) => {
     if (type && type !== "All") query.type = type.toUpperCase();
     if (status && status !== "All") query.status = status.toUpperCase();
     if (purpose && purpose !== "All") query.purpose = purpose;
-    if (tier && tier !== "All") query.planTier = tier.toLowerCase();
 
     if (partnerSearch) {
       const userIds = await getUserIdFilter(partnerSearch);
@@ -1106,7 +1068,7 @@ exports.getAllTransactions = async (req, res) => {
     const [total, rows, sums] = await Promise.all([
       Transaction.countDocuments(query),
       Transaction.find(query)
-        .populate("userId", "name email activePlan")
+        .populate("userId", "name email")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit))

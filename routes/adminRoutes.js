@@ -9,9 +9,7 @@ const isAdmin = require('../middleware/adminMiddleware');
 
 router.get('/overview/summary', auth, isAdmin, adminController.getOverviewSummary);
 router.get('/overview/money-timeseries', auth, isAdmin, adminController.getMoneyTimeseries);
-router.get('/overview/plan-distribution', auth, isAdmin, adminController.getPlanDistribution);
 router.get('/overview/bureau-split', auth, isAdmin, adminController.getBureauSplit);
-router.get('/overview/score-mix', auth, isAdmin, adminController.getScoreMix);
 router.get('/overview/top-partners', auth, isAdmin, adminController.getTopPartners);
 router.get('/overview/recent-activity', auth, isAdmin, adminController.getRecentActivity);
 router.get('/reports/ai-analyzer', auth, isAdmin, adminController.getAllAiAnalyses);
