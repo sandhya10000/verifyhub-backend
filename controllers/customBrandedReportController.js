@@ -3,7 +3,7 @@ const CustomBrandedRequest = require('../models/CustomBrandedRequest');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { CBR_PRICE_INR } = require('../models/Pricing');
-const { sendMail } = require('../utils/sendMail');
+const { sendCbrReceiptMail, sendCbrAdminNotifyMail } = require('../utils/sendMail');
 
 function razorpayClient() {
   // eslint-disable-next-line global-require
@@ -15,38 +15,54 @@ function razorpayClient() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper — send internal notification to team when a new request arrives
+// Notify on successful subscription — partner receipt + platform/admin alert.
+// Same fan-out as wallet top-up alerts. Fully fire-and-forget: failures never
+// affect the payment response, and one recipient failing never blocks others.
 // ---------------------------------------------------------------------------
-async function notifyTeam(request, partner) {
-  const teamEmail = process.env.TEAM_NOTIFICATION_EMAIL || process.env.SMTP_USER;
-  if (!teamEmail) return; // silent — no team inbox configured
-
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px">
-      <h2 style="margin:0 0 8px;color:#0f172a">New Custom Branded Report Request</h2>
-      <p style="color:#64748b;margin:0 0 20px">A partner has requested a custom branded report. Please contact them within 1–2 working days.</p>
-      <table style="width:100%;border-collapse:collapse">
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Request ID</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${request.requestId}</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Partner ID</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${partner.partner_id || partner._id}</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Partner Name</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${partner.name}</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Email</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${request.email}</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Phone</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${request.phone}</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Amount paid</td><td style="padding:6px 0;font-weight:700;color:#0f172a">₹${Number(request.amount || CBR_PRICE_INR).toLocaleString('en-IN')} (${request.paymentMethod || '—'})</td></tr>
-        <tr><td style="padding:6px 0;color:#64748b;font-size:14px">Submitted</td><td style="padding:6px 0;font-weight:700;color:#0f172a">${new Date(request.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td></tr>
-      </table>
-      <p style="margin-top:20px;color:#94a3b8;font-size:12px">This is an automated notification from the VerifyHub partner portal.</p>
-    </div>
-  `;
-
+function notifySubscription(request, partner, txn) {
   try {
-    await sendMail({
-      to: teamEmail,
-      subject: `[VerifyHub] New Custom Branded Report Request — ${request.requestId} (${partner.name})`,
-      html,
-    });
-  } catch (err) {
-    // Non-fatal — log and continue
-    console.error('[customBrandedReport] team notification failed:', err.message);
+    const method = request.paymentMethod === 'WALLET' ? 'Wallet credits' : 'Razorpay';
+    const payload = {
+      name: partner.name,
+      email: request.email,
+      phone: request.phone,
+      partnerId: partner.partner_id,
+      requestId: request.requestId,
+      amount: request.amount || CBR_PRICE_INR,
+      method,
+      orderId: request.orderId || txn?.orderId,
+      paymentId: request.paymentId,
+      transactionId: txn ? String(txn._id) : null,
+      date: request.updatedAt || new Date(),
+    };
+
+    // 1. Partner receipt
+    if (request.email) {
+      sendCbrReceiptMail(request.email, payload).catch((e) =>
+        console.error('[mail] CBR partner receipt failed:', e.message));
+    }
+
+    // 2. Platform + all active admins
+    (async () => {
+      try {
+        const platform = String(process.env.TOPUP_NOTIFY_EMAILS || 'info@verifyhub.in')
+          .split(',').map((s) => s.trim()).filter(Boolean);
+        const admins = await User.find({ role: 'admin', isActive: { $ne: false } })
+          .select('email').lean();
+        const recipients = new Set([
+          ...platform,
+          ...admins.map((a) => a && a.email).filter(Boolean),
+        ]);
+        if (request.email) recipients.delete(request.email); // already got the receipt
+        await Promise.allSettled([...recipients].map((to) =>
+          sendCbrAdminNotifyMail(to, payload).catch((e) =>
+            console.error('[mail] CBR admin notify failed:', to, e.message))));
+      } catch (e) {
+        console.error('[mail] CBR admin notify failed:', e.message);
+      }
+    })();
+  } catch (e) {
+    console.error('[mail] CBR notify failed:', e.message);
   }
 }
 
@@ -187,7 +203,7 @@ async function payWithWallet(req, res) {
     });
     await newRequest.save();
 
-    notifyTeam(newRequest, req.user);
+    notifySubscription(newRequest, req.user, txn);
     const me = await User.findById(partnerId).select('walletBalance').lean();
     return res.status(201).json({
       success: true,
@@ -345,7 +361,7 @@ async function verifyPayment(req, res) {
     request.paymentMethod = 'RAZORPAY';
     await request.save();
 
-    notifyTeam(request, req.user);
+    notifySubscription(request, req.user, txn);
     return res.status(200).json({ success: true, message: 'Payment verified successfully.', data: request });
   } catch (err) {
     console.error('[customBrandedReport] verifyPayment error:', err);

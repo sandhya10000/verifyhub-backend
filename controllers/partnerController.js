@@ -141,34 +141,6 @@ exports.getTimeseries = async (req, res) => {
   }
 };
 
-// GET /api/partner/overview/score-mix — my score bands
-exports.getScoreMix = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const [crScores, aiScores] = await Promise.all([
-      CreditReport.find({ userId, status: 'Success', score: { $ne: null } }).select('score').lean(),
-      AIAnalysis.find({ userId, status: 'completed', 'result.score': { $ne: null } }).select('result.score').lean(),
-    ]);
-    const buckets = [
-      { name: '< 650', count: 0 },
-      { name: '650–749', count: 0 },
-      { name: '750+', count: 0 },
-    ];
-    const put = (val) => {
-      if (val == null) return;
-      if (val < 650) buckets[0].count++;
-      else if (val < 750) buckets[1].count++;
-      else buckets[2].count++;
-    };
-    crScores.forEach((r) => put(r.score));
-    aiScores.forEach((r) => put(r.result?.score));
-    res.json({ success: true, data: buckets });
-  } catch (err) {
-    console.error('partner getScoreMix Error:', err);
-    res.status(500).json({ success: false, message: 'Could not fetch score mix' });
-  }
-};
-
 // GET /api/partner/overview/recent — latest pulls + transactions + tickets
 exports.getRecent = async (req, res) => {
   try {

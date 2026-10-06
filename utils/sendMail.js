@@ -351,7 +351,88 @@ async function sendTopupAdminNotifyMail(to, d) {
   });
 }
 
+// --- Custom Branded Report subscription mails ---
+// Sent on every successful ₹2500 CBR payment (wallet + Razorpay alike).
+// Partner gets a receipt; platform + all admins get a short alert.
+// Fire-and-forget from the controller — never blocks the payment response.
+
+function cbrReceiptHtml(d) {
+  const invoiceRows = [
+    row("Custom Branded Report — one-time branding setup fee (GST-inclusive)", inr(d.amount)),
+  ].join("");
+  const totals = [
+    totalRow(`Paid via ${d.method || "—"}`, inr(d.amount), false),
+    totalRow("Request ID", d.requestId || "—", true),
+  ].join("");
+  const meta = [
+    metaRow("Request ID", d.requestId || "—"),
+    metaRow("Order ID", d.orderId || "—"),
+    metaRow("Payment ID", d.paymentId || "—"),
+    metaRow("Date (IST)", istDate(d.date)),
+    ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
+  ].join("");
+  const intro = `Thanks for subscribing to the <b>AI Custom Branded Report</b> for <b>${esc(inr(d.amount))}</b> (one-time fee). Our team will contact you within <b>1–2 working days</b> to collect your logo, colours and company details. Your approved branding will then apply to all your future reports — note that each AI analysis report is still billed separately per pull at standard rates.`;
+  return receiptShell({
+    title: "Payment Receipt — Custom Branded Report",
+    preheader: `Branded report activated · ${inr(d.amount)} paid · ${d.requestId || ""}`,
+    name: d.name, introHtml: intro, invoiceRowsHtml: invoiceRows, totalsHtml: totals, metaRowsHtml: meta,
+  });
+}
+
+async function sendCbrReceiptMail(to, d) {
+  return sendMail({
+    to,
+    subject: `Verify Hub: Custom Branded Report activated — ${inr(d.amount)} paid (${d.requestId || "receipt"})`,
+    html: cbrReceiptHtml(d),
+    text: [
+      `Hi ${d.name || "Partner"}, your AI Custom Branded Report subscription is active.`,
+      `One-time fee paid: ${inr(d.amount)} via ${d.method || "—"}. Request ID: ${d.requestId || "—"}.`,
+      `Our team will contact you within 1–2 working days. AI analysis reports are billed separately per pull.`,
+    ].join("\n"),
+  });
+}
+
+function cbrAlertHtml(d) {
+  const meta = [
+    metaRow("Partner", `${d.name || "—"}${d.partnerId ? ` (${d.partnerId})` : ""}`),
+    metaRow("Email", d.email || "—"),
+    ...(d.phone ? [metaRow("Phone", d.phone)] : []),
+    metaRow("Request ID", d.requestId || "—"),
+    metaRow("Amount", `${inr(d.amount)} (${d.method || "—"})`),
+    metaRow("Order ID", d.orderId || "—"),
+    metaRow("Payment ID", d.paymentId || "—"),
+    metaRow("Receipt / Txn ID", d.transactionId || "—"),
+    metaRow("Date (IST)", istDate(d.date)),
+  ].join("");
+  return receiptShell({
+    title: "Branded Report Alert — Partner Subscribed (₹2,500)",
+    preheader: `${d.name || "Partner"} subscribed to branded reports · ${inr(d.amount)} via ${d.method || "—"}`,
+    name: "Admin",
+    introHtml: `Partner <b>${esc(d.name || "")}</b> paid the <b>${esc(inr(d.amount))}</b> one-time Custom Branded Report fee via <b>${esc(d.method || "—")}</b>. Please contact them within <b>1–2 working days</b> to collect customisation details.`,
+    invoiceRowsHtml: row("Custom Branded Report one-time fee (partner payment)", inr(d.amount)),
+    totalsHtml: totalRow("Request ID", d.requestId || "—", true),
+    metaRowsHtml: meta,
+    ctaUrl: process.env.ADMIN_URL || process.env.FRONTEND_URL || "https://verifyhub.in",
+    ctaLabel: "Open Admin Panel",
+  });
+}
+
+async function sendCbrAdminNotifyMail(to, d) {
+  const subject = `Branded report: ${d.name || "Partner"} paid ${inr(d.amount)} (${d.requestId || "new request"})`;
+  return sendMail({
+    to,
+    subject,
+    html: cbrAlertHtml(d),
+    text: [
+      `Partner ${d.name || ""}${d.partnerId ? ` (${d.partnerId})` : ""} paid ${inr(d.amount)} via ${d.method || "—"} for the Custom Branded Report.`,
+      `Request: ${d.requestId} | Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
+      `Contact them within 1–2 working days: ${d.email || ""}${d.phone ? ` / ${d.phone}` : ""}.`,
+    ].join("\n"),
+  });
+}
+
 module.exports = {
   sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail, sendTopupAdminNotifyMail,
+  sendCbrReceiptMail, sendCbrAdminNotifyMail,
   getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml, adminDeductInvoiceHtml,
 };
