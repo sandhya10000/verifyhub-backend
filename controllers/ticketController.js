@@ -1,5 +1,6 @@
 const Ticket = require('../models/Ticket');
 const User = require('../models/User');
+const { sendTicketResolvedMail } = require('../utils/sendMail');
 
 // ==========================================
 // PARTNER CONTROLLERS
@@ -62,6 +63,30 @@ exports.getMyTicketById = async (req, res) => {
   } catch (error) {
     console.error('getMyTicketById Error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch ticket' });
+  }
+};
+
+// Count unseen ADMIN replies across this partner's own tickets — messages with
+// senderRole 'admin' created after the partner last viewed the Support page.
+// Mirrors the admin unread-count pattern (same supportLastSeenAt field).
+exports.getPartnerUnreadCount = async (req, res) => {
+  try {
+    const since = req.user.supportLastSeenAt || new Date(0);
+    const tickets = await Ticket.find({ partnerId: req.user._id })
+      .select('messages.senderRole messages.createdAt')
+      .lean();
+    let count = 0;
+    for (const t of tickets) {
+      for (const m of t.messages || []) {
+        if (m.senderRole === 'admin' && m.createdAt && new Date(m.createdAt) > since) {
+          count += 1;
+        }
+      }
+    }
+    res.json({ success: true, count });
+  } catch (error) {
+    console.error('getPartnerUnreadCount Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get unread count' });
   }
 };
 
@@ -198,6 +223,7 @@ exports.updateTicket = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
     }
 
+    const wasResolved = ticket.status === 'resolved';
     if (status) {
       ticket.status = status;
       if (status === 'resolved') {
@@ -217,6 +243,25 @@ exports.updateTicket = async (req, res) => {
     }
 
     await ticket.save();
+
+    // Transition into resolved (not a re-save of an already-resolved ticket):
+    // mail the partner with the ticket details. Fire-and-forget.
+    if (status === 'resolved' && !wasResolved) {
+      User.findById(ticket.partnerId).select('name email partner_id').lean()
+        .then((partner) => {
+          if (!partner?.email) return null;
+          return sendTicketResolvedMail(partner.email, {
+            name: partner.name,
+            partnerId: partner.partner_id,
+            ticketId: String(ticket._id),
+            reference: ticket.reference,
+            category: ticket.category,
+            description: ticket.description,
+            resolvedAt: ticket.resolvedAt,
+          });
+        })
+        .catch((e) => console.error('[mail] ticket resolved notify failed:', e.message));
+    }
 
     res.json({ success: true, data: ticket, message: 'Ticket updated successfully' });
   } catch (error) {

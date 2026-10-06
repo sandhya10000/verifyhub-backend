@@ -431,8 +431,54 @@ async function sendCbrAdminNotifyMail(to, d) {
   });
 }
 
+// --- Support ticket resolution mail ---
+// Sent to the partner when an admin marks their ticket resolved. Includes the
+// ticket number, category (tag), issue description and resolution timestamp.
+// Fire-and-forget from the controller — never blocks the status update.
+
+function ticketResolvedHtml(d) {
+  const meta = [
+    metaRow("Ticket number", d.reference || String(d.ticketId || "—")),
+    metaRow("Category", d.category || "—"),
+    metaRow("Status", "Resolved"),
+    metaRow("Resolved on (IST)", istDate(d.resolvedAt)),
+    ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
+  ].join("");
+  return receiptShell({
+    title: "Support Ticket Resolved",
+    preheader: `Ticket ${d.reference || ""} resolved · ${d.category || ""}`,
+    name: d.name,
+    introHtml: `Good news — your support ticket has been <b>resolved</b> by our team. Here are the ticket details for your records. If the issue persists, please raise a new ticket from the Support page.`,
+    invoiceRowsHtml: row(`Ticket issue: ${d.description || "—"}`, "Resolved"),
+    totalsHtml: totalRow("Ticket number", d.reference || "—", true),
+    metaRowsHtml: meta,
+    ctaUrl: process.env.FRONTEND_URL || "https://verifyhub.in",
+    ctaLabel: "Open Support",
+  });
+}
+
+async function sendTicketResolvedMail(to, d) {
+  const subject = `Verify Hub: ticket ${d.reference || ""} resolved — ${d.category || "support"}`;
+  return sendMail({
+    to,
+    subject,
+    html: ticketResolvedHtml(d),
+    text: [
+      `Hi ${d.name || "Partner"}, your support ticket has been resolved.`,
+      `Ticket number: ${d.reference || d.ticketId || "—"}`,
+      `Category: ${d.category || "—"}`,
+      `Issue: ${d.description || "—"}`,
+      `Resolved on: ${istDate(d.resolvedAt)}`,
+      `If the issue persists, please raise a new ticket from the Support page.`,
+    ].join("\n"),
+  }).catch((e) => {
+    console.error("[mail] ticket resolved mail failed:", e.message);
+    return { failed: true };
+  });
+}
+
 module.exports = {
   sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail, sendTopupAdminNotifyMail,
-  sendCbrReceiptMail, sendCbrAdminNotifyMail,
+  sendCbrReceiptMail, sendCbrAdminNotifyMail, sendTicketResolvedMail,
   getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml, adminDeductInvoiceHtml,
 };
