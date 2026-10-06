@@ -493,83 +493,81 @@ const generateCrifPdf = async (apiData, creditReportId) => {
 
     let text = String(raw);
 
+    if (!text || text.trim() === "-") {
+      return [];
+    }
+
+    // Normalize spaces / line breaks
+    text = text.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+
+    // Normalize common CRIF status spacing
+    text = text
+      .replace(/X\s*X\s*X/gi, "XXX")
+      .replace(/S\s*TD/gi, "STD")
+      .replace(/S\s*UB/gi, "SUB")
+      .replace(/D\s*BT/gi, "DBT")
+      .replace(/L\s*SS/gi, "LSS")
+      .replace(/S\s*MA/gi, "SMA");
+
     /*
-    CRIF examples:
+    CRIF payment history examples:
 
     Aug:2023,000/STD
     Jul:2023,329/STD
     Sep:2020,XXX/XXX
     Feb:2018,XXX/STD
+
+    Records can sometimes be separated by:
+    |
+    comma/space
+    or directly followed by next month record.
   */
 
-    text = text
-      .replace(/\r?\n/g, "")
-      .replace(/\s*:\s*/g, ":")
-      .replace(/\s*,\s*/g, ",")
-      .replace(/\s*\/\s*/g, "/");
+    const recordRegex =
+      /([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([A-Za-z0-9]+)(?=\s*(?:\||[A-Za-z]{3}\s*:|\s*$))/gi;
 
-    /*
-    Remove unwanted spaces inside payment status.
+    const results = [];
 
-    Example:
-    513 / STD  -> 513/STD
-    XXX / STD  -> XXX/STD
-    X XX / XXX -> XXX/XXX
-  */
+    let match;
 
-    text = text.replace(/\s+/g, " ").trim();
-
-    text = text
-      .replace(/X\s+XX/gi, "XXX")
-      .replace(/S\s+TD/gi, "STD")
-      .replace(/S\s+UB/gi, "SUB")
-      .replace(/D\s+BT/gi, "DBT")
-      .replace(/L\s+SS/gi, "LSS")
-      .replace(/S\s+MA/gi, "SMA");
-
-    if (!text || text === "-") {
-      return [];
+    while ((match = recordRegex.exec(text)) !== null) {
+      results.push({
+        month: match[1].trim(),
+        year: match[2].trim(),
+        amount: String(match[3]).replace(/\s+/g, "").trim(),
+        status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
+      });
     }
 
     /*
-    IMPORTANT:
-    Some CRIF data can contain | between records.
+    Fallback:
+    If regex did not find anything, try the old | based parser.
   */
+    if (!results.length) {
+      return text
+        .split("|")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const match = entry.match(
+            /^([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([^|]+)$/i,
+          );
 
-    return text
-      .split("|")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        /*
-        Expected:
+          if (!match) {
+            return null;
+          }
 
-        Aug:2023,000/STD
-        Jul:2023,329/STD
-        Sep:2020,XXX/XXX
-      */
-
-        const match = entry.match(
-          /^([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([^|]+)$/i,
-        );
-
-        if (!match) {
           return {
-            month: "-",
-            year: "-",
-            amount: entry,
-            status: "-",
+            month: match[1].trim(),
+            year: match[2].trim(),
+            amount: String(match[3]).replace(/\s+/g, "").trim(),
+            status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
           };
-        }
+        })
+        .filter(Boolean);
+    }
 
-        return {
-          month: match[1],
-          year: match[2],
-          amount: String(match[3]).replace(/\s+/g, "").trim(),
-
-          status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
-        };
-      });
+    return results;
   };
 
   const paymentStatusClass = (status) => {
@@ -672,8 +670,7 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     // SORT YEARS
     // ==========================================================
 
-    const years = Object.keys(yearMap).sort((a, b) => Number(a) - Number(b));
-
+    const years = Object.keys(yearMap).sort((a, b) => Number(b) - Number(a));
     // ==========================================================
     // STATUS CLASS
     // ==========================================================
@@ -1781,21 +1778,19 @@ body {
 ============================================================ */
 
 @media print {
-
   .section {
     page-break-inside: auto;
   }
 
-  .payment-table thead,
+  .payment-history-table thead,
   .address-table thead {
     display: table-header-group;
   }
 
-  .payment-table tr,
+  .payment-history-table tr,
   .address-table tr {
     page-break-inside: avoid;
   }
-
 }
   .address-table {
   width: 100%;
@@ -1952,29 +1947,7 @@ body {
 
     </div>
 
-    <div class="info-card">
-
-      <div class="info-label">
-        First Name
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(firstName)}
-      </div>
-
-    </div>
-
-    <div class="info-card">
-
-      <div class="info-label">
-        Last Name
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(lastName)}
-      </div>
-
-    </div>
+     
 
     <div class="info-card">
 
@@ -1988,17 +1961,7 @@ body {
 
     </div>
 
-    <div class="info-card">
-
-      <div class="info-label">
-        Gender
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(gender)}
-      </div>
-
-    </div>
+    
 
     <div class="info-card">
 
@@ -2069,6 +2032,53 @@ body {
   </div>
 
 </div>
+
+<!-- ============================================================
+     ADDRESS & IDENTITY
+============================================================ -->
+
+<div class="section">
+
+  <div class="section-title">
+    Address & Identity Variations
+  </div>
+
+  <div class="section-line"></div>
+
+  <div class="info-grid">
+
+    <div class="info-card info-card-wide">
+
+      <div class="info-label">
+        Address Variations
+      </div>
+
+      <div class="info-value">
+
+        ${addressVariationsHtml}
+
+      </div>
+
+    </div>
+
+    <div class="info-card info-card-wide">
+
+      <div class="info-label">
+        PAN Variations
+      </div>
+
+      <div class="info-value">
+
+        ${panVariationsHtml}
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
 
 <!-- ============================================================
      ACCOUNT SUMMARY
@@ -2372,52 +2382,6 @@ body {
 
       <div class="info-value">
         ${escapeHtml(newAccountsLastSixMonths)}
-      </div>
-
-    </div>
-
-  </div>
-
-</div>
-
-<!-- ============================================================
-     ADDRESS & IDENTITY
-============================================================ -->
-
-<div class="section">
-
-  <div class="section-title">
-    Address & Identity Variations
-  </div>
-
-  <div class="section-line"></div>
-
-  <div class="info-grid">
-
-    <div class="info-card info-card-wide">
-
-      <div class="info-label">
-        Address Variations
-      </div>
-
-      <div class="info-value">
-
-        ${addressVariationsHtml}
-
-      </div>
-
-    </div>
-
-    <div class="info-card info-card-wide">
-
-      <div class="info-label">
-        PAN Variations
-      </div>
-
-      <div class="info-value">
-
-        ${panVariationsHtml}
-
       </div>
 
     </div>

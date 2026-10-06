@@ -546,6 +546,7 @@ const CrifReport = async (req, res) => {
       mobileNumber,
       email,
       dob,
+      gender,
       pincode,
       stateName,
       cityName,
@@ -754,6 +755,7 @@ const CrifReport = async (req, res) => {
       mobileNumber,
       email,
       dob,
+      gender,
       pincode,
       stateName,
       cityName,
@@ -890,6 +892,7 @@ const CrifReport = async (req, res) => {
       email: email?.toString().trim().toLowerCase() || null,
 
       dob: dob || null,
+      gender: String(gender).trim(),
 
       address: "",
 
