@@ -38,6 +38,10 @@ const SINGLE_PLAN_MODE = true;
 const SINGLE_PLAN_KEY = "starter";
 const SINGLE_PLAN_ROW = { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 };
 
+// One-time Custom Branded Report fee (₹, flat GST-inclusive). Single source of
+// truth for the branded-report payment flow; mirrors Pricing.cbr.base.
+const CBR_PRICE_INR = 2500;
+
 const pricingSchema = new mongoose.Schema(
   {
     key: { type: String, default: "default", unique: true },
@@ -69,6 +73,8 @@ const pricingSchema = new mongoose.Schema(
     aiFail: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
     rc: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     gst: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
+    // One-time Custom Branded Report fee — flat GST-inclusive total (no split).
+    cbr: { type: productPriceSchema, default: { base: 2500, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
     minRecharge: { type: Number, default: 1000, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
@@ -180,3 +186,4 @@ module.exports.quoteForProduct = quoteForProduct;
 module.exports.SINGLE_PLAN_MODE = SINGLE_PLAN_MODE;
 module.exports.SINGLE_PLAN_KEY = SINGLE_PLAN_KEY;
 module.exports.SINGLE_PLAN_ROW = SINGLE_PLAN_ROW;
+module.exports.CBR_PRICE_INR = CBR_PRICE_INR;

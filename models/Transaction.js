@@ -79,7 +79,7 @@ const transactionSchema = new mongoose.Schema(
 
     purpose: {
       type: String,
-      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "DEDUCT_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE", "PLAN_PURCHASE"],
+      enum: ["WALLET_RECHARGE", "PACKAGE_PURCHASE", "ADD_FUNDS", "DEDUCT_FUNDS", "REFUND", "REPORT_CHARGE", "REPORT_FAIL_CHARGE", "PLAN_PURCHASE", "CUSTOM_BRAND_FEE"],
       required: true,
     },
 

@@ -48,6 +48,12 @@ const customBrandedRequestSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    // How the one-time fee was paid (null for legacy/free records)
+    paymentMethod: {
+      type: String,
+      enum: ['WALLET', 'RAZORPAY'],
+      default: null,
+    },
     // Payment lifecycle. 'Unpaid' kept for legacy/free records; all new
     // requests must be 'Paid' before status can be 'Active'.
     paymentStatus: {
