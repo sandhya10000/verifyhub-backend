@@ -32,6 +32,7 @@ const aiAnalyzerRoutes = require("./routes/aiAnalyzerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
 const partnerRoutes = require("./routes/partnerRoutes");
+const customBrandedReportRoutes = require("./routes/customBrandedReportRoutes");
 const rcRoutes = require("./routes/rc");
 const gstRoutes = require("./routes/gst");
 
@@ -193,6 +194,7 @@ app.use("/api/ai-analyzer", aiAnalyzerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/partner", partnerRoutes);
+app.use("/api/partner/custom-branded-report", customBrandedReportRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
 
