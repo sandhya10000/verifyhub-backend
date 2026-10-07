@@ -32,7 +32,7 @@ const { generateCibilPdf } = require("../services/cibilPdf.service");
 // never sends — every CIBIL row saved score: null because of it.
 const extractCibilScore = (apiData) => {
   const cibilData = apiData?.data?.cibilData;
-  console.log(cibilData,"CIBIL")
+  console.log(cibilData, "CIBIL");
   if (!cibilData) return null;
   const candidates = [
     cibilData?.GetCustomerAssetsResponse?.GetCustomerAssetsSuccess?.Asset
@@ -44,7 +44,8 @@ const extractCibilScore = (apiData) => {
     cibilData?.creditScore,
   ];
   for (const raw of candidates) {
-    if (raw === null || raw === undefined || raw === "" || raw === "-") continue;
+    if (raw === null || raw === undefined || raw === "" || raw === "-")
+      continue;
     const n = Number(raw);
     if (!Number.isNaN(n) && n >= 300 && n <= 900) return n;
   }
@@ -353,7 +354,7 @@ const CibilReportFromDigi = async (req, res) => {
     if (!cibilData) {
       return res.status(400).json({
         success: false,
-        message: "CIBIL data not found in API response",
+        message: "CIBIL data not found in Bureau",
         data: apiData,
       });
     }
@@ -538,25 +539,22 @@ const CibilReportFromDigi = async (req, res) => {
     });
   }
 };
-
+//Without OTP
 const CrifReport = async (req, res) => {
   let creditReport = null;
 
   try {
     const {
-      panNumber,
       fullName,
       mobileNumber,
+      panNumber,
       email,
       dob,
+      gender,
       pincode,
       stateName,
       cityName,
-      addressLine1,
-      addressLine2,
       customerConsent,
-      userAns,
-      reportId,
       orderId,
     } = req.body;
 
@@ -585,7 +583,10 @@ const CrifReport = async (req, res) => {
     const serviceKey = process.env.INDICONNECT_SERVICE_KEY;
 
     const crifEndpoint =
-      process.env.INDICONNECT_CRIF_ENDPOINT || "/crifService/crif/score";
+      process.env.INDICONNECT_CRIF_ENDPOINT || "/idverifygr/verification";
+
+    const providerCode =
+      process.env.INDICONNECT_CRIF_PROVIDER_CODE || "O6EHSHOS";
 
     const timeout = 60000;
 
@@ -603,274 +604,134 @@ const CrifReport = async (req, res) => {
     }
 
     // ============================================================
-    // STEP 4: HEADERS
+    // STEP 4: INPUT VALIDATION
+    // ============================================================
+
+    if (
+      !fullName ||
+      String(fullName).trim() === "" ||
+      !mobileNumber ||
+      String(mobileNumber).trim() === ""
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name and mobile number are required",
+      });
+    }
+
+    const name = String(fullName).trim();
+    const mobile = String(mobileNumber).trim();
+
+    // ============================================================
+    // STEP 5: MOBILE VALIDATION
+    // ============================================================
+
+    if (!/^[6-9]\d{9}$/.test(mobile)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid 10 digit mobile number",
+      });
+    }
+
+    // ============================================================
+    // STEP 6: API URL
+    // ============================================================
+
+    const apiUrl =
+      `${baseUrl.replace(/\/$/, "")}/` + `${crifEndpoint.replace(/^\/+/, "")}`;
+
+    console.log("[CRIF] API URL:", apiUrl);
+    console.log("[CRIF] Provider Code:", providerCode);
+
+    // ============================================================
+    // STEP 7: HEADERS
     // ============================================================
 
     const headers = {
-      Authorization: `x-api-access ${secretKey}:${accessKey}`,
       "service-key": serviceKey,
+      Authorization: `x-api-access ${secretKey}:${accessKey}`,
+      providercode: providerCode,
       "Content-Type": "application/json",
     };
 
     // ============================================================
-    // STEP 5: API URL
+    // STEP 8: GRAPHQL QUERY
     // ============================================================
 
-    const apiUrl =
-      `${baseUrl.replace(/\/$/, "")}/` + `${crifEndpoint.replace(/^\//, "")}`;
-
-    console.log("[CRIF] API URL:", apiUrl);
-
-    // ============================================================
-    // STEP 6: Q&A FLOW
-    // ============================================================
-
-    const isQuestionRequest = userAns !== undefined || reportId !== undefined;
-
-    if (isQuestionRequest) {
-      if (
-        userAns === undefined ||
-        userAns === null ||
-        String(userAns).trim() === "" ||
-        !reportId ||
-        !orderId
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "userAns, reportId and orderId are required for CRIF question answer",
-        });
-      }
-
-      const qaPayload = {
-        userAns: String(userAns).trim(),
-        reportId: String(reportId).trim(),
-        orderId: String(orderId).trim(),
-      };
-
-      // Find report only for logged-in user
-      creditReport = await CreditReport.findOne({
-        userId,
-        reportId: qaPayload.reportId,
-        orderId: qaPayload.orderId,
-        bureau: "CRIF",
-      });
-
-      if (!creditReport) {
-        return res.status(404).json({
-          success: false,
-          message: "CRIF report record not found for this user",
-        });
-      }
-
-      // Call CRIF API
-      const response = await axios.post(apiUrl, qaPayload, {
-        headers,
-        timeout,
-      });
-
-      const apiData = response.data;
-
-      console.log("[CRIF] Q&A Response:", JSON.stringify(apiData, null, 2));
-
-      // Report URL
-      const reportUrl =
-        apiData.reportUrl ||
-        apiData.pdfUrl ||
-        apiData.data?.reportUrl ||
-        apiData.data?.pdfUrl ||
-        null;
-
-      let localPath = creditReport.localPath || null;
-
-      // Save locally
-      if (reportUrl && !localPath) {
-        try {
-          localPath = await saveCreditReportLocally(
-            reportUrl,
-            creditReport._id.toString(),
-            "crif",
-            "pdf",
-          );
-
-          console.log("[CRIF] Q&A Report saved locally:", localPath);
-        } catch (fileError) {
-          console.error("[CRIF] Q&A Local Save Error:", fileError.message);
+    const query = `
+      mutation VerifyBureauC($input: VerifyInput!) {
+        verify(input: $input) {
+          ok
+          message
+          status
+          result {
+            ... on BTBureauCResult {
+              txn_id
+              api_category
+              api_name
+              billable
+              message
+              status
+              datetime
+              bureauData
+            }
+          }
+          error {
+            status
+            message
+          }
         }
       }
-
-      // Score
-      let score = creditReport.score;
-
-      if (
-        apiData.score !== undefined &&
-        apiData.score !== null &&
-        apiData.score !== ""
-      ) {
-        const parsedScore = Number(apiData.score);
-
-        if (!Number.isNaN(parsedScore)) {
-          score = parsedScore;
-        }
-      }
-
-      // Update
-      creditReport.reportUrl = reportUrl || creditReport.reportUrl;
-
-      creditReport.localPath = localPath;
-      creditReport.reportData = apiData;
-      creditReport.score = score;
-      creditReport.status = "Success";
-
-      await creditReport.save();
-
-      // Wallet debit (CRIF = ₹50 + GST) — idempotent per report, so the
-      // Q&A completion and the fresh pull can never double-charge
-      await debitReportPull(creditReport, "crif", "CRIF");
-
-      return res.status(200).json({
-        success: true,
-        status: "success",
-        message: "CRIF report fetched successfully",
-
-        creditReportId: creditReport._id,
-        userId: creditReport.userId,
-        reportId: creditReport.reportId,
-        orderId: creditReport.orderId,
-
-        score: creditReport.score,
-
-        reportUrl: creditReport.reportUrl,
-        localPath: creditReport.localPath,
-
-        data: creditReport,
-      });
-    }
+    `;
 
     // ============================================================
-    // STEP 7: INITIAL VALIDATION
-    // ============================================================
-
-    const requiredFields = {
-      panNumber,
-      fullName,
-      mobileNumber,
-      email,
-      dob,
-      pincode,
-      stateName,
-      cityName,
-      customerConsent,
-    };
-
-    const missingFields = Object.entries(requiredFields)
-      .filter(
-        ([, value]) =>
-          value === undefined || value === null || String(value).trim() === "",
-      )
-      .map(([key]) => key);
-
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Required CRIF fields are missing",
-        missingFields,
-      });
-    }
-
-    // ============================================================
-    // STEP 8: CONSENT
-    // ============================================================
-
-    if (String(customerConsent).trim().toUpperCase() !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent must be Y",
-      });
-    }
-
-    // Wallet gate (CRIF = ₹50 + GST) — fresh pulls only; Q&A answers
-    // reuse the already-gated report above
-    if (!(await affordOr402(req, res, "crif"))) return;
-
-    // ============================================================
-    // STEP 9: DOB
-    // ============================================================
-
-    const dobValue = String(dob).trim();
-
-    const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
-
-    if (!dobRegex.test(dobValue)) {
-      return res.status(400).json({
-        success: false,
-        message: "DOB must be in YYYY-MM-DD format",
-      });
-    }
-
-    // ============================================================
-    // STEP 10: PAYLOAD
+    // STEP 9: GRAPHQL PAYLOAD
     // ============================================================
 
     const payload = {
-      panNumber: String(panNumber).trim().toUpperCase(),
-
-      fullName: String(fullName).trim(),
-
-      mobileNumber: String(mobileNumber).trim(),
-
-      email: String(email).trim(),
-
-      dob: dobValue,
-
-      pincode: String(pincode).trim(),
-
-      stateName: String(stateName).trim(),
-
-      cityName: String(cityName).trim(),
-
-      // Street address no longer collected — send empty (bureau matches on PAN/mobile/DOB).
-      addressLine1: "",
-
-      addressLine2: "",
-
-      customerConsent: "Y",
+      query,
+      variables: {
+        input: {
+          documentType: "bureau-verification-crif",
+          name,
+          mobile,
+        },
+      },
     };
+
+    console.log("[CRIF] Request Payload:", JSON.stringify(payload, null, 2));
+
     // ============================================================
-    // STEP 10.1: DUPLICATE PAN CHECK
+    // STEP 10: DUPLICATE CHECK
     // ============================================================
 
-    const normalizedPan = String(panNumber).trim().toUpperCase();
+    let existingReport = null;
 
-    const existingReport = await CreditReport.findOne({
-      userId,
-      pan: normalizedPan,
-      bureau: "CRIF",
-      status: "Success",
-    });
+    if (panNumber) {
+      const normalizedPan = String(panNumber).trim().toUpperCase();
+
+      existingReport = await CreditReport.findOne({
+        userId,
+        pan: normalizedPan,
+        bureau: "CRIF",
+        status: "Success",
+      });
+    }
 
     if (existingReport) {
-      console.log("[CRIF] Duplicate PAN request blocked:", normalizedPan);
+      console.log("[CRIF] Duplicate PAN request blocked:", existingReport.pan);
 
       return res.status(409).json({
         success: false,
         status: "duplicate",
         message: "A CRIF credit report already exists for this PAN.",
-
         creditReportId: existingReport._id,
-
         userId: existingReport.userId,
-
         reportId: existingReport.reportId,
-
         orderId: existingReport.orderId,
-
         score: existingReport.score,
-
         reportUrl: existingReport.reportUrl,
-
         localPath: existingReport.localPath,
-
         data: existingReport,
       });
     }
@@ -881,39 +742,35 @@ const CrifReport = async (req, res) => {
 
     creditReport = await CreditReport.create({
       userId,
-
       orderId: orderId ? String(orderId).trim() : null,
 
-      name: String(fullName).trim(),
+      name,
+      mobile,
 
-      mobile: String(mobileNumber).trim(),
+      pan: panNumber ? String(panNumber).trim().toUpperCase() : null,
 
-      pan: String(panNumber).trim().toUpperCase(),
-
-      email: email?.toString().trim().toLowerCase() || null,
+      email: email ? String(email).trim().toLowerCase() : null,
 
       dob: dob || null,
 
+      gender: gender ? String(gender).trim() : "",
+
       address: "",
 
-      state: stateName?.toString().trim() || "",
+      state: stateName ? String(stateName).trim() : "",
 
-      city: cityName?.toString().trim() || "",
+      city: cityName ? String(cityName).trim() : "",
 
-      pincode: pincode?.toString().trim() || "",
+      pincode: pincode ? String(pincode).trim() : "",
 
       reportType: "CRIF",
-
-      consent: "Y",
-
+      consent: customerConsent || "Y",
       bureau: "CRIF",
 
       status: "Pending",
 
       reportUrl: null,
-
       localPath: null,
-
       reportData: null,
 
       isPublic: false,
@@ -922,7 +779,7 @@ const CrifReport = async (req, res) => {
     console.log("[CRIF] Pending Report Created:", creditReport._id);
 
     // ============================================================
-    // STEP 12: CALL CRIF API
+    // STEP 12: CALL INDICONNECT CRIF API
     // ============================================================
 
     const response = await axios.post(apiUrl, payload, {
@@ -932,32 +789,42 @@ const CrifReport = async (req, res) => {
 
     const apiData = response.data;
 
-    console.log("[CRIF] Initial Response:", JSON.stringify(apiData, null, 2));
+    console.log("[CRIF] API Response:", JSON.stringify(apiData, null, 2));
 
     // ============================================================
-    // STEP 13: API FAILURE
+    // STEP 13: GRAPHQL RESPONSE
     // ============================================================
 
-    if (apiData?.status === false || apiData?.success === false) {
+    const verifyData = apiData?.data?.verify;
+
+    // ============================================================
+    // GRAPHQL LEVEL ERROR
+    // ============================================================
+
+    if (apiData?.errors?.length) {
+      console.error(
+        "[CRIF] GraphQL Errors:",
+        JSON.stringify(apiData.errors, null, 2),
+      );
+
       creditReport.status = "Failed";
-
       creditReport.reportData = apiData;
 
       await creditReport.save();
 
-      // Definitive bureau rejection — flat ₹30 fail fee
       const crifFailCharge = await debitFailedPull(
         creditReport,
         "crif",
         "CRIF",
       );
+
       return res.status(400).json({
         success: false,
-        message: apiData?.message || "CRIF report request failed",
+        status: "failed",
+
+        message: apiData.errors?.[0]?.message || "CRIF GraphQL request failed",
 
         creditReportId: creditReport._id,
-
-        status: creditReport.status,
 
         data: apiData,
 
@@ -966,94 +833,332 @@ const CrifReport = async (req, res) => {
     }
 
     // ============================================================
-    // STEP 14: REPORT ID
+    // STEP 14: VERIFY RESPONSE VALIDATION
     // ============================================================
 
-    const crifReportId =
-      apiData.reportId ||
-      apiData.reportID ||
-      apiData.data?.reportId ||
-      apiData.data?.reportID ||
-      null;
+    if (!verifyData) {
+      creditReport.status = "Failed";
+      creditReport.reportData = apiData;
+
+      await creditReport.save();
+
+      const crifFailCharge = await debitFailedPull(
+        creditReport,
+        "crif",
+        "CRIF",
+      );
+
+      return res.status(400).json({
+        success: false,
+        status: "failed",
+
+        message: "Invalid response received from CRIF API",
+
+        creditReportId: creditReport._id,
+
+        data: apiData,
+
+        failureCharge: crifFailCharge.ok ? crifFailCharge.total : 0,
+      });
+    }
 
     // ============================================================
-    // STEP 15: SCORE
+    // STEP 15: CHECK CRIF STATUS
     // ============================================================
 
-    let score = null;
+    /*
+      Actual CRIF response:
 
-    if (
-      apiData?.data?.score !== undefined &&
-      apiData?.data?.score !== null &&
-      apiData?.data?.score !== ""
-    ) {
-      const parsedScore = Number(apiData.data.score);
+      verify.ok = true
+      verify.status = 200
+      verify.result.status = 1
 
-      if (!Number.isNaN(parsedScore)) {
-        score = parsedScore;
+      So we must support:
+      - true
+      - "true"
+      - 1
+      - 200
+      - "success"
+    */
+
+    const verifyOk =
+      verifyData?.ok === true ||
+      verifyData?.ok === "true" ||
+      verifyData?.ok === 1;
+
+    const verifyStatus = Number(verifyData?.status);
+
+    const resultStatus = Number(verifyData?.result?.status);
+
+    const verifyStatusText = String(verifyData?.status || "").toLowerCase();
+
+    const resultStatusText = String(
+      verifyData?.result?.status || "",
+    ).toLowerCase();
+
+    const isSuccess =
+      verifyOk &&
+      (verifyStatus === 200 ||
+        verifyStatus === 1 ||
+        resultStatus === 1 ||
+        resultStatus === 200 ||
+        verifyStatusText === "success" ||
+        resultStatusText === "success");
+
+    console.log("[CRIF] Verify OK:", verifyData?.ok);
+
+    console.log("[CRIF] Verify Status:", verifyData?.status);
+
+    console.log("[CRIF] Result Status:", verifyData?.result?.status);
+
+    console.log("[CRIF] Is Success:", isSuccess);
+
+    // ============================================================
+    // STEP 16: RESULT
+    // ============================================================
+
+    const result = verifyData?.result || null;
+
+    // ============================================================
+    // STEP 17: BUREAU DATA
+    // ============================================================
+
+    let bureauData = result?.bureauData || null;
+
+    /*
+      Sometimes GraphQL JSON scalar may come as string.
+      Convert it into object if required.
+    */
+
+    if (typeof bureauData === "string") {
+      try {
+        bureauData = JSON.parse(bureauData);
+
+        console.log("[CRIF] bureauData string parsed successfully");
+      } catch (parseError) {
+        console.error(
+          "[CRIF] bureauData JSON parse failed:",
+          parseError.message,
+        );
       }
     }
 
     // ============================================================
-    // STEP 16: REPORT URL
+    // STEP 18: FAILED RESPONSE
+    // ============================================================
+
+    if (!isSuccess) {
+      creditReport.status = "Failed";
+      creditReport.reportData = apiData;
+
+      await creditReport.save();
+
+      const crifFailCharge = await debitFailedPull(
+        creditReport,
+        "crif",
+        "CRIF",
+      );
+
+      return res.status(400).json({
+        success: false,
+        status: "failed",
+
+        message:
+          verifyData?.message ||
+          result?.message ||
+          verifyData?.error?.message ||
+          "CRIF report request failed",
+
+        creditReportId: creditReport._id,
+
+        transactionId: result?.txn_id || null,
+
+        data: apiData,
+
+        failureCharge: crifFailCharge.ok ? crifFailCharge.total : 0,
+      });
+    }
+
+    // ============================================================
+    // STEP 19: EXTRACT TRANSACTION ID
+    // ============================================================
+
+    const transactionId = result?.txn_id || null;
+
+    console.log("[CRIF] Transaction ID:", transactionId);
+
+    // ============================================================
+    // STEP 20: EXTRACT SCORE
+    // ============================================================
+
+    let score = null;
+
+    const possibleScores = [
+      bureauData?.score,
+      bureauData?.Score,
+      bureauData?.creditScore,
+      bureauData?.credit_score,
+
+      // Actual CRIF structure
+      bureauData?.credit_report?.SCORES?.SCORE?.["SCORE-VALUE"],
+      bureauData?.credit_report?.SCORES?.SCORE?.score,
+
+      bureauData?.SCORES?.SCORE?.["SCORE-VALUE"],
+      bureauData?.SCORES?.SCORE?.score,
+
+      bureauData?.B2C?.score,
+      bureauData?.["B2C-SCORE"],
+      result?.score,
+    ];
+
+    for (const value of possibleScores) {
+      if (value !== undefined && value !== null && value !== "") {
+        const parsedScore = Number(String(value).replace(/,/g, "").trim());
+
+        if (!Number.isNaN(parsedScore)) {
+          score = parsedScore;
+          break;
+        }
+      }
+    }
+
+    console.log("[CRIF] Extracted Score:", score);
+
+    // ============================================================
+    // STEP 21: EXTRACT REPORT ID
+    // ============================================================
+
+    const crifReportId =
+      bureauData?.reportId ||
+      bureauData?.reportID ||
+      bureauData?.report_id ||
+      result?.reportId ||
+      result?.reportID ||
+      result?.report_id ||
+      transactionId ||
+      null;
+
+    console.log("[CRIF] Report ID:", crifReportId);
+
+    // ============================================================
+    // STEP 22: EXTRACT REPORT URL
     // ============================================================
 
     const reportUrl =
-      apiData.reportUrl ||
-      apiData.pdfUrl ||
-      apiData.data?.reportUrl ||
-      apiData.data?.pdfUrl ||
+      bureauData?.reportUrl ||
+      bureauData?.reportURL ||
+      bureauData?.pdfUrl ||
+      bureauData?.pdfURL ||
+      bureauData?.["credit_report_link"] ||
+      result?.reportUrl ||
+      result?.reportURL ||
+      result?.pdfUrl ||
+      result?.pdfURL ||
+      result?.credit_report_link ||
       null;
 
+    console.log("[CRIF] Report URL:", reportUrl);
+
     // ============================================================
-    // STEP 17: GENERATE PDF FROM JSON RESPONSE
+    // STEP 23: GENERATE LOCAL PDF
+    // ============================================================
+
+    // ============================================================
+    // STEP 23: DOWNLOAD PROVIDER PDF TO LOCAL STORAGE
     // ============================================================
 
     let localPath = null;
 
     try {
-      localPath = await generateCrifPdf(apiData, creditReport._id.toString());
+      if (!reportUrl) {
+        throw new Error("CRIF provider PDF URL not found");
+      }
 
-      console.log("[CRIF] PDF generated successfully:", localPath);
+      // Physical folder:
+      // backend/uploads/credit-reports/crif
+      const crifUploadDir = path.join(
+        __dirname,
+        "../uploads/credit-reports/crif",
+      );
+
+      // Create folder if it does not exist
+      if (!fs.existsSync(crifUploadDir)) {
+        fs.mkdirSync(crifUploadDir, {
+          recursive: true,
+        });
+      }
+
+      // Use transaction ID for unique filename
+      const fileName = `crif-${transactionId || creditReport._id}.pdf`;
+
+      // Physical file path
+      const physicalFilePath = path.join(crifUploadDir, fileName);
+
+      console.log("[CRIF] Downloading provider PDF...");
+      console.log("[CRIF] Provider PDF URL:", reportUrl);
+      console.log("[CRIF] Local file path:", physicalFilePath);
+
+      const pdfResponse = await axios.get(reportUrl, {
+        responseType: "arraybuffer",
+        timeout: 60000,
+      });
+
+      fs.writeFileSync(physicalFilePath, pdfResponse.data);
+
+      // Path to store in MongoDB
+      localPath = `/uploads/credit-reports/crif/${fileName}`;
+
+      console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
+
+      console.log("[CRIF] DB localPath:", localPath);
     } catch (pdfError) {
-      console.error("[CRIF] PDF generation failed:", pdfError.message);
+      console.error("[CRIF] Provider PDF download failed:", pdfError.message);
+
+      localPath = null;
     }
 
     // ============================================================
-    // STEP 18: UPDATE DATABASE
+    // STEP 24: UPDATE DATABASE
     // ============================================================
 
     creditReport.reportId = crifReportId;
-
     creditReport.score = score;
-
     creditReport.reportUrl = reportUrl;
 
-    const pdfUrl = localPath
-      ? `/uploads/credit-reports/crif/crif-${creditReport._id}.pdf`
-      : null;
+    // Provider PDF ka local path
+    creditReport.localPath = localPath;
 
-    creditReport.localPath = pdfUrl;
-
+    // Save complete Indiconnect response
     creditReport.reportData = apiData;
 
     creditReport.status = "Success";
 
     await creditReport.save();
 
-    // Wallet debit (CRIF = ₹50 + GST) — post-success only
+    console.log("[CRIF] Report saved successfully:", creditReport._id);
+
+    console.log("[CRIF] Local PDF path:", creditReport.localPath);
+
+    // ============================================================
+    // STEP 25: WALLET DEBIT
+    // ============================================================
+
+    // Uncomment when you want to debit successful CRIF pull
+
     await debitReportPull(creditReport, "crif", "CRIF");
 
     // ============================================================
-    // STEP 19: RESPONSE
+    // STEP 26: SUCCESS RESPONSE
     // ============================================================
 
     return res.status(200).json({
       success: true,
-
       status: "success",
 
-      message: "CRIF report fetched successfully",
+      message:
+        verifyData?.message ||
+        result?.message ||
+        "CRIF report fetched successfully",
 
       creditReportId: creditReport._id,
 
@@ -1063,15 +1168,23 @@ const CrifReport = async (req, res) => {
 
       orderId: creditReport.orderId,
 
+      transactionId,
+
       score: creditReport.score,
 
       reportUrl: creditReport.reportUrl,
 
       localPath: creditReport.localPath,
 
+      bureauData,
+
       data: creditReport,
     });
   } catch (error) {
+    // ============================================================
+    // ERROR HANDLING
+    // ============================================================
+
     console.error("[CRIF] Error:", error.message);
 
     // ============================================================
@@ -1107,12 +1220,15 @@ const CrifReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
-      // Bureau answered with an error — flat ₹30 fail fee (no-response /
-      // internal errors below stay free)
-      const crifErrCharge = await debitFailedPull(creditReport, "crif", "CRIF");
+      const crifErrCharge = creditReport
+        ? await debitFailedPull(creditReport, "crif", "CRIF")
+        : {
+            ok: false,
+            total: 0,
+          };
+
       return res.status(error.response.status || 500).json({
         success: false,
-
         status: "failed",
 
         message: "CRIF API request failed",
@@ -1132,7 +1248,6 @@ const CrifReport = async (req, res) => {
     if (error.request) {
       return res.status(504).json({
         success: false,
-
         status: "failed",
 
         message: "CRIF API did not respond",
@@ -1147,7 +1262,6 @@ const CrifReport = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-
       status: "failed",
 
       message: "Internal server error",
@@ -2599,7 +2713,8 @@ const EquifaxReport = async (req, res) => {
 
         status: "failed",
 
-        message: "Equifax API request failed",
+        message:
+          "Customer details could not be verified. Please check the entered details and try again",
 
         creditReportId: creditReport?._id || null,
 

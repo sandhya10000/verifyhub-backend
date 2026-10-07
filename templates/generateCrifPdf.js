@@ -59,7 +59,10 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   const maskStreetAddress = (raw) => {
     const s = String(raw ?? "").trim();
     if (!s || s === "-") return "-";
-    const parts = s.split(",").map((x) => x.trim()).filter(Boolean);
+    const parts = s
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
     if (parts.length <= 3) return parts.join(", ") || "-";
     return parts.slice(-3).join(", ");
   };
@@ -367,11 +370,16 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   // 7. CREDIT SCORE
   // ============================================================
 
+  // ============================================================
+  // 7. CREDIT SCORE
+  // ============================================================
+
   const rawScore =
     apiData?.data?.score ??
     apiData?.score ??
     report?.["CREDIT-SCORE"] ??
     report?.["SCORE"] ??
+    report?.["SCORES"]?.["SCORE"]?.["SCORE-VALUE"] ??
     null;
 
   const score =
@@ -382,8 +390,9 @@ const generateCrifPdf = async (apiData, creditReportId) => {
       ? Number(rawScore)
       : null;
 
-  let scoreStatus = "Not Available";
+  console.log("[CRIF PDF] Extracted Score:", score);
 
+  let scoreStatus = "Not Available";
   let scoreDescription = "Credit score information is not available.";
 
   if (score !== null) {
@@ -490,83 +499,81 @@ const generateCrifPdf = async (apiData, creditReportId) => {
 
     let text = String(raw);
 
+    if (!text || text.trim() === "-") {
+      return [];
+    }
+
+    // Normalize spaces / line breaks
+    text = text.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+
+    // Normalize common CRIF status spacing
+    text = text
+      .replace(/X\s*X\s*X/gi, "XXX")
+      .replace(/S\s*TD/gi, "STD")
+      .replace(/S\s*UB/gi, "SUB")
+      .replace(/D\s*BT/gi, "DBT")
+      .replace(/L\s*SS/gi, "LSS")
+      .replace(/S\s*MA/gi, "SMA");
+
     /*
-    CRIF examples:
+    CRIF payment history examples:
 
     Aug:2023,000/STD
     Jul:2023,329/STD
     Sep:2020,XXX/XXX
     Feb:2018,XXX/STD
+
+    Records can sometimes be separated by:
+    |
+    comma/space
+    or directly followed by next month record.
   */
 
-    text = text
-      .replace(/\r?\n/g, "")
-      .replace(/\s*:\s*/g, ":")
-      .replace(/\s*,\s*/g, ",")
-      .replace(/\s*\/\s*/g, "/");
+    const recordRegex =
+      /([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([A-Za-z0-9]+)(?=\s*(?:\||[A-Za-z]{3}\s*:|\s*$))/gi;
 
-    /*
-    Remove unwanted spaces inside payment status.
+    const results = [];
 
-    Example:
-    513 / STD  -> 513/STD
-    XXX / STD  -> XXX/STD
-    X XX / XXX -> XXX/XXX
-  */
+    let match;
 
-    text = text.replace(/\s+/g, " ").trim();
-
-    text = text
-      .replace(/X\s+XX/gi, "XXX")
-      .replace(/S\s+TD/gi, "STD")
-      .replace(/S\s+UB/gi, "SUB")
-      .replace(/D\s+BT/gi, "DBT")
-      .replace(/L\s+SS/gi, "LSS")
-      .replace(/S\s+MA/gi, "SMA");
-
-    if (!text || text === "-") {
-      return [];
+    while ((match = recordRegex.exec(text)) !== null) {
+      results.push({
+        month: match[1].trim(),
+        year: match[2].trim(),
+        amount: String(match[3]).replace(/\s+/g, "").trim(),
+        status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
+      });
     }
 
     /*
-    IMPORTANT:
-    Some CRIF data can contain | between records.
+    Fallback:
+    If regex did not find anything, try the old | based parser.
   */
+    if (!results.length) {
+      return text
+        .split("|")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const match = entry.match(
+            /^([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([^|]+)$/i,
+          );
 
-    return text
-      .split("|")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        /*
-        Expected:
+          if (!match) {
+            return null;
+          }
 
-        Aug:2023,000/STD
-        Jul:2023,329/STD
-        Sep:2020,XXX/XXX
-      */
-
-        const match = entry.match(
-          /^([A-Za-z]{3})\s*:\s*(\d{4})\s*,\s*([^/|]+?)\s*\/\s*([^|]+)$/i,
-        );
-
-        if (!match) {
           return {
-            month: "-",
-            year: "-",
-            amount: entry,
-            status: "-",
+            month: match[1].trim(),
+            year: match[2].trim(),
+            amount: String(match[3]).replace(/\s+/g, "").trim(),
+            status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
           };
-        }
+        })
+        .filter(Boolean);
+    }
 
-        return {
-          month: match[1],
-          year: match[2],
-          amount: String(match[3]).replace(/\s+/g, "").trim(),
-
-          status: String(match[4]).replace(/\s+/g, "").trim().toUpperCase(),
-        };
-      });
+    return results;
   };
 
   const paymentStatusClass = (status) => {
@@ -669,8 +676,7 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     // SORT YEARS
     // ==========================================================
 
-    const years = Object.keys(yearMap).sort((a, b) => Number(a) - Number(b));
-
+    const years = Object.keys(yearMap).sort((a, b) => Number(b) - Number(a));
     // ==========================================================
     // STATUS CLASS
     // ==========================================================
@@ -1329,31 +1335,23 @@ body {
 .info-card-wide {
   grid-column: 1 / -1;
 }
-
 .info-label {
   font-size: 7.5px;
-
-  font-weight: 800;
-
-  color: #70879a;
-
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
-
   letter-spacing: 0.4px;
-
   margin-bottom: 4px;
+  line-height: 1.3;
 }
 
 .info-value {
-  font-size: 9.5px;
-
-  font-weight: 600;
-
-  color: #18324b;
-
+  font-size: 10px;
+  font-weight: 800;
+  color: #172033;
   overflow-wrap: anywhere;
-
   word-break: break-word;
+  line-height: 1.4;
 }
 
 .address-value {
@@ -1412,18 +1410,16 @@ body {
 
 .score-number {
   font-size: 30px;
-
   font-weight: 800;
-
-  color: #173f62;
+  color: #172033;
 }
 
 .score-label {
   font-size: 8px;
-
-  color: #70879a;
-
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .score-status {
@@ -1472,23 +1468,19 @@ body {
 }
 
 .summary-label {
-  font-size: 7px;
-
-  color: #70879a;
-
-  font-weight: 800;
-
+  font-size: 7.5px;
+  color: #94A3B8;
+  font-weight: 700;
   text-transform: uppercase;
-
+  letter-spacing: 0.4px;
   margin-bottom: 5px;
+  line-height: 1.3;
 }
 
 .summary-value {
   font-size: 14px;
-
   font-weight: 800;
-
-  color: #173f62;
+  color: #172033;
 }
 
 /* ============================================================
@@ -1536,13 +1528,7 @@ body {
     #d8e6ef;
 }
 
-.account-title {
-  font-size: 10px;
-
-  font-weight: 800;
-
-  color: #173f62;
-}
+ 
 
 .account-separator {
   margin: 0 4px;
@@ -1550,13 +1536,16 @@ body {
   color: #8aa2b5;
 }
 
+ .account-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: #172033;
+}
+
 .account-status {
   font-size: 7.5px;
-
   font-weight: 800;
-
   color: #2879c5;
-
   text-transform: uppercase;
 }
 
@@ -1588,28 +1577,24 @@ body {
 }
 
 .account-field-label {
-  font-size: 6.8px;
-
-  font-weight: 800;
-
-  color: #8194a4;
-
+  font-size: 7px;
+  font-weight: 700;
+  color: #94A3B8;
   text-transform: uppercase;
-
+  letter-spacing: 0.4px;
   margin-bottom: 3px;
+  line-height: 1.3;
 }
 
 .account-field-value {
-  font-size: 8px;
-
-  font-weight: 600;
-
-  color: #234e70;
-
+  font-size: 9px;
+  font-weight: 800;
+  color: #172033;
   overflow-wrap: anywhere;
-
   word-break: break-word;
-}/* ============================================================
+  line-height: 1.4;
+}
+  /* ============================================================
    PAYMENT HISTORY - CRIF MONTHLY GRID
 ============================================================ */
 
@@ -1657,30 +1642,35 @@ body {
   padding: 5px 3px;
   height: 25px;
 }
-
 .payment-history-table thead th {
-  background: #e5e9f7;
-  color: #164878;
+  background: #f1f6fb;
+  color: #94A3B8;
   font-size: 7px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.payment-history-table tbody td {
+  font-size: 7.5px;
+  color: #172033;
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.payment-history-table tbody td.year-cell {
+  background: #f7fbfe;
   font-weight: 800;
+  color: #172033;
 }
 
 .payment-history-table th.year-header {
   width: 32px;
 }
 
-.payment-history-table tbody td {
-  font-size: 7.5px;
-  color: #18324b;
-  font-weight: 600;
-  background: #ffffff;
-}
+ 
 
-.payment-history-table tbody td.year-cell {
-  background: #f2f2f2;
-  font-weight: 800;
-  color: #18324b;
-}
+ 
 
 .payment-history-table tbody tr:nth-child(even) td:not(.year-cell) {
   background: #fbfdff;
@@ -1794,21 +1784,53 @@ body {
 ============================================================ */
 
 @media print {
-
   .section {
     page-break-inside: auto;
   }
 
-  .payment-table thead,
+  .payment-history-table thead,
   .address-table thead {
     display: table-header-group;
   }
 
-  .payment-table tr,
+  .payment-history-table tr,
   .address-table tr {
     page-break-inside: avoid;
   }
+}
+  .address-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
 
+.address-table th,
+.address-table td {
+  border: 1px solid #dce7ef;
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.address-table th {
+  background: #f1f6fb;
+  color: #94A3B8;
+  font-size: 7.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.address-table td {
+  background: #ffffff;
+  color: #172033;
+  font-size: 8.5px;
+  font-weight: 800;
+}
+
+.address-table-wrap {
+  width: 100%;
+  margin-top: 4px;
 }
 
 </style>
@@ -1931,29 +1953,7 @@ body {
 
     </div>
 
-    <div class="info-card">
-
-      <div class="info-label">
-        First Name
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(firstName)}
-      </div>
-
-    </div>
-
-    <div class="info-card">
-
-      <div class="info-label">
-        Last Name
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(lastName)}
-      </div>
-
-    </div>
+     
 
     <div class="info-card">
 
@@ -1967,17 +1967,7 @@ body {
 
     </div>
 
-    <div class="info-card">
-
-      <div class="info-label">
-        Gender
-      </div>
-
-      <div class="info-value">
-        ${escapeHtml(gender)}
-      </div>
-
-    </div>
+    
 
     <div class="info-card">
 
@@ -2048,6 +2038,53 @@ body {
   </div>
 
 </div>
+
+<!-- ============================================================
+     ADDRESS & IDENTITY
+============================================================ -->
+
+<div class="section">
+
+  <div class="section-title">
+    Address & Identity Variations
+  </div>
+
+  <div class="section-line"></div>
+
+  <div class="info-grid">
+
+    <div class="info-card info-card-wide">
+
+      <div class="info-label">
+        Address Variations
+      </div>
+
+      <div class="info-value">
+
+        ${addressVariationsHtml}
+
+      </div>
+
+    </div>
+
+    <div class="info-card info-card-wide">
+
+      <div class="info-label">
+        PAN Variations
+      </div>
+
+      <div class="info-value">
+
+        ${panVariationsHtml}
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
 
 <!-- ============================================================
      ACCOUNT SUMMARY
@@ -2351,52 +2388,6 @@ body {
 
       <div class="info-value">
         ${escapeHtml(newAccountsLastSixMonths)}
-      </div>
-
-    </div>
-
-  </div>
-
-</div>
-
-<!-- ============================================================
-     ADDRESS & IDENTITY
-============================================================ -->
-
-<div class="section">
-
-  <div class="section-title">
-    Address & Identity Variations
-  </div>
-
-  <div class="section-line"></div>
-
-  <div class="info-grid">
-
-    <div class="info-card info-card-wide">
-
-      <div class="info-label">
-        Address Variations
-      </div>
-
-      <div class="info-value">
-
-        ${addressVariationsHtml}
-
-      </div>
-
-    </div>
-
-    <div class="info-card info-card-wide">
-
-      <div class="info-label">
-        PAN Variations
-      </div>
-
-      <div class="info-value">
-
-        ${panVariationsHtml}
-
       </div>
 
     </div>
