@@ -1,15 +1,66 @@
 const fs = require('fs');
 const mime = require('mime-types');
+const pdfParse = require('pdf-parse');
 const AIAnalysis = require('../models/AIAnalysis');
 const { renderCreditReport } = require('./reportRenderer');
+
+const KEYWORDS = {
+  BUREAU_NAMES: ['cibil', 'transunion', 'experian', 'equifax', 'crif', 'high mark'],
+  CREDIT_TERMS: ['credit score', 'account', 'accounts', 'enquiries', 'dpd', 'days past due', 'payment history', 'credit facility', 'overdue', 'current balance', 'sanctioned', 'high credit amount'],
+  ID_PATTERNS: [/[A-Z]{5}[0-9]{4}[A-Z]/, /aadhaar/i, /voter id/i]
+};
+
+async function preCheckCreditReportText(fileBuffer) {
+  let text = '';
+  try {
+    const parsed = await pdfParse(fileBuffer);
+    text = parsed.text || '';
+  } catch(e) {
+    return { pass: true, skipped: true, reason: 'unextractable' };
+  }
+  
+  if (text.trim().length < 50) {
+    return { pass: true, skipped: true, reason: 'almost no extractable text' };
+  }
+
+  const lowerText = text.toLowerCase();
+  
+  let hasBureau = false;
+  for (const b of KEYWORDS.BUREAU_NAMES) {
+    if (lowerText.includes(b)) {
+      hasBureau = true;
+      break;
+    }
+  }
+  
+  let termCount = 0;
+  for (const t of KEYWORDS.CREDIT_TERMS) {
+    if (lowerText.includes(t)) termCount++;
+  }
+  
+  let idMatch = false;
+  for (const pattern of KEYWORDS.ID_PATTERNS) {
+    if (pattern.test(text)) {
+      idMatch = true;
+      break;
+    }
+  }
+  
+  // A PAN match alone must NEVER pass. Require at least one bureau name or at least 3 distinct credit-report terms.
+  const pass = hasBureau || termCount >= 3;
+  return { pass, score: termCount, hasBureau, idMatch };
+}
 
 const DISCOVERY_TOOL = {
   name: 'submit_document_discovery',
   description: 'Submit the discovered structure of the credit report document.',
   input_schema: {
     type: 'object',
-    required: ['bureau', 'reportType', 'hasAccounts', 'hasEnquiries', 'accountCount', 'enquiryCount'],
+    required: ['bureau', 'reportType', 'hasAccounts', 'hasEnquiries', 'accountCount', 'enquiryCount', 'is_credit_report', 'document_type'],
     properties: {
+      is_credit_report: { type: 'boolean' },
+      document_type: { type: 'string' },
+      not_credit_report_reason: { type: 'string' },
       bureau: { type: 'string' },
       reportType: { type: 'string' },
       reportDate: { type: 'string' },
@@ -95,12 +146,27 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
   const mediaType = mime.lookup(analysis.filePath) || 'application/pdf';
   const base64Data = fileBuffer.toString('base64');
   
-  // 1. Document Discovery
+  // 1. Fast text pre-check
+  const precheck = await preCheckCreditReportText(fileBuffer);
+  console.log(`[newPipeline:${analysisId}] pre-check score: ${precheck.score}, signals: hasBureau=${precheck.hasBureau}, idMatch=${precheck.idMatch}`);
+  
+  if (!precheck.pass) {
+    console.log(`[newPipeline:${analysisId}] Final decision: reject (pre-check failed)`);
+    await AIAnalysis.findByIdAndUpdate(analysisId, {
+      status: 'failed',
+      errorCode: 'NOT_A_CREDIT_REPORT',
+      errorMessage: 'This file does not look like a credit report. Please upload a credit report PDF from CIBIL, Experian, Equifax or CRIF.',
+      debugError: 'Rejected by validation gate (pre-check)'
+    });
+    return;
+  }
+  
+  // 2. Document Discovery
   console.log(`[newPipeline:${analysisId}] Running Document Discovery...`);
   const docMsg = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 4000,
-    system: "You are a credit report analysis AI. First, analyze the structure of this document. Identify the bureau, basic customer details, total number of accounts (or tradelines/loans), and total number of enquiries.",
+    system: "You are a credit report analysis AI. First, analyze the structure of this document. Identify the bureau, basic customer details, total number of accounts (or tradelines/loans), and total number of enquiries. Set `is_credit_report` to true only for a credit bureau report listing credit accounts or a credit score.",
     messages: [
       {
         role: 'user',
@@ -118,8 +184,20 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
   if (!discoveryBlock) throw new Error("Document discovery failed to use tool.");
   const discovery = discoveryBlock.input;
   console.log(`[newPipeline:${analysisId}] Discovery: Accounts=${discovery.accountCount}, Enquiries=${discovery.enquiryCount}, Bureau=${discovery.bureau}`);
+  console.log(`[newPipeline:${analysisId}] is_credit_report: ${discovery.is_credit_report}, document_type: ${discovery.document_type}`);
 
-  // 2. Batch Extraction for Accounts
+  if (!discovery.is_credit_report) {
+    console.log(`[newPipeline:${analysisId}] Final decision: reject (model check failed)`);
+    await AIAnalysis.findByIdAndUpdate(analysisId, {
+      status: 'failed',
+      errorCode: 'NOT_A_CREDIT_REPORT',
+      errorMessage: 'This file does not look like a credit report. Please upload a credit report PDF from CIBIL, Experian, Equifax or CRIF.',
+      debugError: 'Rejected by validation gate (model check)'
+    });
+    return;
+  }
+
+  // 3. Batch Extraction for Accounts
   let allAccounts = [];
   let accountsToExtract = discovery.accountCount || 0;
   
@@ -175,7 +253,7 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
     }
   }
 
-  // 3. Batch Extraction for Enquiries
+  // 4. Batch Extraction for Enquiries
   let allEnquiries = [];
   let enquiriesToExtract = discovery.enquiryCount || 0;
   
@@ -231,7 +309,21 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
     }
   }
 
-  // 4. Synthesize Qualitative Data
+  // Defence in depth check
+  if (allAccounts.length === 0 && (discovery.creditScore === null || discovery.creditScore === undefined)) {
+    console.log(`[newPipeline:${analysisId}] Final decision: reject (defence in depth failed)`);
+    await AIAnalysis.findByIdAndUpdate(analysisId, {
+      status: 'failed',
+      errorCode: 'NOT_A_CREDIT_REPORT',
+      errorMessage: 'This file does not look like a credit report. Please upload a credit report PDF from CIBIL, Experian, Equifax or CRIF.',
+      debugError: 'Rejected by validation gate (defence in depth)'
+    });
+    return;
+  }
+  
+  console.log(`[newPipeline:${analysisId}] Final decision: accept`);
+
+  // 5. Synthesize Qualitative Data
   console.log(`[newPipeline:${analysisId}] Synthesizing qualitative data...`);
   const compactContext = {
     client_name: discovery.customerName,
@@ -263,7 +355,7 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
   if (!qualBlock) throw new Error("Qualitative analysis failed.");
   const qualFields = qualBlock.input;
 
-  // 5. Merge and Render
+  // 6. Merge and Render
   const fullData = {
     client_name: discovery.customerName,
     report_date: discovery.reportDate,

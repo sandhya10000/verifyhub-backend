@@ -33,6 +33,7 @@ const AIAnalysisSchema = new mongoose.Schema(
       index: true,
     },
     errorMessage: { type: String, default: null },
+    errorCode: { type: String, default: null },
     debugError: { type: String, default: null },   // full error detail, only exposed in non-prod
     result: {
       score: { type: Number },
