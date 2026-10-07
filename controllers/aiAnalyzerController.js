@@ -106,11 +106,19 @@ exports.getAnalysis = async (req, res) => {
 
     logStep(req.params.id, 'Frontend Polling Status', { status: analysis.status, htmlStatus: analysis.htmlStatus });
 
+    let clientErrorMessage = "Something went wrong while analysing your report. Please try again.";
+    let clientErrorCode = analysis.errorCode || "ANALYSIS_FAILED";
+
+    if (analysis.errorCode === "NOT_A_CREDIT_REPORT") {
+      clientErrorMessage = analysis.errorMessage;
+    }
+
     const payload = {
       success: true,
       analysisId: analysis._id,
       status: analysis.status,
-      errorMessage: analysis.errorMessage,
+      errorMessage: analysis.status === 'failed' ? clientErrorMessage : null,
+      errorCode: analysis.status === 'failed' ? clientErrorCode : null,
       isChunked: analysis.isChunked,
       chunkCount: analysis.chunkCount,
       chunksCompleted: analysis.chunksCompleted,
@@ -118,12 +126,6 @@ exports.getAnalysis = async (req, res) => {
       language: analysis.language || 'en',
       htmlStatus: analysis.htmlStatus,
     };
-
-    // Expose the raw error details to the client in non-production so the
-    // actual failure reason is visible without digging through server logs.
-    if (process.env.NODE_ENV !== 'production' && analysis.debugError) {
-      payload.debugError = analysis.debugError;
-    }
 
     res.json(payload);
   } catch (err) {
