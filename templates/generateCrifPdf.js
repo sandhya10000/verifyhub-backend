@@ -370,11 +370,16 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   // 7. CREDIT SCORE
   // ============================================================
 
+  // ============================================================
+  // 7. CREDIT SCORE
+  // ============================================================
+
   const rawScore =
     apiData?.data?.score ??
     apiData?.score ??
     report?.["CREDIT-SCORE"] ??
     report?.["SCORE"] ??
+    report?.["SCORES"]?.["SCORE"]?.["SCORE-VALUE"] ??
     null;
 
   const score =
@@ -385,8 +390,9 @@ const generateCrifPdf = async (apiData, creditReportId) => {
       ? Number(rawScore)
       : null;
 
-  let scoreStatus = "Not Available";
+  console.log("[CRIF PDF] Extracted Score:", score);
 
+  let scoreStatus = "Not Available";
   let scoreDescription = "Credit score information is not available.";
 
   if (score !== null) {
