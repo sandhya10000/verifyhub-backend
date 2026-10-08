@@ -761,46 +761,12 @@ const CrifReport = async (req, res) => {
     console.log("[CRIF] Request Payload:", JSON.stringify(payload, null, 2));
 
     // ============================================================
-    // STEP 10: DUPLICATE CHECK
+    // STEP 10: WALLET GATE
     // ============================================================
 
-    let existingReport = null;
-
-    if (panNumber) {
-      const normalizedPan = String(panNumber).trim().toUpperCase();
-
-      existingReport = await CreditReport.findOne({
-        userId,
-        pan: normalizedPan,
-        bureau: "CRIF",
-        status: "Success",
-      });
-    }
-
-    if (existingReport) {
-      console.log("[CRIF] Duplicate PAN request blocked:", existingReport.pan);
-
-      return res.status(409).json({
-        success: false,
-        status: "duplicate",
-        message: "A CRIF credit report already exists for this PAN.",
-        creditReportId: existingReport._id,
-        userId: existingReport.userId,
-        reportId: existingReport.reportId,
-        orderId: existingReport.orderId,
-        score: existingReport.score,
-        reportUrl: existingReport.reportUrl,
-        localPath: existingReport.localPath,
-        data: existingReport,
-      });
-    }
-
-    // ============================================================
-    // STEP 10.1: WALLET GATE
-    // ============================================================
-
-    // Wallet gate (CRIF = ₹50 + GST) — after validation + duplicate check,
-    // before the Pending doc and provider call, mirroring CIBIL/Experian/Equifax.
+    // Wallet gate (CRIF = ₹50 + GST) — after validation, before the Pending
+    // doc and provider call, mirroring CIBIL/Experian/Equifax. Every submit
+    // pulls fresh — repeat PANs are billed as new pulls, never blocked.
     if (!(await affordOr402(req, res, "crif"))) return;
 
     // ============================================================
@@ -1417,55 +1383,7 @@ const ExperianReport = async (req, res) => {
     }
 
     // ============================================================
-    // 3A. DUPLICATE PAN CHECK
-    // ============================================================
-
-    const normalizedPan = String(panNumber).trim().toUpperCase();
-
-    const existingReport = await CreditReport.findOne({
-      userId,
-      pan: normalizedPan,
-      bureau: "EXPERIAN",
-      status: {
-        $in: ["Pending", "Success"],
-      },
-    }).sort({ createdAt: -1 });
-
-    if (existingReport) {
-      // ----------------------------------------------------------
-      // If previous request is still processing
-      // ----------------------------------------------------------
-      if (existingReport.status === "Pending") {
-        return res.status(409).json({
-          success: false,
-          status: "duplicate_pending",
-          message:
-            "An Experian credit report request for this PAN is already in progress.",
-          creditReportId: existingReport._id,
-          userId: existingReport.userId,
-          status: existingReport.status,
-        });
-      }
-
-      // ----------------------------------------------------------
-      // If report already exists successfully
-      // ----------------------------------------------------------
-      return res.status(409).json({
-        success: false,
-        status: "duplicate",
-        message: "An Experian credit report already exists for this PAN.",
-        creditReportId: existingReport._id,
-        userId: existingReport.userId,
-        score: existingReport.score,
-        status: existingReport.status,
-        reportUrl: existingReport.reportUrl,
-        localPath: existingReport.localPath,
-        data: existingReport,
-      });
-    }
-
-    // ============================================================
-    // 3B. WALLET GATE
+    // 3A. WALLET GATE
     // ============================================================
 
     // Wallet gate (Experian = ₹50 + GST)
