@@ -352,10 +352,50 @@ const CibilReportFromDigi = async (req, res) => {
     const cibilData = apiData?.data?.cibilData;
 
     if (!cibilData) {
+      // Provider answered but returned no usable CIBIL data — record as
+      // Failed (like every other bureau's post-provider reject) and bill
+      // the fail fee per pricing config.
+      creditReport = await CreditReport.create({
+        userId: req.user?._id,
+        orderId: orderId || null,
+        name: customerName,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        mobile: mobile?.toString().trim() || null,
+        email: email?.toString().trim().toLowerCase() || null,
+        pan: pan?.toString().trim().toUpperCase() || null,
+        gender: gender || null,
+        dob: dob || null,
+        address: address || null,
+        state: state || null,
+        city: city || null,
+        pincode: pincode?.toString().trim() || null,
+        reportType: reportType || "CIBIL",
+        consent: "Y",
+        bureau: "CIBIL",
+        status: "Failed",
+        reportUrl: null,
+        localPath: null,
+        reportData: apiData,
+        score: null,
+        isPublic: false,
+      });
+
+      console.log("[CIBIL] Empty-data CreditReport marked as Failed:", creditReport._id);
+
+      const cibilEmptyCharge = await debitFailedPull(
+        creditReport,
+        "cibil",
+        "CIBIL",
+      );
+
       return res.status(400).json({
         success: false,
         message: "CIBIL data not found in Bureau",
+        creditReportId: creditReport._id,
+        status: creditReport.status,
         data: apiData,
+        failureCharge: cibilEmptyCharge.ok ? cibilEmptyCharge.total : 0,
       });
     }
 
@@ -530,11 +570,18 @@ const CibilReportFromDigi = async (req, res) => {
 
     // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
     // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
-    const cibilFailCharge = await debitFailedPull(
-      creditReport,
-      "cibil",
-      "CIBIL",
-    );
+    // Provider auth failures (our credentials, not the partner's fault)
+    // stay free — same policy as Equifax 401/403.
+    let cibilFailCharge = { ok: false, total: 0 };
+    if (!isDigiAuthFailure) {
+      cibilFailCharge = await debitFailedPull(
+        creditReport,
+        "cibil",
+        "CIBIL",
+      );
+    } else {
+      console.log("[wallet] CIBIL fail free (provider auth failure)");
+    }
 
     return res.status(digiStatus || 500).json({
       success: false,
@@ -747,6 +794,14 @@ const CrifReport = async (req, res) => {
         data: existingReport,
       });
     }
+
+    // ============================================================
+    // STEP 10.1: WALLET GATE
+    // ============================================================
+
+    // Wallet gate (CRIF = ₹50 + GST) — after validation + duplicate check,
+    // before the Pending doc and provider call, mirroring CIBIL/Experian/Equifax.
+    if (!(await affordOr402(req, res, "crif"))) return;
 
     // ============================================================
     // STEP 11: CREATE PENDING REPORT
@@ -1700,7 +1755,7 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
-      // Bureau gave no usable payload — flat ₹30 fail fee
+      // Bureau gave no usable payload — Experian fail fee (₹40 single-plan)
       const expFailCharge = await debitFailedPull(
         creditReport,
         "experian",
@@ -1730,7 +1785,7 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
-      // Bureau verification rejected — flat ₹30 fail fee
+      // Bureau verification rejected — Experian fail fee (₹40 single-plan)
       const expVerifyCharge = await debitFailedPull(
         creditReport,
         "experian",
@@ -1764,6 +1819,13 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
+      // Bureau 400-class reject with no usable result — bill the fail fee
+      // like every other Experian rejection.
+      const expNoResultCharge = await debitFailedPull(
+        creditReport,
+        "experian",
+        "EXPERIAN",
+      );
       return res.status(400).json({
         success: false,
 
@@ -1774,6 +1836,8 @@ const ExperianReport = async (req, res) => {
         status: creditReport.status,
 
         error: verify.error || null,
+
+        failureCharge: expNoResultCharge.ok ? expNoResultCharge.total : 0,
       });
     }
 
@@ -1850,7 +1914,7 @@ const ExperianReport = async (req, res) => {
 
       await creditReport.save();
 
-      // Data arrived from the bureau but our PDF step failed — flat ₹30 fail fee
+      // Data arrived from the bureau but our PDF step failed — Experian fail fee (₹40 single-plan)
       const expPdfCharge = await debitFailedPull(
         creditReport,
         "experian",
@@ -1987,7 +2051,7 @@ const ExperianReport = async (req, res) => {
         JSON.stringify(error.response.data, null, 2),
       );
 
-      // Bureau answered with an error — flat ₹30 fail fee
+      // Bureau answered with an error — Experian fail fee (₹40 single-plan)
       const expCatchCharge = await debitFailedPull(
         creditReport,
         "experian",
