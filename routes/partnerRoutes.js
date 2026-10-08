@@ -6,7 +6,6 @@ const auth = require('../middleware/auth');
 router.get('/overview/summary', auth, partnerController.getSummary);
 router.get('/overview/timeseries', auth, partnerController.getTimeseries);
 router.get('/overview/recent', auth, partnerController.getRecent);
-router.get('/prefill', auth, partnerController.getPrefill);
 router.get('/profile', auth, partnerController.getProfile);
 router.get('/transactions', auth, partnerController.getMyTransactions);
 

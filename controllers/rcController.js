@@ -1,7 +1,7 @@
 const axios = require("axios");
 const RcVerification = require("../models/RcVerification");
 const User = require("../models/User");
-const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
+const { canAfford, chargeForReport } = require("../utils/wallet");
 const { generateRcPdf } = require("../services/rcPdf.service");
 
 const RC_DETAIL_PROJECTION =
@@ -52,9 +52,9 @@ const buildRcQuery = (vehicleNumber, documentType) =>
   `mutation {\n  verify(\n    input: {\n      vehicleNumber: "${vehicleNumber}",\n      documentType: "${documentType}"\n    }\n  ) {\n    ok\n    message\n    result {\n      ... on DTVehicleRcResult {\n          reg_no\n          class\n          chassis\n          engine\n          vehicle_manufacturer_name\n          model\n          vehicle_colour\n          type\n          norms_type\n          body_type\n          owner_count\n          owner_name\n          owner_father_name\n          mobile_number\n          status\n          status_as_on\n          reg_authority\n          reg_date\n          vehicle_manufacturing_month_year\n          rc_expiry_date\n          vehicle_tax_upto\n          vehicle_insurance_company_name\n          vehicle_insurance_upto\n          vehicle_insurance_policy_number\n          rc_financer\n          present_address\n          permanent_address\n          vehicle_cubic_capacity\n          gross_vehicle_weight\n          unladen_weight\n          vehicle_category\n          vehicle_cylinders_no\n          vehicle_seat_capacity\n          wheelbase\n          pucc_number\n          pucc_upto\n          blacklist_status\n          permit_issue_date\n          permit_number\n          permit_type\n          permit_valid_from\n          permit_valid_upto\n          national_permit_upto\n          is_commercial\n          financed\n          rto_code\n      }\n    }\n    error {\n      status\n      message\n      decryptedError\n    }\n  }\n}`;
 
 // POST /api/rc/verify-rc { vehicleNumber, consent }
-// Single-plan launch: provider failures bill ₹10 (same as success); only
-// pre-doc validation errors (bad format, missing consent) stay free.
-// TODO(multi-plan-restore): restore free fails (failureCharge 0, no debit).
+// RC bills only on success (₹10). All failures — provider rejects, errors,
+// timeouts — are free and still recorded as Failed for history.
+// Pre-doc validation errors (bad format, missing consent) stay free as before.
 const verifyRc = async (req, res) => {
   let verification = null;
   try {
@@ -128,18 +128,12 @@ const verifyRc = async (req, res) => {
       verification.status = "Failed";
       verification.rcData = { error: verify?.error || apiData || "Empty RC response" };
       await verification.save(); // pre-save fills failureReason
-      // Single-plan launch: failed RC pulls bill ₹10. Never throws.
-      let failCharge = { ok: false, total: 0 };
-      try {
-        failCharge = await chargeFailedReport(userId, verification._id, "rc", "RC", true);
-      } catch (err) {
-        console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, err.message);
-      }
+      // RC bills only on success — failed pulls are always free.
       return res.status(400).json({
         success: false,
         status: "failed",
         verificationId: verification._id,
-        failureCharge: failCharge.ok ? failCharge.total : 0,
+        failureCharge: 0,
         message: verify?.error?.message || verify?.message || "RC verification failed",
         error: verify?.error || null,
       });
@@ -183,22 +177,14 @@ const verifyRc = async (req, res) => {
         await verification.save();
       } catch { /* ignore */ }
     }
-    // Single-plan launch: provider errors/timeouts on an existing doc bill ₹10.
-    // TODO(multi-plan-restore): restore failureCharge 0 below.
-    let catchCharge = { ok: false, total: 0 };
-    if (verification?._id) {
-      try {
-        catchCharge = await chargeFailedReport(verification.userId, verification._id, "rc", "RC", true);
-      } catch (e) {
-        console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, e.message);
-      }
-    }
+    // RC bills only on success — provider errors/timeouts on an existing doc
+    // are recorded as Failed but never debited.
     if (err.response) {
       return res.status(err.response.status || 500).json({
         success: false,
         status: "failed",
         verificationId: verification?._id || null,
-        failureCharge: catchCharge.ok ? catchCharge.total : 0,
+        failureCharge: 0,
         error: err.response.data,
       });
     }
@@ -208,7 +194,7 @@ const verifyRc = async (req, res) => {
         status: "failed",
         message: "RC API did not respond",
         verificationId: verification?._id || null,
-        failureCharge: catchCharge.ok ? catchCharge.total : 0,
+        failureCharge: 0,
       });
     }
     return res.status(500).json({

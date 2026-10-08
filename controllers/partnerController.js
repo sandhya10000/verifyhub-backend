@@ -175,54 +175,6 @@ exports.getRecent = async (req, res) => {
   }
 };
 
-// GET /api/partner/prefill?mobile=XXXXXXXXXX
-// Returns the partner's most recent customer record for that mobile so
-// report forms can prefill. Strictly scoped to the requester — a partner
-// can never see another partner's customers.
-exports.getPrefill = async (req, res) => {
-  try {
-    const mobile = String(req.query.mobile || "").replace(/\D/g, "");
-    if (!/^\d{10}$/.test(mobile)) {
-      return res.status(400).json({ success: false, message: "Valid 10-digit mobile number required" });
-    }
-
-    const record =
-      (await CreditReport.findOne({ userId: req.user._id, mobile, status: "Success" })
-        .sort({ createdAt: -1 })
-        .select("name mobile pan gender email bureau createdAt")
-        .lean()) ||
-      (await CreditReport.findOne({ userId: req.user._id, mobile })
-        .sort({ createdAt: -1 })
-        .select("name mobile pan gender email bureau createdAt")
-        .lean());
-
-    if (!record) {
-      return res.json({ success: true, found: false });
-    }
-
-    const parts = String(record.name || "").trim().split(/\s+/).filter(Boolean);
-    const firstName = parts[0] || "";
-    const lastName = parts.slice(1).join(" ");
-
-    res.json({
-      success: true,
-      found: true,
-      data: {
-        firstName,
-        lastName,
-        mobile: record.mobile,
-        pan: record.pan || "",
-        gender: record.gender || "",
-        email: record.email || "",
-        bureau: record.bureau || "",
-        pulledAt: record.createdAt,
-      },
-    });
-  } catch (err) {
-    console.error("partner getPrefill Error:", err);
-    res.status(500).json({ success: false, message: "Could not fetch prefill data" });
-  }
-};
 // GET /api/partner/pricing/plans � PUBLIC price list for the Plans page.
 // Computed totals only; the frontend never does money math. Falls back to
 // the founder table when the Pricing doc is missing.

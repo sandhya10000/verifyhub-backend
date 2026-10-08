@@ -109,7 +109,7 @@ const debitReportPull = async (creditReport, productKey, bureauLabel) => {
 };
 
 // Post-failure debit — same guards as success. Single-plan launch: failed
-// bureau pulls bill the SAME as success (see models/Pricing.js).
+// bureau pulls (including CIBIL) bill the SAME as success (see models/Pricing.js).
 // TODO(multi-plan-restore): restore mismatch-gated CIBIL + flat fallback.
 // Never throws; returns the charge result for response transparency.
 const debitFailedPull = async (
@@ -528,6 +528,14 @@ const CibilReportFromDigi = async (req, res) => {
         String(error.response?.data?.message || ""),
       );
 
+    // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
+    // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
+    const cibilFailCharge = await debitFailedPull(
+      creditReport,
+      "cibil",
+      "CIBIL",
+    );
+
     return res.status(digiStatus || 500).json({
       success: false,
 
@@ -536,6 +544,10 @@ const CibilReportFromDigi = async (req, res) => {
         : error.response?.data?.message || "Failed to generate CIBIL report",
 
       error: error.response?.data || error.message,
+
+      creditReportId: creditReport?._id || null,
+
+      failureCharge: cibilFailCharge.ok ? cibilFailCharge.total : 0,
     });
   }
 };
