@@ -59,20 +59,76 @@ async function sendWhatsApp({ to, text }) {
   return { mocked: false, messageId, data: res.data };
 }
 
+// Template sender — POST /api/v1/whatsapp/sendMessage with a template body.
+// Business-initiated messages to new contacts (like OTPs) MUST use an
+// approved template; free-form text is rejected by Meta outside the 24h window.
+// Returns {sent} on accept, {mocked} when unconfigured, {skipped} for no
+// recipient — never throws (callers decide how to treat failures).
+async function sendTemplateMessage({ to, templateName, language, variables }) {
+  const phone = normalizePhone(to);
+  if (!phone) {
+    console.warn("[whatsapp] template skipped — no recipient");
+    return { skipped: true, reason: "no-recipient" };
+  }
+  if (!process.env.WASIMPLE_API_KEY) {
+    console.warn(
+      "[whatsapp] Wasimple not configured – template",
+      templateName,
+      "for",
+      maskPhone(phone),
+    );
+    return { mocked: true };
+  }
+  const base = (process.env.WASIMPLE_BASE_URL || "https://app.wasimple.in").replace(/\/$/, "");
+  const url = `${base}/api/v1/whatsapp/sendMessage?apiKey=${process.env.WASIMPLE_API_KEY}`;
+  const headers = {};
+  if (process.env.WASIMPLE_PHONE_ID) headers["x-phone-id"] = process.env.WASIMPLE_PHONE_ID;
+  try {
+    const res = await axios.post(
+      url,
+      {
+        templateName,
+        language: language || "en",
+        to: phone,
+        templateVariables: variables || [],
+      },
+      { headers, timeout: 15000 },
+    );
+    const messageId =
+      res.data?.messageId || res.data?.data?.messageId || res.data?.id || null;
+    console.log(`[whatsapp] template ${templateName} sent to ${maskPhone(phone)} id=${messageId || "n/a"}`);
+    return { sent: true, mocked: false, messageId, data: res.data };
+  } catch (err) {
+    const detail =
+      err.response?.data?.message ||
+      err.response?.data?.error ||
+      JSON.stringify(err.response?.data || "").slice(0, 200) ||
+      err.message;
+    console.error(`[whatsapp] template ${templateName} failed for ${maskPhone(phone)}:`, detail);
+    return { sent: false, reason: detail };
+  }
+}
+
 async function sendWhatsAppOtp(phone, otp, purpose = "signup") {
-  const what = purpose === "reset" ? "password reset" : "account verification";
-  return sendWhatsApp({
+  // OTPs go via the approved Authentication template (copy-code button) so
+  // they reach new contacts outside the 24h window. Free-form text would be
+  // rejected by Meta for these cold sends.
+  // Best-effort by design: mail remains the delivery gate (see issueOtp),
+  // so this never throws — callers map the result via templateStatus().
+  return sendTemplateMessage({
     to: phone,
-    text:
-      `Hello from VerifyHub \u{1F44B}\n` +
-      `Your one-time password for ${what} is: *${otp}*\n` +
-      `It expires in ${process.env.OTP_EXPIRY_MIN || 10} minutes.\n\n` +
-      `If you did not request this, please ignore this message. Never share your OTP with anyone — VerifyHub will never ask for it.`,
-  }).then((r) => {
-    // Preserve the mail contract: OTP must actually go out in production.
-    if (r.mocked && process.env.NODE_ENV === "production") throw new Error("WhatsApp service not configured");
-    return r;
+    templateName: process.env.WASIMPLE_OTP_TEMPLATE || "registeration_otp",
+    language: process.env.WASIMPLE_OTP_LANG || "en",
+    variables: [String(otp)],
   });
+}
+
+// Compact delivery status for API responses: "sent" | "failed" | "skipped".
+function templateStatus(r) {
+  if (!r) return "skipped";
+  if (r.sent) return "sent";
+  if (r.skipped || r.mocked) return "skipped";
+  return "failed";
 }
 
 // Single-plan launch: no plan names — one rate card for everyone.
@@ -149,6 +205,8 @@ async function sendAccountStatusWhatsApp(phone, { name, active }) {
 
 module.exports = {
   sendWhatsApp,
+  sendTemplateMessage,
+  templateStatus,
   sendWhatsAppOtp,
   sendRechargeSuccessWhatsApp,
   sendPlanActivationWhatsApp,

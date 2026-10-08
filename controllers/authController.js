@@ -4,7 +4,7 @@ const User = require("../models/User");
 const Otp = require("../models/Otp");
 const generateToken = require("../utils/generateToken");
 const { sendOtpMail } = require("../utils/sendMail");
-const { sendWhatsAppOtp } = require("../utils/sendWhatsApp");
+const { sendWhatsAppOtp, templateStatus } = require("../utils/sendWhatsApp");
 const { validateEmailFormat, hasMx, isMailboxNotFoundError } = require("../utils/emailValidation");
 
 const OTP_EXPIRY_MIN = Number(process.env.OTP_EXPIRY_MIN || 10);
@@ -24,13 +24,18 @@ async function issueOtp(email, purpose, phone = null) {
   // Send FIRST – only persist OTP doc on success so failures leave
   // no orphan doc and no false resend-cooldown.
   await sendOtpMail(email, otp, purpose);
-  // WhatsApp OTP rides along best-effort: mail remains the delivery gate,
-  // a Wasimple outage must never block signup/password-reset.
+  // WhatsApp OTP rides along best-effort via the approved Authentication
+  // template: mail remains the delivery gate, a Wasimple outage must never
+  // block signup/password-reset. The send status is returned so the UI can
+  // honestly say where the OTP went.
+  let whatsapp = "skipped";
   if (phone) {
     try {
-      await sendWhatsAppOtp(phone, otp, purpose);
+      const waRes = await sendWhatsAppOtp(phone, otp, purpose);
+      whatsapp = templateStatus(waRes);
     } catch (waErr) {
       console.error("[whatsapp] OTP send failed (mail already sent):", waErr.message);
+      whatsapp = "failed";
     }
   }
   await Otp.deleteMany({ email, purpose });
@@ -40,7 +45,7 @@ async function issueOtp(email, purpose, phone = null) {
     purpose,
     expiresAt: new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000),
   });
-  return otp;
+  return { otp, whatsapp };
 }
 
 // Shared pre-send guards: format/blocklist → dupes handled by caller → cooldown → MX
@@ -166,14 +171,20 @@ const sendSignupOtp = async (req, res) => {
     }
     const wait = await checkCooldown(em, "signup");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
+    let whatsapp = "skipped";
     try {
-      await issueOtp(em, "signup", ph || null);
+      ({ whatsapp } = await issueOtp(em, "signup", ph || null));
     } catch (sendErr) {
       console.error("sendSignupOtp send:", sendErr);
       const mapped = mapSendError(sendErr);
       return res.status(mapped.status).json({ field: mapped.field, message: mapped.message, error: sendErr.message });
     }
-    res.json({ success: true, message: "OTP sent to email", expiresInMin: OTP_EXPIRY_MIN });
+    res.json({
+      success: true,
+      message: whatsapp === "sent" ? "OTP sent to email and WhatsApp" : "OTP sent to email",
+      whatsapp,
+      expiresInMin: OTP_EXPIRY_MIN,
+    });
   } catch (e) {
     console.error("sendSignupOtp:", e);
     res.status(500).json({ message: "Failed to send OTP", error: e.message });
@@ -219,14 +230,20 @@ const requestPasswordReset = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
     const wait = await checkCooldown(em, "reset");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
+    let whatsapp = "skipped";
     try {
-      await issueOtp(em, "reset", user.phone || null);
+      ({ whatsapp } = await issueOtp(em, "reset", user.phone || null));
     } catch (sendErr) {
       console.error("requestPasswordReset send:", sendErr);
       const mapped = mapSendError(sendErr);
       return res.status(mapped.status).json({ field: mapped.field, message: mapped.message, error: sendErr.message });
     }
-    res.json({ success: true, message: "Password reset OTP sent to email", expiresInMin: OTP_EXPIRY_MIN });
+    res.json({
+      success: true,
+      message: whatsapp === "sent" ? "Password reset OTP sent to email and WhatsApp" : "Password reset OTP sent to email",
+      whatsapp,
+      expiresInMin: OTP_EXPIRY_MIN,
+    });
   } catch (e) {
     console.error("requestPasswordReset:", e);
     res.status(500).json({ message: "Server error", error: e.message });
