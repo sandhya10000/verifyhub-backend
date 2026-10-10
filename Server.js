@@ -83,12 +83,15 @@ Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upse
         await Pricing.updateOne({ key: "default" }, { $set: missing });
         console.log("[Pricing] migrated missing sections:", Object.keys(missing).join(", "));
       }
-      // Single-plan launch mode: force-sync ALL tier rows + guards to founder
+      // Single-plan launch mode: force-sync ALL tier rows to founder
       // prices on every boot, so stale multi-tier values in the DB can never
-      // survive a deploy. TODO(multi-plan-restore): delete this block.
+      // survive a deploy. minRecharge is intentionally NOT synced — it is
+      // admin-editable and must survive restarts (it was being reset to
+      // 1000 on every boot, ignoring the admin's value on AddFunds).
+      // TODO(multi-plan-restore): delete this block.
       const { SINGLE_PLAN_MODE } = require("./models/Pricing");
       if (SINGLE_PLAN_MODE) {
-        const sync = { minRecharge: 1000 };
+        const sync = {};
         for (const tier of ["startup", "starter", "growth", "pro", "enterprise"]) {
           sync[`plans.${tier}`] = PRICING_DEFAULTS.plans[tier];
         }

@@ -158,6 +158,53 @@ const createWalletRechargeOrder = async (req, res) => {
     });
   }
 };
+// POST /api/wallet-recharge/cancel — mark own PENDING recharge as FAILED.
+// Called when the partner closes the Razorpay modal or the payment fails,
+// so cancelled attempts don't sit in history as Pending forever.
+// Strictly scoped: only the requester's own PENDING WALLET_RECHARGE rows.
+// SUCCESS rows are never touched (cancel after a completed verify is a
+// no-op), and a later successful verify can still flip FAILED -> SUCCESS
+// if the partner retries and pays on the same order.
+const cancelWalletRechargeOrder = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const userId = req.user.id;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "orderId is required",
+      });
+    }
+
+    const updated = await Transaction.findOneAndUpdate(
+      {
+        orderId: String(orderId).trim(),
+        userId,
+        purpose: "WALLET_RECHARGE",
+        status: "PENDING",
+      },
+      { $set: { status: "FAILED" } },
+      { new: true },
+    )
+      .select("_id orderId status")
+      .lean();
+
+    // Idempotent: already SUCCESS/FAILED (or unknown order) is still a
+    // successful no-op from the caller's perspective.
+    return res.status(200).json({
+      success: true,
+      alreadyResolved: !updated,
+      transactionId: updated?._id || null,
+    });
+  } catch (error) {
+    console.error("Error in wallet recharge cancel:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Could not cancel wallet recharge order",
+    });
+  }
+};
 const verifyPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
@@ -393,6 +440,7 @@ const verifyPayment = async (req, res) => {
 
 module.exports = {
   createWalletRechargeOrder,
+  cancelWalletRechargeOrder,
   verifyPayment,
   activatePlan,
 };

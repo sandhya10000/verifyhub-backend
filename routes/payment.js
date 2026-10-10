@@ -6,6 +6,7 @@ const auth = require("../middleware/auth");
 
 const {
   createWalletRechargeOrder,
+  cancelWalletRechargeOrder,
   verifyPayment,
   activatePlan,
 } = require("../controllers/paymentController");
@@ -22,6 +23,12 @@ router.post("/wallet-recharge/payment", auth, createWalletRechargeOrder);
 // @desc    post verify payment
 // @access  Private/User
 router.post("/verify/payment", auth, verifyPayment);
+
+//API route for cancelling a pending recharge (modal dismissed / payment failed)
+// @route   POST /api/wallet-recharge/cancel
+// @desc    mark own PENDING recharge FAILED (SUCCESS rows untouched)
+// @access  Private/User
+router.post("/wallet-recharge/cancel", auth, cancelWalletRechargeOrder);
 
 // Free plan selection gated by wallet balance (no Razorpay, no debit).
 // @route   POST /api/plan/activate

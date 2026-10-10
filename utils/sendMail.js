@@ -128,9 +128,7 @@ function receiptShell({ title, preheader, name, introHtml, invoiceRowsHtml, tota
       </div>
       <p style="font-size:12px;color:#8a94ad;line-height:1.6;margin:14px 0 0">This is a system-generated receipt. If you did not make this transaction, please contact support immediately.</p>
     </div>
-    <div style="background:#f7f9fc;padding:14px 28px;font-size:12px;color:#8a94ad;border-top:1px solid #e5e9f2">
-      VerifyHub · no-reply@verifyhub.in · Need help? Reply to this email.
-    </div>
+   
   </div>
 </div>`;
 }

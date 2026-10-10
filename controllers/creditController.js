@@ -461,7 +461,6 @@ const CibilReportFromDigi = async (req, res) => {
             }
           })()
         : rawCibilData;
-    const indiHtmlUrl = indiResult?.htmlUrl || null;
     const indiTxnId = indiResult?.txn_id || null;
     const indiBillable = indiResult?.billable;
     const indiBureauStatus = indiResult?.status;
@@ -642,7 +641,9 @@ const CibilReportFromDigi = async (req, res) => {
 
       status: "Pending",
 
-      reportUrl: indiHtmlUrl || null,
+      // No link until our PDF exists — the provider htmlUrl is token-gated
+      // and must never surface as the report link (kept in reportData).
+      reportUrl: null,
 
       localPath: null,
 
@@ -678,11 +679,16 @@ const CibilReportFromDigi = async (req, res) => {
 
     // ============================================================
     // 9. UPDATE DATABASE WITH PDF DETAILS
+    // Persist the uploads-folder relative path in BOTH fields (same as
+    // CRIF/Experian/Equifax) so history buttons open our created PDF.
+    // The absolute disk path (pdf.filePath) is server-only. The provider
+    // htmlUrl stays inside raw reportData for audit — never as the link,
+    // since it is token-gated to IndiConnect's session.
     // ============================================================
 
-    creditReport.localPath = pdf.filePath;
+    creditReport.localPath = pdf.relativePath;
 
-    creditReport.reportUrl = indiHtmlUrl || pdf.relativePath;
+    creditReport.reportUrl = pdf.relativePath;
 
     // Re-derive score at completion (same extractor as creation) so the
     // final Success row can never carry a stale null.
