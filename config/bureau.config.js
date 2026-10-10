@@ -1,6 +1,6 @@
 const BUREAU_CONFIG = {
   CIBIL: {
-    provider: "DIGI",
+    provider: "INDI",
   },
 
   EXPERIAN: {

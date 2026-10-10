@@ -4,6 +4,7 @@ const User = require("../models/User");
 const Otp = require("../models/Otp");
 const generateToken = require("../utils/generateToken");
 const { sendOtpMail } = require("../utils/sendMail");
+const { sendWhatsAppOtp, templateStatus } = require("../utils/sendWhatsApp");
 const { validateEmailFormat, hasMx, isMailboxNotFoundError } = require("../utils/emailValidation");
 
 const OTP_EXPIRY_MIN = Number(process.env.OTP_EXPIRY_MIN || 10);
@@ -17,12 +18,26 @@ function makeOtp() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-async function issueOtp(email, purpose) {
+async function issueOtp(email, purpose, phone = null) {
   const otp = makeOtp();
   const otpHash = await bcrypt.hash(otp, 10);
   // Send FIRST – only persist OTP doc on success so failures leave
   // no orphan doc and no false resend-cooldown.
   await sendOtpMail(email, otp, purpose);
+  // WhatsApp OTP rides along best-effort via the approved Authentication
+  // template: mail remains the delivery gate, a Wasimple outage must never
+  // block signup/password-reset. The send status is returned so the UI can
+  // honestly say where the OTP went.
+  let whatsapp = "skipped";
+  if (phone) {
+    try {
+      const waRes = await sendWhatsAppOtp(phone, otp, purpose);
+      whatsapp = templateStatus(waRes);
+    } catch (waErr) {
+      console.error("[whatsapp] OTP send failed (mail already sent):", waErr.message);
+      whatsapp = "failed";
+    }
+  }
   await Otp.deleteMany({ email, purpose });
   await Otp.create({
     email,
@@ -30,7 +45,7 @@ async function issueOtp(email, purpose) {
     purpose,
     expiresAt: new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000),
   });
-  return otp;
+  return { otp, whatsapp };
 }
 
 // Shared pre-send guards: format/blocklist → dupes handled by caller → cooldown → MX
@@ -89,14 +104,16 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword, state: st, city: ct, pincode: pc });
+    // Single-plan launch: every partner starts on the single plan, never gated.
+    // TODO(multi-plan-restore): drop these defaults (schema default null + forced pick returns).
+    const user = await User.create({ name, email: em, phone: ph || phone, password: hashedPassword, state: st, city: ct, pincode: pc, activePlan: "starter", pendingPlanChoice: false });
     await Otp.deleteMany({ email: em, purpose: "signup" });
 
     res.status(201).json({
       success: true,
       message: "Registration Successful",
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null, pendingPlanChoice: user.pendingPlanChoice ?? false },
     });
   } catch (error) {
     // Race-condition safety: unique index violation on email/phone
@@ -118,10 +135,17 @@ const login = async (req, res) => {
     if (!user) return res.status(500).json({ success: false, message: "Invalid Email or Password" });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ success: false, message: "Invalid Email or Password" });
+    // Block suspended partners at login (checked after credential match
+    // so wrong-password attempts don't leak account status).
+    if (user.isActive === false) {
+      return res.status(403).json({ success: false, code: "ACCOUNT_DEACTIVATED", message: "Your account has been deactivated. Please contact support." });
+    }
+    // Stamp last login (fire-and-forget — never blocks the response).
+    User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } }).exec().catch(() => {});
     res.json({
       success: true,
       token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode },
+      user: { id: user._id, name: user.name, email: user.email, phone: user.phone, role: user.role, partner_id: user.partner_id, state: user.state, city: user.city, pincode: user.pincode, walletBalance: user.walletBalance ?? 0, activePlan: user.activePlan || null, pendingPlanChoice: user.pendingPlanChoice ?? false },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -147,14 +171,20 @@ const sendSignupOtp = async (req, res) => {
     }
     const wait = await checkCooldown(em, "signup");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
+    let whatsapp = "skipped";
     try {
-      await issueOtp(em, "signup");
+      ({ whatsapp } = await issueOtp(em, "signup", ph || null));
     } catch (sendErr) {
       console.error("sendSignupOtp send:", sendErr);
       const mapped = mapSendError(sendErr);
       return res.status(mapped.status).json({ field: mapped.field, message: mapped.message, error: sendErr.message });
     }
-    res.json({ success: true, message: "OTP sent to email", expiresInMin: OTP_EXPIRY_MIN });
+    res.json({
+      success: true,
+      message: whatsapp === "sent" ? "OTP sent to email and WhatsApp" : "OTP sent to email",
+      whatsapp,
+      expiresInMin: OTP_EXPIRY_MIN,
+    });
   } catch (e) {
     console.error("sendSignupOtp:", e);
     res.status(500).json({ message: "Failed to send OTP", error: e.message });
@@ -200,14 +230,20 @@ const requestPasswordReset = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
     const wait = await checkCooldown(em, "reset");
     if (wait > 0) return res.status(429).json({ message: `Please wait ${wait}s before resending`, retryAfter: wait });
+    let whatsapp = "skipped";
     try {
-      await issueOtp(em, "reset");
+      ({ whatsapp } = await issueOtp(em, "reset", user.phone || null));
     } catch (sendErr) {
       console.error("requestPasswordReset send:", sendErr);
       const mapped = mapSendError(sendErr);
       return res.status(mapped.status).json({ field: mapped.field, message: mapped.message, error: sendErr.message });
     }
-    res.json({ success: true, message: "Password reset OTP sent to email", expiresInMin: OTP_EXPIRY_MIN });
+    res.json({
+      success: true,
+      message: whatsapp === "sent" ? "Password reset OTP sent to email and WhatsApp" : "Password reset OTP sent to email",
+      whatsapp,
+      expiresInMin: OTP_EXPIRY_MIN,
+    });
   } catch (e) {
     console.error("requestPasswordReset:", e);
     res.status(500).json({ message: "Server error", error: e.message });

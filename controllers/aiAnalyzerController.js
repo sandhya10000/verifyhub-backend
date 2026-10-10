@@ -5,6 +5,8 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const { processAnalysisInBackground, generateFullHtmlReport, processHtmlGenerationInBackground } = require('../utils/claudeService');
 
+const ALLOWED_LANGUAGE_CODES = new Set(['en','hi','ta','te','kn','mr','bn','gu','pa','ml','or','as','ur']);
+
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
 const { logStep } = require('../utils/logger');
 
@@ -45,14 +47,40 @@ exports.uploadReport = async (req, res) => {
       }
     }
 
+    // Read and validate the requested output language (from FormData)
+    const rawLang = (req.body.language || '').trim().toLowerCase();
+    const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
+    console.log(`[uploadReport] language: '${language}' (raw: '${rawLang}')`);
+    // Wallet affordability gate (AI analysis = ₹100 + GST) — before
+    // accepting the file for background processing
+    try {
+      const { canAfford } = require('../utils/wallet');
+      const gate = await canAfford(req.user?._id, 'ai');
+      if (!gate.ok) {
+        fs.unlinkSync(req.file.path);
+        return res.status(402).json({
+          success: false,
+          message: gate.reason === 'user-not-found'
+            ? 'User authentication required'
+            : `Insufficient wallet balance. ${gate.total} required — please recharge.`,
+          required: gate.total,
+          balance: gate.balance,
+        });
+      }
+    } catch (gateErr) {
+      console.error('[wallet] AI affordability check failed:', gateErr.message);
+      // fail-open: never block delivery on a pricing hiccup
+    }
+
     const analysis = await AIAnalysis.create({
       userId: req.user._id,
       fileName: req.file.originalname,
+      storedFileName: path.basename(req.file.path),
       filePath: req.file.path,
       fileType: path.extname(req.file.originalname).replace('.', ''),
+      language,
       status: 'uploaded',
-    });
-    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
+    });    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
     logStep(analysis._id, 'DB Record Created', { analysisId: analysis._id });
 
     console.log('[uploadReport] DB record created, analysisId:', analysis._id, '| filePath:', req.file.path);
@@ -60,7 +88,7 @@ exports.uploadReport = async (req, res) => {
 
     console.log('[uploadReport] Kicking off background Claude processing for analysisId:', analysis._id);
     logStep(analysis._id, 'Trigger Background Processing');
-    processAnalysisInBackground(analysis._id);
+    processAnalysisInBackground(analysis._id, language);
   } catch (err) {
     console.error('[uploadReport] Unhandled error:', err);
     res.status(500).json({ success: false, message: 'Upload failed. Please try again.' });
@@ -78,23 +106,26 @@ exports.getAnalysis = async (req, res) => {
 
     logStep(req.params.id, 'Frontend Polling Status', { status: analysis.status, htmlStatus: analysis.htmlStatus });
 
+    let clientErrorMessage = "Something went wrong while analysing your report. Please try again.";
+    let clientErrorCode = analysis.errorCode || "ANALYSIS_FAILED";
+
+    if (analysis.errorCode === "NOT_A_CREDIT_REPORT") {
+      clientErrorMessage = analysis.errorMessage;
+    }
+
     const payload = {
       success: true,
       analysisId: analysis._id,
       status: analysis.status,
-      errorMessage: analysis.errorMessage,
+      errorMessage: analysis.status === 'failed' ? clientErrorMessage : null,
+      errorCode: analysis.status === 'failed' ? clientErrorCode : null,
       isChunked: analysis.isChunked,
       chunkCount: analysis.chunkCount,
       chunksCompleted: analysis.chunksCompleted,
       result: analysis.status === 'completed' ? analysis.result : null,
+      language: analysis.language || 'en',
       htmlStatus: analysis.htmlStatus,
     };
-
-    // Expose the raw error details to the client in non-production so the
-    // actual failure reason is visible without digging through server logs.
-    if (process.env.NODE_ENV !== 'production' && analysis.debugError) {
-      payload.debugError = analysis.debugError;
-    }
 
     res.json(payload);
   } catch (err) {
@@ -144,11 +175,57 @@ exports.downloadPdf = async (req, res) => {
   }
 };
 
+// GET /api/ai-analyzer/:id/upload
+// Streams the originally uploaded bureau file (PDF/JSON) inline so it opens
+// in a new tab via the "Uploaded Report" eye icon. Same ownership rule as
+// downloadPdf: owner or admin. No status gate — uploads exist from the
+// moment of upload, regardless of analysis progress.
+exports.downloadUpload = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const analysis = await AIAnalysis.findById(id);
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Analysis not found.' });
+    }
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin && String(analysis.userId) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized.' });
+    }
+    // Resolve the disk file from the portable stored filename against the
+    // runtime upload dir (same constant multer writes through). Falls back
+    // to the recorded absolute path for docs predating storedFileName.
+    // path.basename() containment: the served file can never escape the
+    // upload dir even if a stored value were tampered with.
+    const { UPLOAD_DIR } = require('../config/uploadConfig');
+    const diskName = path.basename(analysis.storedFileName || analysis.filePath || '');
+    const filePath = diskName ? path.join(UPLOAD_DIR, diskName) : null;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'Uploaded file is no longer available.' });
+    }
+    const ext = path.extname(analysis.fileName || filePath).toLowerCase();
+    const contentType = ext === '.json' ? 'application/json' : 'application/pdf';
+    const safeName = path.basename(analysis.fileName || filePath).replace(/"/g, '');
+    console.log(`[downloadUpload:${id}] Serving ${filePath} as ${contentType}`);
+    return res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `inline; filename="${safeName}"`,
+    }).sendFile(path.resolve(filePath));
+  } catch (err) {
+    console.error(`[downloadUpload] Unhandled error for ${id}:`, err);
+    res.status(500).json({ success: false, message: 'Could not open uploaded file.' });
+  }
+};
+
 
 
 exports.listAnalyses = async (req, res) => {
   try {
-    const analyses = await AIAnalysis.find({ userId: req.user._id })
+    // status=completed|failed filters the list (tabs in the partner UI).
+    const filter = { userId: req.user._id };
+    if (req.query.status && req.query.status !== "All") {
+      filter.status = req.query.status;
+    }
+    const analyses = await AIAnalysis.find(filter)
       .sort({ createdAt: -1 })
       .select('-rawModelResponse -filePath');
     res.json({ success: true, data: analyses });

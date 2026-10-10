@@ -44,6 +44,8 @@ PERSONAL / SUMMARY FIELDS
 - bureau_control_no: the bureau's own reference/control number, null if absent
 - credit_score: integer (e.g. 752), null if absent
 - score_band: exact band label from report (e.g. "Good", "Fair", "Poor", "Excellent")
+- reported_total_accounts: the printed summary total of accounts (e.g. "TOTAL ACCOUNTS 9"). Return null if absent. Do NOT compute this yourself from the rows.
+- reported_total_enquiries: the printed summary total of enquiries (e.g. "All Enquiries 5", "TOTAL: 7"). Return null if absent. Do NOT compute this yourself from the rows.
   NOTE: Do NOT compute or include enquiries_6m or enquiries_12m — those are computed by code from the raw enquiries array.
 
 QUALITATIVE FIELDS (Claude's judgment — these CANNOT be computed deterministically from numbers)

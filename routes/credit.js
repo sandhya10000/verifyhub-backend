@@ -1,5 +1,7 @@
 const express = require("express");
 const auth = require("../middleware/auth");
+// TODO(multi-plan-restore): re-add requirePlanChosen to report routes below.
+// const requirePlanChosen = require("../middleware/requirePlanChosen");
 const router = express.Router();
 
 const {
@@ -13,6 +15,9 @@ const {
 } = require("../controllers/creditController");
 
 // CIBIL
+//  /api/credit/generate-cibil-report
+// Single-plan mode: no plan gate — auth only (single plan auto-applies via wallet tier fallback).
+// TODO(multi-plan-restore): re-add requirePlanChosen after auth on all four routes.
 router.post("/generate-cibil-report", auth, CibilReportFromDigi);
 
 // CRIF

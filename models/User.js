@@ -60,9 +60,34 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Pricing tier: startup | starter | growth | pro | enterprise. Set
+    // from the recharge slab at payment verification; upgrades and
+    // downgrades allowed via explicit plan activation.
+    activePlan: {
+      type: String,
+      enum: ["startup", "starter", "growth", "pro", "enterprise"],
+      default: null,
+    },
+    // Forced plan selection: UNUSED in single-plan mode (always false; the
+    // requirePlanChosen gate is detached). Kept for multi-plan restore.
+    // TODO(multi-plan-restore): re-enable forced pick via wallet top-ups.
+    pendingPlanChoice: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Last successful login (stamped by authController; null until first login after this field shipped).
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+    // Last low-balance alert sent (cron dedupes on this + interval).
+    lowBalanceLastAlertAt: {
+      type: Date,
+      default: null,
     },
     // Tracks when this admin last opened the Support Tickets page.
     // Used to compute the "new tickets since last visit" badge count.

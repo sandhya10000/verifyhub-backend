@@ -18,6 +18,12 @@ const AIAnalysisSchema = new mongoose.Schema(
       index: true,
     },
     fileName: { type: String, required: true },
+    // Basename of the file as saved on disk (multer timestamp-renamed).
+    // Portable across machines — resolved as path.join(UPLOAD_DIR,
+    // storedFileName) at serve time instead of trusting the absolute
+    // filePath recorded at upload time.
+    storedFileName: { type: String, default: null },
+    language:  { type: String, default: 'en' },   // ISO code for the report output language
     filePath: { type: String, required: true },
     fileType: { type: String, enum: ['pdf', 'json'], required: true },
     status: {
@@ -27,6 +33,7 @@ const AIAnalysisSchema = new mongoose.Schema(
       index: true,
     },
     errorMessage: { type: String, default: null },
+    errorCode: { type: String, default: null },
     debugError: { type: String, default: null },   // full error detail, only exposed in non-prod
     result: {
       score: { type: Number },
@@ -42,11 +49,9 @@ const AIAnalysisSchema = new mongoose.Schema(
     },
     resultPdfPath: { type: String, default: null },
     rawModelResponse: { type: mongoose.Schema.Types.Mixed, default: null },
-    // Full 8-section HTML report — generated lazily on first Download/Save action
-    htmlReport:      { type: String,  default: null },
-    htmlGenerating:  { type: Boolean, default: false },
-    htmlStatus:      { type: String, enum: ['generating', 'completed', 'failed'], default: null },
-    lastHtmlGenerationFailure: { type: Date, default: null },
+    // Full HTML report — rendered synchronously inline after the Claude extraction call
+    htmlReport:  { type: String, default: null },
+    htmlStatus:  { type: String, enum: ['generating', 'completed', 'failed'], default: null },
 
     // Chunked-pipeline fields — only set for PDFs over 100 pages
     isChunked:       { type: Boolean, default: false },   // true when the chunked path was used
@@ -55,6 +60,8 @@ const AIAnalysisSchema = new mongoose.Schema(
     // Full merged account list from all chunks — stored so generateFullHtmlReport()
     // can produce the rich HTML without re-sending the PDF a second time.
     mergedData: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Google Sheets export watermark (set by the scheduled sync job).
+    sheetSyncedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true }
 );
