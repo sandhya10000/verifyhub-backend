@@ -149,6 +149,61 @@ const debitFailedPull = async (
     return { ok: false, reason: "error" };
   }
 };
+
+// CIBIL failure billing classifier — single source of truth for both the
+// empty-data branch and the catch branch.
+// Policy: deduct the fail fee ONLY on provider status 400 (bad request —
+// partner-side input fault). Never deduct on 502/503/504 (service API
+// down), on transport failures with no provider response, or when
+// IndiConnect reports our own balance is exhausted (owner must recharge).
+// Bureau-side "source/bureau down" IS billed (IndiConnect attempted the
+// pull and bills us) unless the status itself is 502/503/504.
+// Returns { bill: boolean, reason: string } — reason is for server logs.
+// `status`: Number(provider status) or NaN when unknown.
+// `texts`: array of message strings from every provider field available.
+const classifyCibilFailure = (status, texts) => {
+  const joined = (texts || [])
+    .filter((t) => t !== null && t !== undefined)
+    .map((t) => String(t))
+    .join(" | ");
+
+  // 1. Our IndiConnect balance exhausted — always free, needs owner action.
+  // Shapes seen: decryptedError INSUFFICIENT_PROVIDER_BALANCE,
+  // "Provider balance is low or zero", "Insufficient Wallet Balance",
+  // "Insufficient balance to process this transaction".
+  if (
+    /INSUFFICIENT_PROVIDER_BALANCE|insufficient[^|]{0,40}balance|balance[^|]{0,40}(low|zero|exhausted|depleted|insufficient)|balance_exhausted/i.test(
+      joined,
+    )
+  ) {
+    return { bill: false, reason: "indiconnect-balance-exhausted" };
+  }
+
+  // 2. Service API itself down — always free.
+  const code = Number(status);
+  if (code === 502 || code === 503 || code === 504) {
+    return { bill: false, reason: "service-down-status" };
+  }
+  if (
+    /service[^|]{0,20}(down|unavailable)|temporarily unavailable|try again later|under maintenance|maintenance|gateway (timeout|error)|bad gateway|upstream|provider[^|]{0,20}(down|unavailable|timeout|error)|connection (refused|timed? ?out)|timed? ?out|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(
+      joined,
+    )
+  ) {
+    return { bill: false, reason: "service-down-message" };
+  }
+
+  // 3. Bureau source attempted but failed (billed to us) — bill it.
+  if (/source[^|]{0,20}down|bureau[^|]{0,20}(down|unavailable)/i.test(joined)) {
+    return { bill: true, reason: "bureau-source-down" };
+  }
+
+  // 4. Only status 400 bills. Anything else (no-record status 2,
+  // unknown codes, transport errors with no provider response) is free.
+  if (code === 400) {
+    return { bill: true, reason: "bad-request" };
+  }
+  return { bill: false, reason: "non-billable-status" };
+};
 //logic for cibil report from indiconnect
 const CibilReportFromDigi = async (req, res) => {
   let creditReport = null;
@@ -333,6 +388,8 @@ const CibilReportFromDigi = async (req, res) => {
           error {
             status
             message
+            decryptedError
+            raw
           }
         }
       }
@@ -413,19 +470,21 @@ const CibilReportFromDigi = async (req, res) => {
     );
     const isNoRecord =
       Number(indiBureauStatus) === 2 || /no record found/i.test(indiBureauMessage);
-    // Provider-side outage (bureau/source down, maintenance, gateway
-    // errors) — the partner is not at fault, so these pulls stay free.
-    // Checks every message the provider may use: verify.message,
-    // result.message, GraphQL errors, and HTTP error bodies (see catch).
-    const isDowntimeMessage = (text) =>
-      /source[^.]{0,20}down|bureau[^.]{0,20}(down|unavailable)|service[^.]{0,20}(down|unavailable)|temporarily unavailable|try again later|under maintenance|maintenance|gateway (timeout|error)|bad gateway|upstream|provider[^.]{0,20}(down|unavailable|timeout|error)|connection (refused|timed? ?out)|timed? ?out|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(
-        String(text || ""),
-      );
-    const isProviderDown =
-      isDowntimeMessage(indiBureauMessage) ||
-      (apiData?.errors || []).some((e) =>
-        isDowntimeMessage(e?.message || e),
-      );
+    // Failure billing inputs for classifyCibilFailure (see helper above):
+    // provider status (verify.status, else result.status) + every message
+    // field IndiConnect may use, including verify.error (balance-exhausted
+    // arrives as error.decryptedError INSUFFICIENT_PROVIDER_BALANCE).
+    const indiVerifyError = verify?.error || null;
+    const cibilFailureTexts = [
+      indiBureauMessage,
+      indiVerifyError?.message,
+      indiVerifyError?.decryptedError,
+      indiVerifyError?.raw,
+      ...(apiData?.errors || []).map((e) => e?.message || e),
+    ];
+    const cibilFailureStatus = Number(
+      verify?.status ?? indiResult?.status ?? NaN,
+    );
 
     if (apiData?.errors?.length) {
       console.error(
@@ -453,9 +512,9 @@ const CibilReportFromDigi = async (req, res) => {
 
     if (!cibilData || isNoRecord) {
       // Provider answered but returned no usable CIBIL data — record as
-      // Failed (like every other bureau's post-provider reject) and bill
-      // the fail fee per pricing config. Provider-downtime responses
-      // (source/bureau down, maintenance, gateway errors) stay free.
+      // Failed. Fail fee applies ONLY per classifyCibilFailure: status 400
+      // (or bureau source-down) bills; 502/503/504, service-down messages
+      // and our own IndiConnect balance exhaustion stay free.
       creditReport = await CreditReport.create({
         userId: req.user?._id,
         orderId: orderId || null,
@@ -491,22 +550,42 @@ const CibilReportFromDigi = async (req, res) => {
         indiBureauStatus,
       );
 
-      // Provider downtime (our upstream, not the partner's fault) stays
-      // free — same policy as provider auth failures.
+      // Fail fee ONLY on status 400 / bureau source-down (billable to us).
+      // Service-down, 502/503/504 and our IndiConnect balance exhaustion
+      // stay free — same policy as provider auth failures.
+      const emptyVerdict = classifyCibilFailure(
+        cibilFailureStatus,
+        cibilFailureTexts,
+      );
       let cibilEmptyCharge = { ok: false, total: 0 };
-      if (!isProviderDown) {
+      if (emptyVerdict.bill) {
         cibilEmptyCharge = await debitFailedPull(
           creditReport,
           "cibil",
           "CIBIL",
         );
       } else {
-        console.log("[wallet] CIBIL fail free (provider downtime)");
+        console.log(
+          `[wallet] CIBIL fail free (${emptyVerdict.reason}) for report ${creditReport._id}`,
+        );
+      }
+      if (emptyVerdict.reason === "indiconnect-balance-exhausted") {
+        console.error(
+          "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
+        );
       }
 
-      return res.status(400).json({
+      return res.status(
+        emptyVerdict.reason === "indiconnect-balance-exhausted" ||
+          emptyVerdict.reason.startsWith("service-down")
+          ? 503
+          : 400,
+      ).json({
         success: false,
-        message: indiBureauMessage || "CIBIL data not found in Bureau",
+        message:
+          emptyVerdict.reason === "indiconnect-balance-exhausted"
+            ? "Verification service temporarily unavailable. Please try again later."
+            : indiBureauMessage || "CIBIL data not found in Bureau",
         creditReportId: creditReport._id,
         status: creditReport.status,
         data: apiData,
@@ -686,40 +765,45 @@ const CibilReportFromDigi = async (req, res) => {
         String(error.response?.data?.message || ""),
       );
 
-    // Provider-side outage: HTTP 502/503/504 from the gateway, timeouts
-    // with no response (error.request), or downtime wording in the error
-    // body/message (source down, bureau down, maintenance...). The
-    // partner is not at fault, so these pulls stay free.
-    const catchBodyMessage = String(
-      error.response?.data?.message ||
-        error.response?.data?.error?.message ||
-        error.message ||
-        "",
+    // Failure billing per classifyCibilFailure: ONLY status 400 (or
+    // bureau source-down) bills. 502/503/504, transport failures with no
+    // provider response, service-down wording and our own IndiConnect
+    // balance exhaustion stay free. Auth failures stay free as before.
+    // The HTTP shape { status: "ERROR", code: 400, message:
+    // "Insufficient Wallet Balance" } lands here via error.response.data.
+    const catchBody = error.response?.data || null;
+    const catchTexts = [
+      catchBody?.message,
+      catchBody?.error?.message,
+      catchBody?.decryptedError,
+      error.message,
+    ];
+    const catchNoResponse = !error.response && !!error.request;
+    const catchVerdict = classifyCibilFailure(
+      catchNoResponse ? NaN : indiStatus,
+      catchTexts,
     );
-    const isCatchDowntime =
-      indiStatus === 502 ||
-      indiStatus === 503 ||
-      indiStatus === 504 ||
-      (!error.response && !!error.request) ||
-      /source[^.]{0,20}down|bureau[^.]{0,20}(down|unavailable)|service[^.]{0,20}(down|unavailable)|temporarily unavailable|try again later|under maintenance|maintenance|gateway (timeout|error)|bad gateway|upstream|provider[^.]{0,20}(down|unavailable|timeout|error)|connection (refused|timed? ?out)|timed? ?out|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(
-        catchBodyMessage,
-      );
 
     // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
     // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
-    // Provider auth failures (our credentials, not the partner's fault)
-    // and provider downtime stay free — same policy as Equifax 401/403.
     let cibilFailCharge = { ok: false, total: 0 };
-    if (!isIndiAuthFailure && !isCatchDowntime) {
+    if (!isIndiAuthFailure && catchVerdict.bill) {
       cibilFailCharge = await debitFailedPull(
         creditReport,
         "cibil",
         "CIBIL",
       );
-    } else if (isCatchDowntime) {
-      console.log("[wallet] CIBIL fail free (provider downtime)");
     } else {
-      console.log("[wallet] CIBIL fail free (provider auth failure)");
+      console.log(
+        `[wallet] CIBIL fail free (${
+          isIndiAuthFailure ? "provider auth failure" : catchVerdict.reason
+        })`,
+      );
+    }
+    if (catchVerdict.reason === "indiconnect-balance-exhausted") {
+      console.error(
+        "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
+      );
     }
 
     return res.status(indiStatus || 500).json({
@@ -727,7 +811,9 @@ const CibilReportFromDigi = async (req, res) => {
 
       message: isIndiAuthFailure
         ? "Bureau authentication failed. Please contact support."
-        : error.response?.data?.message || "Failed to generate CIBIL report",
+        : catchVerdict.reason === "indiconnect-balance-exhausted"
+          ? "Verification service temporarily unavailable. Please try again later."
+          : error.response?.data?.message || "Failed to generate CIBIL report",
 
       error: error.response?.data || error.message,
 
