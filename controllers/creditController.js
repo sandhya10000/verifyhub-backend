@@ -413,6 +413,19 @@ const CibilReportFromDigi = async (req, res) => {
     );
     const isNoRecord =
       Number(indiBureauStatus) === 2 || /no record found/i.test(indiBureauMessage);
+    // Provider-side outage (bureau/source down, maintenance, gateway
+    // errors) — the partner is not at fault, so these pulls stay free.
+    // Checks every message the provider may use: verify.message,
+    // result.message, GraphQL errors, and HTTP error bodies (see catch).
+    const isDowntimeMessage = (text) =>
+      /source[^.]{0,20}down|bureau[^.]{0,20}(down|unavailable)|service[^.]{0,20}(down|unavailable)|temporarily unavailable|try again later|under maintenance|maintenance|gateway (timeout|error)|bad gateway|upstream|provider[^.]{0,20}(down|unavailable|timeout|error)|connection (refused|timed? ?out)|timed? ?out|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(
+        String(text || ""),
+      );
+    const isProviderDown =
+      isDowntimeMessage(indiBureauMessage) ||
+      (apiData?.errors || []).some((e) =>
+        isDowntimeMessage(e?.message || e),
+      );
 
     if (apiData?.errors?.length) {
       console.error(
@@ -441,7 +454,8 @@ const CibilReportFromDigi = async (req, res) => {
     if (!cibilData || isNoRecord) {
       // Provider answered but returned no usable CIBIL data — record as
       // Failed (like every other bureau's post-provider reject) and bill
-      // the fail fee per pricing config.
+      // the fail fee per pricing config. Provider-downtime responses
+      // (source/bureau down, maintenance, gateway errors) stay free.
       creditReport = await CreditReport.create({
         userId: req.user?._id,
         orderId: orderId || null,
@@ -477,11 +491,18 @@ const CibilReportFromDigi = async (req, res) => {
         indiBureauStatus,
       );
 
-      const cibilEmptyCharge = await debitFailedPull(
-        creditReport,
-        "cibil",
-        "CIBIL",
-      );
+      // Provider downtime (our upstream, not the partner's fault) stays
+      // free — same policy as provider auth failures.
+      let cibilEmptyCharge = { ok: false, total: 0 };
+      if (!isProviderDown) {
+        cibilEmptyCharge = await debitFailedPull(
+          creditReport,
+          "cibil",
+          "CIBIL",
+        );
+      } else {
+        console.log("[wallet] CIBIL fail free (provider downtime)");
+      }
 
       return res.status(400).json({
         success: false,
@@ -665,17 +686,38 @@ const CibilReportFromDigi = async (req, res) => {
         String(error.response?.data?.message || ""),
       );
 
+    // Provider-side outage: HTTP 502/503/504 from the gateway, timeouts
+    // with no response (error.request), or downtime wording in the error
+    // body/message (source down, bureau down, maintenance...). The
+    // partner is not at fault, so these pulls stay free.
+    const catchBodyMessage = String(
+      error.response?.data?.message ||
+        error.response?.data?.error?.message ||
+        error.message ||
+        "",
+    );
+    const isCatchDowntime =
+      indiStatus === 502 ||
+      indiStatus === 503 ||
+      indiStatus === 504 ||
+      (!error.response && !!error.request) ||
+      /source[^.]{0,20}down|bureau[^.]{0,20}(down|unavailable)|service[^.]{0,20}(down|unavailable)|temporarily unavailable|try again later|under maintenance|maintenance|gateway (timeout|error)|bad gateway|upstream|provider[^.]{0,20}(down|unavailable|timeout|error)|connection (refused|timed? ?out)|timed? ?out|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(
+        catchBodyMessage,
+      );
+
     // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
     // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
     // Provider auth failures (our credentials, not the partner's fault)
-    // stay free — same policy as Equifax 401/403.
+    // and provider downtime stay free — same policy as Equifax 401/403.
     let cibilFailCharge = { ok: false, total: 0 };
-    if (!isIndiAuthFailure) {
+    if (!isIndiAuthFailure && !isCatchDowntime) {
       cibilFailCharge = await debitFailedPull(
         creditReport,
         "cibil",
         "CIBIL",
       );
+    } else if (isCatchDowntime) {
+      console.log("[wallet] CIBIL fail free (provider downtime)");
     } else {
       console.log("[wallet] CIBIL fail free (provider auth failure)");
     }
