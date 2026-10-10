@@ -105,20 +105,39 @@ exports.getTimeseries = async (req, res) => {
   try {
     const userId = req.user._id;
     const days = Math.min(parseInt(req.query.days || '14', 10), 90);
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
+
+    // Business day = Asia/Kolkata, computed explicitly — never from the
+    // server clock. The old code mixed UTC keys (toISOString / $dateToString
+    // default) with server-local labels, so today's pulls landed in a bucket
+    // key the series didn't contain and the chart showed 0 for today.
+    // IST has no DST (+05:30 fixed), so plain arithmetic is exact.
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const istParts = (t) => {
+      const d = new Date(t + IST_OFFSET_MS);
+      return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate() };
+    };
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const nowP = istParts(Date.now());
+    const todayIstMidnight = Date.UTC(nowP.y, nowP.m, nowP.day) - IST_OFFSET_MS;
+    const start = new Date(todayIstMidnight - (days - 1) * 86400000);
+    const dayKey = (t) => {
+      const p = istParts(t);
+      return `${p.y}-${pad2(p.m + 1)}-${pad2(p.day)}`;
+    };
 
     const [aiRows, crRows, spendRows] = await Promise.all([
       AIAnalysis.aggregate([
         { $match: { userId, status: 'completed', createdAt: { $gte: start } } },
-        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
       ]),
       CreditReport.aggregate([
         { $match: { userId, status: 'Success', createdAt: { $gte: start } } },
-        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
       ]),
       Transaction.aggregate([
         { $match: { userId, type: 'DEBIT', status: 'SUCCESS', createdAt: { $gte: start } } },
-        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, total: { $sum: '$amount' } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }, total: { $sum: '$amount' } } },
       ]),
     ]);
 
@@ -128,9 +147,10 @@ exports.getTimeseries = async (req, res) => {
 
     const series = [];
     for (let i = 0; i < days; i++) {
-      const d = new Date(start); d.setDate(d.getDate() + i);
-      const key = d.toISOString().slice(0, 10);
-      const label = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const t = start.getTime() + i * 86400000;
+      const p = istParts(t);
+      const key = dayKey(t);
+      const label = `${p.day} ${MONTHS[p.m]}`;
       const ai = aiMap[key] || 0, cr = crMap[key] || 0;
       series.push({ date: key, label, reports: ai + cr, spend: spendMap[key] || 0 });
     }
