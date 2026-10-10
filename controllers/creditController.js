@@ -1,5 +1,4 @@
 const axios = require("axios");
-const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
@@ -150,39 +149,56 @@ const debitFailedPull = async (
     return { ok: false, reason: "error" };
   }
 };
-//logic for cibil report from digi
+//logic for cibil report from indiconnect
 const CibilReportFromDigi = async (req, res) => {
   let creditReport = null;
 
   try {
-    console.log("[CIBIL] Starting CIBIL V7 report generation...");
+    console.log("[CIBIL] Starting CIBIL IndiConnect report generation...");
 
     // ============================================================
-    // 1. DIGI CONFIG
+    // 1. INDICONNECT CONFIG (mirrors ExperianReport pattern)
     // ============================================================
 
-    const baseUrl = process.env.DIGI_BASE_URL;
-    const partnerId = process.env.DIGI_PARTNER_ID;
-    const secretKey = process.env.DIGI_SECRET_KEY;
+    const baseUrl = process.env.INDICONNECT_BASE_URL?.trim();
+    const accessKey = process.env.INDICONNECT_ACCESS_KEY?.trim();
+    const secretKey = process.env.INDICONNECT_SECRET_KEY?.trim();
+    const serviceKey = process.env.INDICONNECT_SERVICE_KEY?.trim();
 
-    if (!baseUrl) {
+    // NOTE: the CIBIL provider code must be the CIBIL-specific code from
+    // the IndiConnect dashboard (one that has bureau-verification-cibil
+    // enabled). It is intentionally NOT defaulted to the Experian/CRIF
+    // codes — sending another product's providercode yields
+    // "Unsupported document type: bureau-verification-cibil".
+    const providerCode =
+      process.env.INDICONNECT_CIBIL_PROVIDER_CODE?.trim() || "";
+
+    const endpoint =
+      process.env.INDICONNECT_CIBIL_ENDPOINT?.trim() ||
+      "/idverifygr/verification";
+
+    const documentType =
+      process.env.INDICONNECT_CIBIL_DOCUMENT_TYPE?.trim() ||
+      "bureau-verification-cibil";
+
+    if (!baseUrl || !accessKey || !secretKey || !serviceKey) {
+      console.error("[CIBIL] Missing IndiConnect environment variables");
+
       return res.status(500).json({
         success: false,
-        message: "DIGI_BASE_URL is not configured",
+        message: "CIBIL API configuration is missing",
       });
     }
 
-    if (!partnerId) {
-      return res.status(500).json({
-        success: false,
-        message: "DIGI_PARTNER_ID is not configured",
-      });
-    }
+    if (!providerCode) {
+      console.error(
+        "[CIBIL] INDICONNECT_CIBIL_PROVIDER_CODE is not configured",
+      );
 
-    if (!secretKey) {
       return res.status(500).json({
         success: false,
-        message: "DIGI_SECRET_KEY is not configured",
+        message:
+          "CIBIL provider code is not configured. Set INDICONNECT_CIBIL_PROVIDER_CODE to the CIBIL-enabled code from the IndiConnect dashboard.",
       });
     }
 
@@ -281,77 +297,148 @@ const CibilReportFromDigi = async (req, res) => {
       });
     }
 
-    // Wallet gate: 0/insufficient balance par Digi API hit hi nahi hogi —
+    // Wallet gate: 0/insufficient balance par IndiConnect API hit hi nahi hogi —
     // na Pending doc banega, na provider cost lagegi.
     if (!(await affordOr402(req, res, "cibil"))) return;
 
     // ============================================================
-    // 3. GENERATE JWT (per DigiVerification auth docs)
-    // Contract: HS256 signed with the partner secret; payload MUST be
-    // { timestamp (unix seconds, valid <= 5 min), partnerId, reqid (random) }.
-    // Signed fresh on every request — never cached/reused.
+    // 3. INDICONNECT GRAPHQL QUERY + PAYLOAD
+    // Contract (per IndiConnect "Bureau Verification B (CIBIL)" docs):
+    // POST {baseUrl}{endpoint} with headers
+    // { service-key, Authorization: x-api-access secret:access,
+    //   providercode (CIBIL-enabled code), Content-Type: application/json }.
+    // NOTE: no myAppId header — that is Experian-only.
     // ============================================================
 
-    const cleanPartnerId = String(partnerId || "").trim();
-    const cleanSecretKey = String(secretKey || "").trim();
+    const CIBIL_QUERY = `
+      mutation VerifyBureauB($input: VerifyInput!) {
+        verify(input: $input) {
+          ok
+          message
+          status
+          result {
+            ... on BTBureauBResult {
+              txn_id
+              api_category
+              api_name
+              billable
+              message
+              status
+              datetime
+              client_id
+              htmlUrl
+              cibilData
+            }
+          }
+          error {
+            status
+            message
+          }
+        }
+      }
+    `;
 
-    const jwtToken = jwt.sign(
-      {
-        timestamp: Math.floor(Date.now() / 1000),
-        partnerId: cleanPartnerId,
-        reqid: Math.floor(Math.random() * 1000000000),
+    const indiPayload = {
+      query: CIBIL_QUERY,
+      variables: {
+        input: {
+          documentType,
+          pan: pan.toString().trim().toUpperCase(),
+          name: customerName,
+          mobile: mobile.toString().trim(),
+        },
       },
-      cleanSecretKey,
-    );
-
-    console.log("[CIBIL] JWT generated", jwtToken);
-
-    // ============================================================
-    // 4. DIGI PAYLOAD
-    // ============================================================
-
-    const digiPayload = {
-      fullname: customerName,
-      mobile: mobile.toString().trim(),
-      pan: pan.toString().trim().toUpperCase(),
-      consent: "Y",
     };
 
-    console.log("[CIBIL] Digi Payload:", {
-      fullname: customerName,
+    console.log("[CIBIL] IndiConnect Payload:", {
+      documentType,
+      name: customerName,
       mobile: "********",
       pan: "********",
-      consent: "Y",
     });
 
     // ============================================================
-    // 5. CALL DIGI API
+    // 4. CALL INDICONNECT API
     // ============================================================
 
-    const apiUrl = `${baseUrl.replace(/\/+$/, "")}/api/v7/cibil-bureau-report`;
+    const apiUrl =
+      `${baseUrl.replace(/\/$/, "")}/` + `${endpoint.replace(/^\//, "")}`;
 
     console.log("[CIBIL] Calling:", apiUrl);
+    console.log("[CIBIL] Provider Code:", providerCode);
 
-    const response = await axios.post(apiUrl, digiPayload, {
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-        "jwt-token": jwtToken,
-      },
-      timeout: 120000,
+    const headers = {
+      "service-key": serviceKey,
+      Authorization: `x-api-access ${secretKey}:${accessKey}`,
+      providercode: providerCode,
+      "Content-Type": "application/json",
+    };
+
+    const response = await axios.post(apiUrl, indiPayload, {
+      headers,
+      timeout: 60000,
     });
 
-    const apiData = response.data;
+    let apiData = response.data;
 
-    console.log("[CIBIL] Digi API success:", apiData?.success);
+    console.log("[CIBIL] IndiConnect verify ok:", apiData?.data?.verify?.ok);
+
+    // ============================================================
+    // 5. PARSE INDICONNECT RESPONSE + ADAPT TO LEGACY SHAPE
+    // Downstream (extractCibilScore, generateCibilPdf) expects
+    // apiData.data.cibilData (Digi shape). IndiConnect nests it at
+    // data.verify.result.cibilData, so expose it at data.cibilData
+    // while keeping the raw GraphQL response for audit.
+    // ============================================================
+
+    const verify = apiData?.data?.verify || null;
+    const indiResult = verify?.result || null;
+    const rawCibilData = indiResult?.cibilData || null;
+    const cibilData =
+      rawCibilData && typeof rawCibilData === "string"
+        ? (() => {
+            try {
+              return JSON.parse(rawCibilData);
+            } catch {
+              return rawCibilData;
+            }
+          })()
+        : rawCibilData;
+    const indiHtmlUrl = indiResult?.htmlUrl || null;
+    const indiTxnId = indiResult?.txn_id || null;
+    const indiBillable = indiResult?.billable;
+    const indiBureauStatus = indiResult?.status;
+    const indiBureauMessage = String(
+      indiResult?.message || verify?.message || "",
+    );
+    const isNoRecord =
+      Number(indiBureauStatus) === 2 || /no record found/i.test(indiBureauMessage);
+
+    if (apiData?.errors?.length) {
+      console.error(
+        "[CIBIL] IndiConnect GraphQL Errors:",
+        JSON.stringify(apiData.errors, null, 2),
+      );
+    }
+
+    console.log("[CIBIL] Txn:", indiTxnId, "billable:", indiBillable);
+
+    // Adapted shape for legacy downstream (score extractor + PDF service).
+    if (cibilData) {
+      apiData = {
+        ...apiData,
+        data: {
+          ...(apiData?.data || {}),
+          cibilData,
+        },
+      };
+    }
 
     // ============================================================
     // 6. CHECK CIBIL DATA
     // ============================================================
 
-    const cibilData = apiData?.data?.cibilData;
-
-    if (!cibilData) {
+    if (!cibilData || isNoRecord) {
       // Provider answered but returned no usable CIBIL data — record as
       // Failed (like every other bureau's post-provider reject) and bill
       // the fail fee per pricing config.
@@ -381,7 +468,14 @@ const CibilReportFromDigi = async (req, res) => {
         isPublic: false,
       });
 
-      console.log("[CIBIL] Empty-data CreditReport marked as Failed:", creditReport._id);
+      console.log(
+        "[CIBIL] Empty-data CreditReport marked as Failed:",
+        creditReport._id,
+        "txn:",
+        indiTxnId,
+        "bureauStatus:",
+        indiBureauStatus,
+      );
 
       const cibilEmptyCharge = await debitFailedPull(
         creditReport,
@@ -391,7 +485,7 @@ const CibilReportFromDigi = async (req, res) => {
 
       return res.status(400).json({
         success: false,
-        message: "CIBIL data not found in Bureau",
+        message: indiBureauMessage || "CIBIL data not found in Bureau",
         creditReportId: creditReport._id,
         status: creditReport.status,
         data: apiData,
@@ -448,7 +542,7 @@ const CibilReportFromDigi = async (req, res) => {
 
       status: "Pending",
 
-      reportUrl: null,
+      reportUrl: indiHtmlUrl || null,
 
       localPath: null,
 
@@ -464,6 +558,8 @@ const CibilReportFromDigi = async (req, res) => {
       creditReport._id,
       "score:",
       creditReport.score,
+      "txn:",
+      indiTxnId,
     );
 
     // ============================================================
@@ -486,7 +582,7 @@ const CibilReportFromDigi = async (req, res) => {
 
     creditReport.localPath = pdf.filePath;
 
-    creditReport.reportUrl = pdf.relativePath;
+    creditReport.reportUrl = indiHtmlUrl || pdf.relativePath;
 
     // Re-derive score at completion (same extractor as creation) so the
     // final Success row can never carry a stale null.
@@ -549,21 +645,22 @@ const CibilReportFromDigi = async (req, res) => {
     }
 
     // ============================================================
-    // DIGI ERROR
+    // INDICONNECT ERROR
     // ============================================================
 
     if (error.response) {
-      console.error("[CIBIL] Digi API status:", error.response.status);
+      console.error("[CIBIL] IndiConnect API status:", error.response.status);
 
-      console.error("[CIBIL] Digi API response:", error.response.data);
+      console.error("[CIBIL] IndiConnect API response:", error.response.data);
     }
 
-    // Provider auth failures (bad/rotated secret, IP/geo block, inactive
-    // product) surface as Digi 401s. Don't leak raw provider strings
-    // (which embed server IPs) to the UI — full body stays server-side above.
-    const digiStatus = error.response?.status;
-    const isDigiAuthFailure =
-      digiStatus === 401 ||
+    // Provider auth failures (bad/rotated keys, inactive product) surface
+    // as 401/403s. Don't leak raw provider strings to the UI — full body
+    // stays server-side above.
+    const indiStatus = error.response?.status;
+    const isIndiAuthFailure =
+      indiStatus === 401 ||
+      indiStatus === 403 ||
       /authentication failed/i.test(
         String(error.response?.data?.message || ""),
       );
@@ -573,7 +670,7 @@ const CibilReportFromDigi = async (req, res) => {
     // Provider auth failures (our credentials, not the partner's fault)
     // stay free — same policy as Equifax 401/403.
     let cibilFailCharge = { ok: false, total: 0 };
-    if (!isDigiAuthFailure) {
+    if (!isIndiAuthFailure) {
       cibilFailCharge = await debitFailedPull(
         creditReport,
         "cibil",
@@ -583,10 +680,10 @@ const CibilReportFromDigi = async (req, res) => {
       console.log("[wallet] CIBIL fail free (provider auth failure)");
     }
 
-    return res.status(digiStatus || 500).json({
+    return res.status(indiStatus || 500).json({
       success: false,
 
-      message: isDigiAuthFailure
+      message: isIndiAuthFailure
         ? "Bureau authentication failed. Please contact support."
         : error.response?.data?.message || "Failed to generate CIBIL report",
 

@@ -251,6 +251,11 @@ const renderPersonalInformation = (data) => {
 
 const renderCreditScore = (data) => {
   const score = data.score || {};
+  const hasScore =
+    score.value !== null &&
+    score.value !== undefined &&
+    score.value !== "" &&
+    score.value !== "-";
 
   return `
     ${sectionTitle("CIBIL Score")}
@@ -264,7 +269,7 @@ const renderCreditScore = (data) => {
         </div>
 
         <div class="score-value">
-          ${safe(score.value)}
+          ${hasScore ? safe(score.value) : "Not available"}
         </div>
 
       </div>
@@ -280,8 +285,105 @@ const renderCreditScore = (data) => {
       </div>
 
     </div>
+    ${
+      hasScore
+        ? ""
+        : `<div class="data-note">Score unavailable — the bureau did not return a credit score for this profile.</div>`
+    }
   `;
 };
+
+// ============================================================
+// BUREAU STATUS INDICATORS
+// Safety-check / frozen / deceased / fraud flags are bureau-reported
+// file-level states. Shown explicitly so a suppressed file can never
+// look identical to a clean one.
+// ============================================================
+
+const formatBureauFlag = (value) => {
+  if (value === true || value === "true" || value === "Y" || value === 1) {
+    return { text: "Yes", className: "flag-yes" };
+  }
+
+  if (
+    value === false ||
+    value === "false" ||
+    value === "N" ||
+    value === 0 ||
+    value === "Passed" ||
+    value === "PASS"
+  ) {
+    return { text: "No", className: "flag-no" };
+  }
+
+  return { text: "Not reported", className: "flag-na" };
+};
+
+const renderBureauStatus = (data) => {
+  const status = data.bureauStatus || {};
+
+  const flags = [
+    { label: "Safety Check Passed", value: status.safetyCheckPassed },
+    { label: "File Frozen", value: status.frozen },
+    { label: "Deceased Indicator", value: status.deceased },
+    { label: "Fraud Indicator", value: status.fraud },
+  ];
+
+  return `
+    ${sectionTitle("Bureau File Status", "As reported by the bureau")}
+
+    <div class="flag-strip">
+
+      ${flags
+        .map((flag) => {
+          const formatted = formatBureauFlag(flag.value);
+
+          return `
+            <div class="flag-item">
+              <div class="flag-label">${safe(flag.label)}</div>
+              <div class="flag-value ${formatted.className}">${formatted.text}</div>
+            </div>
+          `;
+        })
+        .join("")}
+
+    </div>
+  `;
+};
+
+// ============================================================
+// BUREAU CREDIT SUMMARY (as-reported aggregates)
+// Values are displayed verbatim from the bureau — never recomputed.
+// The whole section is skipped when the bureau did not send it.
+// ============================================================
+
+const renderBureauCreditSummary = (data) => {
+  const summary = data.creditSummary;
+
+  if (!summary) {
+    return "";
+  }
+
+  return `
+    ${sectionTitle("Bureau Credit Summary", "Aggregates as reported by the bureau")}
+
+    <div class="info-grid">
+
+      ${infoItem("Oldest Credit Account (months)", summary.oldestCreditAccountPeriod)}
+
+      ${infoItem("Enquiries", summary.inquiries)}
+
+      ${infoItem("On-Time Payment History (%)", summary.onTimePaymentHistory)}
+
+      ${infoItem("Credit Card Utilization (%)", summary.creditCardUtilization)}
+
+      ${infoItem("Credit Mix", summary.creditMix)}
+
+    </div>
+  `;
+};
+
+
 
 // ============================================================
 // ACCOUNT SUMMARY
@@ -371,7 +473,7 @@ const renderAddresses = (data) => {
       ${sectionTitle("Address Information")}
 
       <div class="empty-box">
-        No address information available.
+        Address information not reported by bureau.
       </div>
     `;
   }
@@ -386,6 +488,7 @@ const renderAddresses = (data) => {
         <thead>
           <tr>
             <th>#</th>
+            <th>Address</th>
             <th>City</th>
             <th>State</th>
             <th>PIN Code</th>
@@ -401,6 +504,7 @@ const renderAddresses = (data) => {
               (item, index) => `
                 <tr>
                   <td>${index + 1}</td>
+                  <td>${safe(item.address)}</td>
                   <td>${safe(item.city)}</td>
                   <td>${safe(item.state)}</td>
                   <td>${safe(item.pincode)}</td>
@@ -452,13 +556,9 @@ const renderIdentifiers = (data) => {
               (item, index) => `
                 <tr>
                   <td>${index + 1}</td>
-                  <td>${safe(
-                    item.type || item.symbol || item.IdentifierType || "-",
-                  )}</td>
+                  <td>${safe(item.type)}</td>
 
-                  <td>${safe(
-                    item.value || item.IdentifierValue || item.id || "-",
-                  )}</td>
+                  <td>${safe(item.value)}</td>
                 </tr>
               `,
             )
@@ -478,19 +578,37 @@ const renderIdentifiers = (data) => {
 
 const renderEmployment = (data) => {
   const employment = data.employment || {};
+  const allEmployments =
+    Array.isArray(employment.all) && employment.all.length
+      ? employment.all
+      : [employment];
 
   return `
-    ${sectionTitle("Employment Information")}
+    ${sectionTitle(
+      "Employment Information",
+      allEmployments.length > 1
+        ? `${allEmployments.length} records reported`
+        : "",
+    )}
 
-    <div class="info-grid">
+    ${allEmployments
+      .map(
+        (entry, index) => `
+      <div class="info-grid">
 
-      ${infoItem("Employer", employment.employer)}
+        ${infoItem(
+          allEmployments.length > 1 ? `Employer ${index + 1}` : "Employer",
+          entry.employer,
+        )}
 
-      ${infoItem("Occupation", employment.occupation)}
+        ${infoItem("Occupation", entry.occupation)}
 
-      ${infoItem("Date Reported", formatDate(employment.dateReported))}
+        ${infoItem("Date Reported", formatDate(entry.dateReported))}
 
-    </div>
+      </div>
+    `,
+      )
+      .join("")}
   `;
 };
 // ============================================================
@@ -929,7 +1047,7 @@ const renderAccounts = (data) => {
       ${sectionTitle("Credit Accounts")}
 
       <div class="empty-box">
-        No credit accounts found.
+        Credit accounts not reported by bureau.
       </div>
     `;
   }
@@ -953,7 +1071,7 @@ const renderEnquiries = (data) => {
       ${sectionTitle("Credit Enquiries")}
 
       <div class="empty-box">
-        No credit enquiries found.
+        Credit enquiries not reported by bureau.
       </div>
     `;
   }
@@ -1232,7 +1350,7 @@ const buildCibilReportHtml = (data) => {
   margin-top: 4px;
   color: #172033;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 500;
   line-height: 1.4;
   word-break: break-word;
 }
@@ -1297,7 +1415,7 @@ const buildCibilReportHtml = (data) => {
 
 .contact-value {
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 500;
   color: #172033;
   word-break: break-word;
 }
@@ -1371,7 +1489,7 @@ const buildCibilReportHtml = (data) => {
     font-size: 36px;
     line-height: 1;
 
-    font-weight: 900;
+    font-weight: 700;
 
     color: #123d70;
   }
@@ -1452,7 +1570,7 @@ const buildCibilReportHtml = (data) => {
   margin-top: 7px;
   padding-left: 3px;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   color: #172033;
   word-break: break-word;
 }
@@ -1493,7 +1611,7 @@ th {
 td {
   color: #172033;
   font-size: 8.5px;
-  font-weight: 700;
+  font-weight: 400;
 }
 
   th:last-child {
@@ -1828,6 +1946,70 @@ td {
   }
 
   /* ============================================================
+     BUREAU STATUS FLAGS
+  ============================================================ */
+
+  .flag-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .flag-item {
+    flex: 1 1 130px;
+
+    padding: 9px 11px;
+
+    border: 1px solid #dbe3ec;
+    border-radius: 7px;
+
+    background: #f8fafc;
+  }
+
+  .flag-label {
+    font-size: 7px;
+    font-weight: 700;
+
+    color: #64748b;
+
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  .flag-value {
+    margin-top: 4px;
+
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .flag-yes {
+    color: #b91c1c;
+  }
+
+  .flag-no {
+    color: #15803d;
+  }
+
+  .flag-na {
+    color: #64748b;
+    font-weight: 400;
+  }
+
+  /* ============================================================
+     DATA NOTE
+  ============================================================ */
+
+  .data-note {
+    margin-top: 8px;
+
+    font-size: 8px;
+    font-style: italic;
+
+    color: #64748b;
+  }
+
+  /* ============================================================
      FOOTER
   ============================================================ */
 
@@ -1899,7 +2081,11 @@ td {
 
   ${renderCreditScore(data)}
 
+  ${renderBureauStatus(data)}
+
   ${renderAccountSummary(data)}
+
+  ${renderBureauCreditSummary(data)}
 
   ${renderAddresses(data)}
 

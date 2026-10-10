@@ -9,18 +9,16 @@ const cors = require("cors");
 const path = require("path");
 dotenv.config();
 
-console.log(
-  "[DIGI] Token Status:",
-  process.env.DIGI_API_TOKEN ? "FOUND" : "MISSING",
-);
-// Presence only (never values): CIBIL/Digi signing needs all three.
+// Presence only (never values): CIBIL/IndiConnect needs base + keys.
 // A missing/empty var here fails fast instead of surfacing as a
 // provider "Authentication failed" at request time.
 console.log(
-  "[DIGI] CIBIL config:",
-  `baseUrl=${process.env.DIGI_BASE_URL ? "SET" : "MISSING"}`,
-  `partnerId=${process.env.DIGI_PARTNER_ID ? `SET(${(process.env.DIGI_PARTNER_ID || "").trim().length} chars)` : "MISSING"}`,
-  `secretKey=${process.env.DIGI_SECRET_KEY ? `SET(${(process.env.DIGI_SECRET_KEY || "").trim().length} chars)` : "MISSING"}`,
+  "[INDI-CIBIL] config:",
+  `baseUrl=${process.env.INDICONNECT_BASE_URL ? "SET" : "MISSING"}`,
+  `accessKey=${process.env.INDICONNECT_ACCESS_KEY ? "SET" : "MISSING"}`,
+  `secretKey=${process.env.INDICONNECT_SECRET_KEY ? "SET" : "MISSING"}`,
+  `serviceKey=${process.env.INDICONNECT_SERVICE_KEY ? "SET" : "MISSING"}`,
+  `providerCode=${process.env.INDICONNECT_CIBIL_PROVIDER_CODE ? "SET" : "MISSING"}`,
 );
 console.log("=================================");
 const connectDB = require("./config/db");

@@ -16,6 +16,25 @@ const getTrueLinkCreditReport = (apiResponse) => {
 };
 
 // ============================================================
+// SHAPE COERCION
+// The bureau sometimes returns a singleton object where the docs show
+// an array (single account / address / phone / enquiry). Coercing here
+// prevents whole sections from silently rendering empty.
+// ============================================================
+
+const asArray = (value) => {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) return value;
+  return [value];
+};
+
+// Returns true when the raw value was present but NOT an array, so the
+// caller can record a data-quality warning.
+const wasSingleton = (value) => {
+  return value !== null && value !== undefined && !Array.isArray(value);
+};
+
+// ============================================================
 // NORMALIZE EMPTY VALUES
 // ============================================================
 
@@ -29,12 +48,26 @@ const cleanValue = (value, fallback = "-") => {
 
 // ============================================================
 // DATE
+// Bureau dates may carry timezone suffixes ("1994-12-18+05:30") or
+// datetime separators ("2026-09-01T18:22:10.250+05:30"). Strip those so
+// the PDF shows a clean date instead of raw bureau artifacts.
 // ============================================================
 
 const normalizeDate = (value) => {
   if (!value) return "-";
 
-  return String(value);
+  let text = String(value).trim();
+
+  // Drop time portion of ISO datetimes, keep the date part.
+  const tIndex = text.indexOf("T");
+  if (tIndex > 0 && /^\d{4}-\d{2}-\d{2}/.test(text)) {
+    text = text.slice(0, tIndex);
+  }
+
+  // Drop trailing timezone suffixes ("+05:30", "-04:00", "Z").
+  text = text.replace(/([+-]\d{2}:?\d{2}|Z)$/, "");
+
+  return text || "-";
 };
 
 // ============================================================
@@ -68,15 +101,48 @@ const toNumber = (value) => {
 // ============================================================
 
 const normalizePaymentHistory = (history) => {
-  if (!history || !Array.isArray(history.MonthlyPayStatus)) {
+  if (!history) {
     return [];
   }
 
-  return history.MonthlyPayStatus.map((item) => ({
-    date: item?.date || "-",
-    status:
-      item?.status !== undefined && item?.status !== null ? item.status : "-",
-  }));
+  // Primary bureau key first, known alternates after — never render an
+  // empty grid while usable history exists under another key.
+  const raw =
+    history.MonthlyPayStatus ||
+    history.monthlyPayStatus ||
+    history.PaymentHistory ||
+    history.payStatusHistory ||
+    history.History ||
+    null;
+
+  const entries = asArray(raw);
+
+  if (!entries.length) {
+    return [];
+  }
+
+  return entries.map((item) => {
+    if (typeof item === "string") {
+      return { date: "-", status: item };
+    }
+
+    return {
+      date:
+        item?.date ||
+        item?.paymentDate ||
+        item?.month ||
+        item?.reportDate ||
+        item?.Date ||
+        "-",
+      status:
+        item?.status ??
+        item?.payStatus ??
+        item?.assetClassification ??
+        item?.AssetClassification ??
+        item?.classification ??
+        "-",
+    };
+  });
 };
 
 // ============================================================
@@ -110,13 +176,15 @@ const extractBorrowerName = (borrower) => {
 // ============================================================
 
 const extractEmails = (borrower) => {
-  if (!Array.isArray(borrower?.EmailAddress)) {
+  const entries = asArray(borrower?.EmailAddress);
+
+  if (!entries.length) {
     return [];
   }
 
   return [
     ...new Set(
-      borrower.EmailAddress.map((item) => {
+      entries.map((item) => {
         if (typeof item === "string") {
           return item;
         }
@@ -132,13 +200,15 @@ const extractEmails = (borrower) => {
 // ============================================================
 
 const extractPhones = (borrower) => {
-  if (!Array.isArray(borrower?.BorrowerTelephone)) {
+  const entries = asArray(borrower?.BorrowerTelephone);
+
+  if (!entries.length) {
     return [];
   }
 
   return [
     ...new Set(
-      borrower.BorrowerTelephone.map((item) => {
+      entries.map((item) => {
         if (typeof item === "string") {
           return item;
         }
@@ -160,27 +230,68 @@ const extractPhones = (borrower) => {
 // ============================================================
 
 const extractAddresses = (borrower) => {
-  if (!Array.isArray(borrower?.BorrowerAddress)) {
+  const entries = asArray(borrower?.BorrowerAddress);
+
+  if (!entries.length) {
     return [];
   }
 
-  return borrower.BorrowerAddress.map((item) => {
-    const address = item?.CreditAddress || {};
+  return entries.map((item) => {
+    if (typeof item === "string") {
+      return {
+        address: item,
+        city: "-",
+        state: "-",
+        pincode: "-",
+        reportedDate: "-",
+        origin: "-",
+      };
+    }
+
+    const address = item?.CreditAddress || item || {};
 
     return {
-      address: address.StreetAddress || "-",
+      address:
+        address.StreetAddress ||
+        address.AddressLine ||
+        address.addressLine1 ||
+        address.Street ||
+        address.street ||
+        address.Address ||
+        address.address ||
+        address.Line1 ||
+        "-",
 
-      city: address.City || "-",
+      city: address.City || address.city || address.CityName || "-",
 
-      state: address.Region || "-",
+      state: address.Region || stateFallback(address) || "-",
 
-      pincode: address.PostalCode || "-",
+      pincode:
+        address.PostalCode ||
+        address.Pincode ||
+        address.pincode ||
+        address.PIN ||
+        address.pin ||
+        address.ZipCode ||
+        "-",
 
-      reportedDate: item?.dateReported || "-",
+      reportedDate: normalizeDate(item?.dateReported),
 
-      origin: item?.Origin?.symbol || "-",
+      origin:
+        item?.Origin?.symbol ||
+        item?.Origin?.description ||
+        (typeof item?.Origin === "string" ? item.Origin : null) ||
+        item?.origin ||
+        item?.source ||
+        item?.Source ||
+        "-",
     };
   });
+};
+
+// Some payloads use StateCode/State instead of Region.
+const stateFallback = (address) => {
+  return address?.StateCode || address?.State || address?.state || null;
 };
 
 // ============================================================
@@ -194,46 +305,118 @@ const extractIdentifiers = (borrower) => {
     return [];
   }
 
-  let identifiers = identifierPartition.Identifier;
+  const identifiers = asArray(identifierPartition.Identifier);
 
-  if (!Array.isArray(identifiers)) {
-    if (identifiers) {
-      identifiers = [identifiers];
-    } else {
-      return [];
-    }
+  if (!identifiers.length) {
+    return [];
   }
 
-  return identifiers.map((item) => ({
-    type:
-      item?.IdentifierType?.description ||
-      item?.IdentifierType?.symbol ||
-      item?.type ||
-      item?.symbol ||
-      "-",
+  return identifiers.map((item) => {
+    if (typeof item === "string") {
+      return { type: "-", value: item };
+    }
 
-    value: item?.IdentifierValue || item?.value || item?.id || "-",
-  }));
+    const rawType = item?.IdentifierType;
+    const typeFromObject =
+      rawType && typeof rawType === "object"
+        ? rawType.description ||
+          rawType.symbol ||
+          rawType.value ||
+          rawType.code ||
+          rawType.name ||
+          null
+        : null;
+
+    return {
+      type:
+        typeFromObject ||
+        (typeof rawType === "string" ? rawType : null) ||
+        item?.idType ||
+        item?.IDType ||
+        item?.typeCode ||
+        item?.Type ||
+        item?.code ||
+        item?.description ||
+        item?.type ||
+        item?.symbol ||
+        "-",
+
+      value:
+        item?.IdentifierValue ||
+        item?.identifierValue ||
+        item?.IdentifierNumber ||
+        item?.number ||
+        item?.idNumber ||
+        item?.IDNumber ||
+        item?.IdValue ||
+        item?.IDValue ||
+        item?.identifierNumber ||
+        item?.documentNumber ||
+        item?.value ||
+        item?.id ||
+        "-",
+    };
+  });
 };
 
 // ============================================================
 // EMPLOYMENT
 // ============================================================
 
-const extractEmployment = (borrower) => {
-  const employer = borrower?.Employer || borrower?.Employment || {};
+const normalizeSingleEmployment = (employer) => {
+  const source =
+    typeof employer === "string" ? { name: employer } : employer || {};
+  const rawOccupation = source?.OccupationCode;
 
   return {
     employer:
-      employer?.name || employer?.EmployerName || employer?.CompanyName || "-",
-
-    occupation:
-      employer?.OccupationCode?.description ||
-      employer?.OccupationCode?.symbol ||
-      employer?.occupation ||
+      source?.name ||
+      source?.EmployerName ||
+      source?.employerName ||
+      source?.CompanyName ||
+      source?.Company ||
+      source?.company ||
+      source?.organization ||
+      source?.Organization ||
+      source?.employer ||
       "-",
 
-    dateReported: employer?.dateReported || "-",
+    occupation:
+      (rawOccupation && typeof rawOccupation === "object"
+        ? rawOccupation.description || rawOccupation.symbol
+        : rawOccupation) ||
+      source?.occupation ||
+      source?.Occupation ||
+      source?.designation ||
+      source?.Designation ||
+      "-",
+
+    dateReported: normalizeDate(source?.dateReported),
+  };
+};
+
+const extractEmployment = (borrower) => {
+  const raw =
+    borrower?.Employer ||
+    borrower?.Employment ||
+    borrower?.Employments ||
+    borrower?.employments ||
+    null;
+  const entries = asArray(raw).filter(Boolean);
+
+  const all = entries.map(normalizeSingleEmployment);
+
+  // Backward-compatible primary shape for the existing template section,
+  // plus the full list so multiple employments are no longer collapsed.
+  const primary = all[0] || {
+    employer: "-",
+    occupation: "-",
+    dateReported: "-",
+  };
+
+  return {
+    ...primary,
+    all,
   };
 };
 
@@ -270,9 +453,7 @@ const getAccountStatus = (tradeline) => {
 // ============================================================
 
 const extractAccounts = (report) => {
-  const partitions = Array.isArray(report?.TradeLinePartition)
-    ? report.TradeLinePartition
-    : [];
+  const partitions = asArray(report?.TradeLinePartition);
 
   const accounts = [];
 
@@ -392,9 +573,7 @@ const extractAccounts = (report) => {
 // ============================================================
 
 const extractInquiries = (report) => {
-  const partitions = Array.isArray(report?.InquiryPartition)
-    ? report.InquiryPartition
-    : [];
+  const partitions = asArray(report?.InquiryPartition);
 
   const inquiries = [];
 
@@ -412,7 +591,7 @@ const extractInquiries = (report) => {
         inquiry?.MemberName ||
         "-",
 
-      inquiryDate: inquiry?.inquiryDate || inquiry?.date || "-",
+      inquiryDate: normalizeDate(inquiry?.inquiryDate || inquiry?.date),
 
       inquiryType: inquiry?.inquiryType || "-",
 
@@ -479,6 +658,40 @@ const calculateSummary = (accounts) => {
 // PREPARE PDF DATA
 // ============================================================
 
+// ============================================================
+// GET CUSTOMER ASSETS SUCCESS NODE
+// Holds bureau-level aggregates (CreditSummaryData) alongside the
+// TrueLink report. Returned as {} when absent — never throws.
+// ============================================================
+
+const getCustomerAssetsSuccess = (apiResponse) => {
+  return (
+    apiResponse?.data?.cibilData?.GetCustomerAssetsResponse
+      ?.GetCustomerAssetsSuccess || {}
+  );
+};
+
+// ============================================================
+// BUREAU CREDIT SUMMARY (as-reported aggregates)
+// Displayed verbatim from the bureau — never recomputed locally.
+// ============================================================
+
+const extractCreditSummary = (successNode) => {
+  const summary = successNode?.CreditSummaryData || null;
+
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    oldestCreditAccountPeriod: summary?.OldestCreditAccountPeriod ?? "-",
+    inquiries: summary?.Inquires ?? summary?.Inquiries ?? "-",
+    onTimePaymentHistory: summary?.OnTimePaymentHistory ?? "-",
+    creditCardUtilization: summary?.CreditCardUtilization ?? "-",
+    creditMix: summary?.CreditMix ?? "-",
+  };
+};
+
 const prepareCibilPdfData = (apiResponse, creditReportId) => {
   const report = getTrueLinkCreditReport(apiResponse);
 
@@ -486,7 +699,39 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
     throw new Error("TrueLinkCreditReport not found in CIBIL API response");
   }
 
+  const parseWarnings = [];
+  const successNode = getCustomerAssetsSuccess(apiResponse);
   const borrower = report?.Borrower || {};
+
+  // ----------------------------------------------------------
+  // SINGLETON COERCIONS (data present under an unexpected shape)
+  // ----------------------------------------------------------
+
+  if (wasSingleton(report?.TradeLinePartition)) {
+    parseWarnings.push(
+      "TradeLinePartition arrived as a single object; coerced to a one-account list.",
+    );
+  }
+  if (wasSingleton(report?.InquiryPartition)) {
+    parseWarnings.push(
+      "InquiryPartition arrived as a single object; coerced to a one-enquiry list.",
+    );
+  }
+  if (wasSingleton(borrower?.BorrowerAddress)) {
+    parseWarnings.push(
+      "BorrowerAddress arrived as a single object; coerced to a one-address list.",
+    );
+  }
+  if (wasSingleton(borrower?.BorrowerTelephone)) {
+    parseWarnings.push(
+      "BorrowerTelephone arrived as a single object; coerced to a one-phone list.",
+    );
+  }
+  if (wasSingleton(borrower?.EmailAddress)) {
+    parseWarnings.push(
+      "EmailAddress arrived as a single object; coerced to a one-email list.",
+    );
+  }
 
   const name = extractBorrowerName(borrower);
 
@@ -504,7 +749,32 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
 
   const inquiries = extractInquiries(report);
 
+  const creditSummary = extractCreditSummary(successNode);
+
   const score = borrower?.CreditScore || {};
+  const scoreAvailable =
+    score?.riskScore !== null &&
+    score?.riskScore !== undefined &&
+    score?.riskScore !== "" &&
+    score?.riskScore !== "-";
+
+  // ----------------------------------------------------------
+  // EMPTY-SECTION DIAGNOSTICS (raw present but nothing extracted)
+  // ----------------------------------------------------------
+
+  if (!accounts.length && report?.TradeLinePartition) {
+    parseWarnings.push(
+      "TradeLinePartition was present but no accounts could be extracted.",
+    );
+  }
+  if (!inquiries.length && report?.InquiryPartition) {
+    parseWarnings.push(
+      "InquiryPartition was present but no enquiries could be extracted.",
+    );
+  }
+  if (!scoreAvailable) {
+    parseWarnings.push("Bureau did not return a credit score.");
+  }
 
   // ----------------------------------------------------------
   // GENDER
@@ -540,7 +810,7 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
 
       ...name,
 
-      dob: borrower?.Birth?.date || "-",
+      dob: normalizeDate(borrower?.Birth?.date),
 
       gender,
 
@@ -554,7 +824,7 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
     },
 
     score: {
-      value: score?.riskScore || "-",
+      value: scoreAvailable ? score.riskScore : null,
 
       model:
         score?.CreditScoreModel?.description ||
@@ -574,6 +844,8 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
 
     summary: calculateSummary(accounts),
 
+    creditSummary,
+
     bureauStatus: {
       safetyCheckPassed: report?.SafetyCheckPassed,
 
@@ -583,6 +855,8 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
 
       fraud: report?.FraudIndicator,
     },
+
+    parseWarnings,
   };
 };
 
@@ -605,6 +879,15 @@ const generateCibilPdf = async (apiResponse, creditReportId) => {
     console.log("[CIBIL PDF] Accounts:", pdfData.accounts.length);
 
     console.log("[CIBIL PDF] Inquiries:", pdfData.inquiries.length);
+
+    if (pdfData.parseWarnings?.length) {
+      console.warn(
+        "[CIBIL PDF] Data-quality warnings for",
+        creditReportId,
+        ":",
+        pdfData.parseWarnings.join(" | "),
+      );
+    }
 
     // --------------------------------------------------------
     // BUILD HTML
@@ -803,4 +1086,7 @@ module.exports = {
   generateCibilPdf,
   prepareCibilPdfData,
   getTrueLinkCreditReport,
+  getCustomerAssetsSuccess,
+  extractCreditSummary,
+  asArray,
 };
