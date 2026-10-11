@@ -641,9 +641,11 @@ exports.getPartnerById = async (req, res) => {
       : range === "week" ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) : null;
     const ranged = since ? { createdAt: { $gte: since } } : {};
 
-    const [crCount, aiCount, sums, lastCr, lastAi] = await Promise.all([
+    const [crCount, aiCount, rcCount, gstCount, sums, lastCr, lastAi, lastRc, lastGst] = await Promise.all([
       CreditReport.countDocuments({ userId: user._id, ...ranged }),
       AIAnalysis.countDocuments({ userId: user._id, ...ranged }),
+      RcVerification.countDocuments({ userId: user._id, ...ranged }),
+      GstVerification.countDocuments({ userId: user._id, ...ranged }),
       Transaction.aggregate([
         { $match: { userId: user._id, status: "SUCCESS", ...(since ? { createdAt: { $gte: since } } : {}) } },
         {
@@ -656,16 +658,21 @@ exports.getPartnerById = async (req, res) => {
       ]),
       CreditReport.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
       AIAnalysis.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
+      RcVerification.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
+      GstVerification.findOne({ userId: user._id }).sort({ createdAt: -1 }).select("createdAt").lean(),
     ]);
-    const crDate = lastCr ? new Date(lastCr.createdAt) : null;
-    const aiDate = lastAi ? new Date(lastAi.createdAt) : null;
+    const dates = [lastCr, lastAi, lastRc, lastGst]
+      .filter(Boolean)
+      .map((d) => new Date(d.createdAt));
     const summary = {
-      totalReports: crCount + aiCount,
+      totalReports: crCount + aiCount + rcCount + gstCount,
       creditReports: crCount,
       aiAnalyses: aiCount,
+      rcVerifications: rcCount,
+      gstVerifications: gstCount,
       totalRecharged: sums[0]?.recharged ?? 0,
       totalSpent: sums[0]?.spent ?? 0,
-      lastReportDate: crDate && aiDate ? (crDate > aiDate ? crDate : aiDate) : (crDate || aiDate || null),
+      lastReportDate: dates.length ? new Date(Math.max(...dates)) : null,
       range,
     };
     res.json({ success: true, data: user, summary });
@@ -675,7 +682,7 @@ exports.getPartnerById = async (req, res) => {
   }
 };
 
-// GET /api/admin/partners/:id/reports?page&limit — merged credit + AI pulls, newest first (all statuses).
+// GET /api/admin/partners/:id/reports?page&limit — merged credit + AI + RC + GST pulls, newest first (all statuses).
 exports.getPartnerReports = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
@@ -685,20 +692,28 @@ exports.getPartnerReports = async (req, res) => {
     const exists = await User.exists({ _id: id, role: { $ne: "admin" } });
     if (!exists) return res.status(404).json({ success: false, message: "Partner not found" });
 
-    const [crTotal, aiTotal] = await Promise.all([
+    const [crTotal, aiTotal, rcTotal, gstTotal] = await Promise.all([
       CreditReport.countDocuments({ userId: id }),
       AIAnalysis.countDocuments({ userId: id }),
+      RcVerification.countDocuments({ userId: id }),
+      GstVerification.countDocuments({ userId: id }),
     ]);
     // Over-fetch each side so the merged page is correct without full-collection loads.
-    const [crs, ais] = await Promise.all([
+    const [crs, ais, rcs, gsts] = await Promise.all([
       CreditReport.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
         .select("bureau score status reportType name createdAt localPath reportUrl").lean(),
       AIAnalysis.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
         .select("status fileName result createdAt").lean(),
+      RcVerification.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
+        .select("vehicleNumber ownerName status reportUrl localPath createdAt").lean(),
+      GstVerification.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
+        .select("gstin legalName status reportUrl localPath createdAt").lean(),
     ]);
-    const crIds = crs.map((r) => r._id);
-    const charges = crIds.length
-      ? await Transaction.find({ reportId: { $in: crIds } }).select("reportId totalAmount purpose").lean()
+    // RC/GST debits ledger against the verification _id as reportId —
+    // same as credit reports — so one charge map covers all sides.
+    const allIds = [...crs.map((r) => r._id), ...rcs.map((r) => r._id), ...gsts.map((r) => r._id)];
+    const charges = allIds.length
+      ? await Transaction.find({ reportId: { $in: allIds } }).select("reportId totalAmount purpose").lean()
       : [];
     const chargeMap = {};
     charges.forEach((c) => { chargeMap[String(c.reportId)] = c; });
@@ -720,9 +735,28 @@ exports.getPartnerReports = async (req, res) => {
         fileUrl: null,
         createdAt: a.createdAt,
       })),
+      ...rcs.map((r) => ({
+        id: r._id, kind: "rc", bureau: null, ref: r.vehicleNumber,
+        customer: r.ownerName || r.vehicleNumber,
+        score: null, status: r.status,
+        charge: chargeMap[String(r._id)]?.totalAmount ?? null,
+        hasFile: !!(r.localPath || r.reportUrl),
+        fileUrl: r.localPath || r.reportUrl || null,
+        createdAt: r.createdAt,
+      })),
+      ...gsts.map((g) => ({
+        id: g._id, kind: "gst", bureau: null, ref: g.gstin,
+        customer: g.legalName || g.gstin,
+        score: null, status: g.status,
+        charge: chargeMap[String(g._id)]?.totalAmount ?? null,
+        hasFile: !!(g.localPath || g.reportUrl),
+        fileUrl: g.localPath || g.reportUrl || null,
+        createdAt: g.createdAt,
+      })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, perPage);
 
-    res.json({ success: true, data: rows, total: crTotal + aiTotal, page: parseInt(page, 10), pages: Math.ceil((crTotal + aiTotal) / perPage) });
+    const total = crTotal + aiTotal + rcTotal + gstTotal;
+    res.json({ success: true, data: rows, total, page: parseInt(page, 10), pages: Math.ceil(total / perPage) });
   } catch (err) {
     console.error("getPartnerReports Admin Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch partner reports" });
