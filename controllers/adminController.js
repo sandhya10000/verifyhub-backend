@@ -49,6 +49,7 @@ exports.getOverviewSummary = async (req, res) => {
       recentRecharge,
       totalPartners, newPartnersWeek, newPartnersToday,
       collectedAgg, collectedPrevAgg,
+      collectedTodayAgg, collectedYesterdayAgg,
       consumedAgg, consumedPrevAgg,
       failFeeAgg,
       openTickets, inProgressTickets,
@@ -81,6 +82,14 @@ exports.getOverviewSummary = async (req, res) => {
       ]),
       Transaction.aggregate([
         { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Transaction.aggregate([
@@ -123,6 +132,8 @@ exports.getOverviewSummary = async (req, res) => {
         newPartnersToday,
         collectedMonth: collected,
         collectedDeltaPct: pctChange(collected, sum0(collectedPrevAgg)),
+        collectedToday: sum0(collectedTodayAgg),
+        collectedTodayDeltaPct: pctChange(sum0(collectedTodayAgg), sum0(collectedYesterdayAgg)),
         consumedMonth: consumed,
         consumedDeltaPct: pctChange(consumed, sum0(consumedPrevAgg)),
         netMonth: collected - consumed,
@@ -175,7 +186,7 @@ exports.getAllAiAnalyses = async (req, res) => {
 
     const total = await AIAnalysis.countDocuments(query);
     const analyses = await AIAnalysis.find(query)
-      .populate('userId', 'name email')
+      .populate('userId', 'name email partner_id')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
@@ -218,7 +229,7 @@ exports.getAllCreditReports = async (req, res) => {
 
     const total = await CreditReport.countDocuments(query);
     const reports = await CreditReport.find(query)
-      .populate('userId', 'name email')
+      .populate('userId', 'name email partner_id')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
@@ -1014,15 +1025,15 @@ exports.getRecentActivity = async (req, res) => {
   try {
     const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
     const lowAt = pricing?.lowBalanceThreshold ?? 500;
-    const [recentCr, recentAi, recentTickets, lowWallets, failedCr, failedAi] = await Promise.all([
+    const [recentCr, recentAi, recentTickets, recentTopups, failedCr, failedAi] = await Promise.all([
       CreditReport.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email").select("bureau score status createdAt userId name").lean(),
       AIAnalysis.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email").select("status createdAt userId fileName result.score").lean(),
       Ticket.find({}).sort({ createdAt: -1 }).limit(3)
         .populate("partnerId", "name email").select("category status createdAt partnerId").lean(),
-      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: lowAt } })
-        .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance").lean(),
+      Transaction.find({ type: "CREDIT", status: "SUCCESS" }).sort({ createdAt: -1 }).limit(5)
+        .populate("userId", "name email partner_id").select("amount totalAmount gateway createdAt userId").lean(),
       CreditReport.find({ status: "Failed" }).sort({ createdAt: -1 }).limit(5)
         .populate("userId", "name email").select("bureau status createdAt userId name").lean(),
       AIAnalysis.find({ status: "failed" }).sort({ createdAt: -1 }).limit(5)
@@ -1071,7 +1082,18 @@ exports.getRecentActivity = async (req, res) => {
       })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
 
-    res.json({ success: true, data: { pulls, recentTickets, lowWallets, failedPulls } });
+    // Latest successful wallet top-ups — powers the "Recent recharges" card.
+    const recentRecharges = recentTopups.map((t) => ({
+      id: t._id,
+      partner: t.userId?.name || t.userId?.email || "Unknown",
+      email: t.userId?.email || null,
+      partnerId: t.userId?.partner_id || null,
+      amount: t.totalAmount ?? t.amount ?? 0,
+      gateway: t.gateway || null,
+      createdAt: t.createdAt,
+    }));
+
+    res.json({ success: true, data: { pulls, recentTickets, recentRecharges, failedPulls } });
   } catch (err) {
     console.error("getRecentActivity Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch recent activity" });
