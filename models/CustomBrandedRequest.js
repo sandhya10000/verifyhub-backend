@@ -68,6 +68,20 @@ const customBrandedRequestSchema = new mongoose.Schema(
       enum: ['Pending', 'Active', 'Completed', 'Cancelled'],
       default: 'Active',
     },
+
+    // ── Onboarding / Assets submitted by partner ─────────────────────────────
+    brandingDetails: {
+      logoUrl: { type: String, default: '' },
+      brandColors: { type: [String], default: [] },
+      companyName: { type: String, default: '' },
+      tagline: { type: String, default: '' },
+      contactPhone: { type: String, default: '' },
+      contactEmail: { type: String, default: '' },
+      notes: { type: String, default: '' },
+      submittedAt: { type: Date, default: null },
+      revisionsUsed: { type: Number, default: 0 },
+      revisionNotes: { type: [String], default: [] },
+    },
   },
   {
     timestamps: true, // createdAt + updatedAt
