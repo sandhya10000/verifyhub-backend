@@ -168,7 +168,7 @@ async function payWithWallet(req, res) {
         purpose: 'CUSTOM_BRAND_FEE',
         status: 'SUCCESS',
         gateway: 'WALLET',
-        description: 'Custom Branded Report one-time fee (wallet)',
+        description: 'AI Branded Report one-time fee (wallet)',
       }),
       // Remove any stale unpaid skeleton so only the paid request remains.
       CustomBrandedRequest.deleteMany({ partnerId, paymentStatus: 'Unpaid' }),
@@ -180,7 +180,7 @@ async function payWithWallet(req, res) {
     if (raced) {
       await User.updateOne({ _id: partnerId }, { $inc: { walletBalance: CBR_PRICE_INR } });
       txn.status = 'REFUNDED';
-      txn.description = 'Custom Branded Report one-time fee (wallet) — refunded: duplicate request';
+      txn.description = 'AI Branded Report one-time fee (wallet) — refunded: duplicate request';
       await txn.save();
       return res.status(409).json({
         success: false,
@@ -289,7 +289,7 @@ async function createOrder(req, res) {
       purpose: 'CUSTOM_BRAND_FEE',
       status: 'PENDING',
       gateway: 'RAZORPAY',
-      description: `Custom Branded Report one-time fee (${skeleton.requestId})`,
+      description: `AI Branded Report one-time fee (${skeleton.requestId})`,
     });
 
     return res.status(200).json({

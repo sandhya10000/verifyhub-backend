@@ -49,6 +49,7 @@ exports.getOverviewSummary = async (req, res) => {
       recentRecharge,
       totalPartners, newPartnersWeek, newPartnersToday,
       collectedAgg, collectedPrevAgg,
+      collectedTodayAgg, collectedYesterdayAgg,
       consumedAgg, consumedPrevAgg,
       failFeeAgg,
       openTickets, inProgressTickets,
@@ -68,7 +69,10 @@ exports.getOverviewSummary = async (req, res) => {
         { $group: { _id: null, total: { $sum: '$walletBalance' } } }
       ]),
       Transaction.findOne({
-        type: 'CREDIT',
+        $or: [
+          { type: 'CREDIT' },
+          { type: 'DEBIT', purpose: 'CUSTOM_BRAND_FEE', gateway: 'RAZORPAY' },
+        ],
         status: 'SUCCESS',
         createdAt: { $gte: monthStart, $lte: monthEnd }
       }).select('_id').lean(),
@@ -76,11 +80,19 @@ exports.getOverviewSummary = async (req, res) => {
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: weekStart } }),
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: todayStart, $lte: todayEnd } }),
       Transaction.aggregate([
-        { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd } } },
+        { $match: { status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd }, $or: [{ type: 'CREDIT' }, { type: 'DEBIT', purpose: 'CUSTOM_BRAND_FEE', gateway: 'RAZORPAY' }] } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Transaction.aggregate([
-        { $match: { type: 'CREDIT', status: 'SUCCESS', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
+        { $match: { status: 'SUCCESS', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd }, $or: [{ type: 'CREDIT' }, { type: 'DEBIT', purpose: 'CUSTOM_BRAND_FEE', gateway: 'RAZORPAY' }] } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { status: 'SUCCESS', createdAt: { $gte: todayStart, $lte: todayEnd }, $or: [{ type: 'CREDIT' }, { type: 'DEBIT', purpose: 'CUSTOM_BRAND_FEE', gateway: 'RAZORPAY' }] } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { status: 'SUCCESS', createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd }, $or: [{ type: 'CREDIT' }, { type: 'DEBIT', purpose: 'CUSTOM_BRAND_FEE', gateway: 'RAZORPAY' }] } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Transaction.aggregate([
@@ -104,6 +116,7 @@ exports.getOverviewSummary = async (req, res) => {
     const reportsThisMonth = aiMonth + crMonth;
     const failedThisMonth = aiFailedMonth + crFailedMonth;
     const collected = sum0(collectedAgg);
+    const collectedToday = sum0(collectedTodayAgg);
     const consumed = sum0(consumedAgg);
     const attempts = reportsThisMonth + failedThisMonth;
 
@@ -123,6 +136,8 @@ exports.getOverviewSummary = async (req, res) => {
         newPartnersToday,
         collectedMonth: collected,
         collectedDeltaPct: pctChange(collected, sum0(collectedPrevAgg)),
+        collectedToday,
+        collectedTodayDeltaPct: pctChange(collectedToday, sum0(collectedYesterdayAgg)),
         consumedMonth: consumed,
         consumedDeltaPct: pctChange(consumed, sum0(consumedPrevAgg)),
         netMonth: collected - consumed,
@@ -651,7 +666,7 @@ exports.getPartnerById = async (req, res) => {
         {
           $group: {
             _id: null,
-            recharged: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            recharged: { $sum: { $cond: [{ $or: [{ $eq: ["$type", "CREDIT"] }, { $and: [{ $eq: ["$type", "DEBIT"] }, { $eq: ["$purpose", "CUSTOM_BRAND_FEE"] }, { $eq: ["$gateway", "RAZORPAY"] }] }] }, "$amount", 0] } },
             spent: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
           },
         },
@@ -784,7 +799,7 @@ exports.getPartnerTransactions = async (req, res) => {
         {
           $group: {
             _id: null,
-            credited: { $sum: { $cond: [{ $eq: ["$type", "CREDIT"] }, "$amount", 0] } },
+            credited: { $sum: { $cond: [{ $or: [{ $eq: ["$type", "CREDIT"] }, { $and: [{ $eq: ["$type", "DEBIT"] }, { $eq: ["$purpose", "CUSTOM_BRAND_FEE"] }, { $eq: ["$gateway", "RAZORPAY"] }] }] }, "$amount", 0] } },
             debited: { $sum: { $cond: [{ $eq: ["$type", "DEBIT"] }, { $ifNull: ["$totalAmount", "$amount"] }, 0] } },
           },
         },
@@ -870,6 +885,10 @@ exports.updatePricing = async (req, res) => {
       return res.status(400).json({ success: false, message: "No valid pricing fields provided" });
     }
 
+    // AI GST removed per founder (base 100 = charge 100): never persist a
+    // non-zero ai.gstRate, even if a stale client sends one.
+    set["ai.gstRate"] = 0;
+
     const pricing = await Pricing.findOneAndUpdate({ key: "default" }, { $set: set }, { new: true }).lean();
     resetPricingCache(); // wallet quotes pick up the change within a minute at most
     res.json({ success: true, data: pricing });
@@ -890,7 +909,7 @@ exports.getMoneyTimeseries = async (req, res) => {
 
     const [inRows, outRows, aiRows, crRows] = await Promise.all([
       Transaction.aggregate([
-        { $match: { type: "CREDIT", status: "SUCCESS", createdAt: { $gte: start } } },
+        { $match: { status: "SUCCESS", createdAt: { $gte: start }, $or: [{ type: "CREDIT" }, { type: "DEBIT", purpose: "CUSTOM_BRAND_FEE", gateway: "RAZORPAY" }] } },
         { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "Asia/Kolkata" } }, total: { $sum: "$amount" } } },
       ]),
       Transaction.aggregate([
@@ -1114,7 +1133,7 @@ exports.getAllTransactions = async (req, res) => {
           $group: {
             _id: null,
             credited: {
-              $sum: { $cond: [{ $and: [{ $eq: ["$type", "CREDIT"] }, { $eq: ["$status", "SUCCESS"] }] }, "$amount", 0] },
+              $sum: { $cond: [{ $and: [{ $eq: ["$status", "SUCCESS"] }, { $or: [{ $eq: ["$type", "CREDIT"] }, { $and: [{ $eq: ["$type", "DEBIT"] }, { $eq: ["$purpose", "CUSTOM_BRAND_FEE"] }, { $eq: ["$gateway", "RAZORPAY"] }] }] }] }, "$amount", 0] },
             },
             debited: {
               $sum: {

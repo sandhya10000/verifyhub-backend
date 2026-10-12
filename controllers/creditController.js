@@ -152,12 +152,19 @@ const debitFailedPull = async (
 
 // CIBIL failure billing classifier — single source of truth for both the
 // empty-data branch and the catch branch.
-// Policy: deduct the fail fee ONLY on provider status 400 (bad request —
-// partner-side input fault). Never deduct on 502/503/504 (service API
-// down), on transport failures with no provider response, or when
-// IndiConnect reports our own balance is exhausted (owner must recharge).
+// Policy: deduct the fail fee on provider status 400 (bad request —
+// partner-side input fault, including 400 + bureau "source down" text)
+// and on partner input-fault messages (wrong/invalid PAN, validation
+// failures, no-record) even when the GraphQL status is not 400 —
+// IndiConnect answers those over HTTP 200 with ok:false.
+// Never deduct on 502/503/504 (service API down), on transport failures
+// with no provider response, on "try again later" / gateway-timeout
+// wording, or when IndiConnect reports our own balance is exhausted
+// (owner must recharge).
 // Bureau-side "source/bureau down" IS billed (IndiConnect attempted the
-// pull and bills us) unless the status itself is 502/503/504.
+// pull and bills us) unless the status itself is 502/503/504 or the
+// message also carries service-down wording (try again / gateway /
+// maintenance), which stays free.
 // Returns { bill: boolean, reason: string } — reason is for server logs.
 // `status`: Number(provider status) or NaN when unknown.
 // `texts`: array of message strings from every provider field available.
@@ -197,8 +204,21 @@ const classifyCibilFailure = (status, texts) => {
     return { bill: true, reason: "bureau-source-down" };
   }
 
-  // 4. Only status 400 bills. Anything else (no-record status 2,
-  // unknown codes, transport errors with no provider response) is free.
+  // 3b. Partner input fault (wrong/invalid PAN, bad mobile, validation
+  // failure) — bill it. IndiConnect answers these over HTTP 200 with
+  // ok:false, so the GraphQL status is NOT 400 (often 2 / ERROR / missing)
+  // and step 4 alone would let them through free — even though our API
+  // returns 400 to the partner and the bureau attempted the pull.
+  if (
+    /invalid|(in)?valid|validation|bad request|incorrect|mismatch|wrong|not match|did not match|422|unprocessable|required|no record|not found|no hit|pan[^|]{0,30}(invalid|incorrect|wrong|mismatch|not found|no record|not match|fail)/i.test(
+      joined,
+    )
+  ) {
+    return { bill: true, reason: "input-fault" };
+  }
+
+  // 4. Status 400 bills. Anything else (unknown codes, transport errors
+  // with no provider response) is free.
   if (code === 400) {
     return { bill: true, reason: "bad-request" };
   }
@@ -511,9 +531,10 @@ const CibilReportFromDigi = async (req, res) => {
 
     if (!cibilData || isNoRecord) {
       // Provider answered but returned no usable CIBIL data — record as
-      // Failed. Fail fee applies ONLY per classifyCibilFailure: status 400
-      // (or bureau source-down) bills; 502/503/504, service-down messages
-      // and our own IndiConnect balance exhaustion stay free.
+      // Failed. Fail fee applies per classifyCibilFailure: status 400,
+      // bureau source-down and partner input-fault (wrong PAN etc.) bill;
+      // 502/503/504, service-down messages and our own IndiConnect
+      // balance exhaustion stay free.
       creditReport = await CreditReport.create({
         userId: req.user?._id,
         orderId: orderId || null,
@@ -549,9 +570,9 @@ const CibilReportFromDigi = async (req, res) => {
         indiBureauStatus,
       );
 
-      // Fail fee ONLY on status 400 / bureau source-down (billable to us).
-      // Service-down, 502/503/504 and our IndiConnect balance exhaustion
-      // stay free — same policy as provider auth failures.
+      // Fail fee on status 400 / bureau source-down / partner input-fault
+      // (billable to us). Service-down, 502/503/504 and our IndiConnect
+      // balance exhaustion stay free — same policy as provider auth failures.
       const emptyVerdict = classifyCibilFailure(
         cibilFailureStatus,
         cibilFailureTexts,
@@ -771,22 +792,47 @@ const CibilReportFromDigi = async (req, res) => {
         String(error.response?.data?.message || ""),
       );
 
-    // Failure billing per classifyCibilFailure: ONLY status 400 (or
-    // bureau source-down) bills. 502/503/504, transport failures with no
-    // provider response, service-down wording and our own IndiConnect
-    // balance exhaustion stay free. Auth failures stay free as before.
+    // Failure billing per classifyCibilFailure: status 400, bureau
+    // source-down and partner input-fault (wrong PAN etc.) bill.
+    // 502/503/504, transport failures with no provider response,
+    // service-down wording and our own IndiConnect balance exhaustion
+    // stay free. Auth failures stay free as before.
     // The HTTP shape { status: "ERROR", code: 400, message:
     // "Insufficient Wallet Balance" } lands here via error.response.data.
     const catchBody = error.response?.data || null;
+    // IndiConnect nests failure text at data.verify.* — the top-level
+    // message alone misses "source down" arriving in verify/result/error.
+    const catchVerify = catchBody?.data?.verify || catchBody?.verify || null;
+    const catchResult = catchVerify?.result || catchBody?.result || null;
+    const catchErrObj = catchVerify?.error || catchBody?.error || null;
     const catchTexts = [
       catchBody?.message,
       catchBody?.error?.message,
       catchBody?.decryptedError,
+      catchVerify?.message,
+      catchResult?.message,
+      catchErrObj?.message,
+      catchErrObj?.decryptedError,
+      catchErrObj?.raw,
+      ...(Array.isArray(catchBody?.errors)
+        ? catchBody.errors.map((e) => e?.message || e)
+        : []),
+      ...(Array.isArray(catchBody?.data?.errors)
+        ? catchBody.data.errors.map((e) => e?.message || e)
+        : []),
       error.message,
     ];
     const catchNoResponse = !error.response && !!error.request;
+    // Prefer the HTTP status (400 in the dashboard screenshot); fall back to
+    // the body code when axios has no status (GraphQL 200 with code: 400).
+    const catchStatusFallback =
+      Number(catchBody?.code) || Number(catchVerify?.status) || NaN;
     const catchVerdict = classifyCibilFailure(
-      catchNoResponse ? NaN : indiStatus,
+      catchNoResponse
+        ? NaN
+        : Number.isFinite(Number(indiStatus))
+          ? Number(indiStatus)
+          : catchStatusFallback,
       catchTexts,
     );
 
