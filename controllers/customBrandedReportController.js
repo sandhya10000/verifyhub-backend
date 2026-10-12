@@ -83,13 +83,130 @@ function validateContact(email, phone) {
 async function findBlockingRequest(partnerId) {
   // A Paid+Active request blocks any new payment (one-time fee).
   // A Pending+Unpaid skeleton is resumable — not blocking, reused by /order.
-  return CustomBrandedRequest.findOne({
-    partnerId,
-    $or: [
-      { status: 'Active', paymentStatus: 'Paid' },
-      { status: { $in: ['Active', 'Pending'] }, paymentStatus: 'Paid' },
-    ],
-  }).lean();
+  const [request, user] = await Promise.all([
+    CustomBrandedRequest.findOne({
+      partnerId,
+      paymentStatus: 'Paid',
+    }).lean(),
+    User.findById(partnerId).select('brandingStatus brandingPaidAt brandingAmount').lean(),
+  ]);
+
+  if (user && user.brandingStatus && user.brandingStatus !== 'not_purchased') {
+    return {
+      status: user.brandingStatus,
+      paidAt: user.brandingPaidAt,
+      amount: user.brandingAmount || CBR_PRICE_INR,
+      reason: 'User already has an active branding subscription',
+    };
+  }
+
+  return request || null;
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/partner/custom-branded-report/status
+// Status endpoint returning persistent status, paid_at, amount, and onboarding details.
+// ---------------------------------------------------------------------------
+async function getBrandingStatus(req, res) {
+  try {
+    const partnerId = req.user._id;
+    const user = await User.findById(partnerId).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    let request = await CustomBrandedRequest.findOne({ partnerId, paymentStatus: 'Paid' })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // If no paid request found, check if an unpaid skeleton exists for resuming checkout
+    if (!request) {
+      request = await CustomBrandedRequest.findOne({ partnerId })
+        .sort({ updatedAt: -1 })
+        .lean();
+    }
+
+    let status = user.brandingStatus || 'not_purchased';
+    let paidAt = user.brandingPaidAt || null;
+    let amount = user.brandingAmount || null;
+
+    // Self-healing check: If the user has a successful CUSTOM_BRAND_FEE transaction
+    // or a Paid CustomBrandedRequest but brandingStatus is not_purchased/unset, sync it now!
+    if (status === 'not_purchased' || !status) {
+      const successfulTxn = await Transaction.findOne({
+        userId: partnerId,
+        purpose: 'CUSTOM_BRAND_FEE',
+        status: 'SUCCESS',
+      }).sort({ createdAt: -1 }).lean();
+
+      if (successfulTxn || (request && request.paymentStatus === 'Paid')) {
+        status = 'paid';
+        paidAt = user.brandingPaidAt || successfulTxn?.createdAt || request?.updatedAt || new Date();
+        amount = user.brandingAmount || successfulTxn?.amount || request?.amount || CBR_PRICE_INR;
+
+        // Persist the healed status to the user record
+        await User.updateOne(
+          { _id: partnerId },
+          {
+            $set: {
+              brandingStatus: 'paid',
+              brandingPaidAt: paidAt,
+              brandingAmount: amount,
+            },
+          }
+        );
+
+        // Ensure a paid CustomBrandedRequest exists
+        if (!request || request.paymentStatus !== 'Paid') {
+          request = await CustomBrandedRequest.findOneAndUpdate(
+            { partnerId, paymentStatus: 'Paid' },
+            {
+              $setOnInsert: {
+                partnerId,
+                email: user.email,
+                phone: user.phone || '',
+                amount,
+                paymentStatus: 'Paid',
+                paymentMethod: successfulTxn?.gateway || 'WALLET',
+                orderId: successfulTxn?.orderId || `cbr_healed_${partnerId}`,
+                paymentId: successfulTxn ? String(successfulTxn._id) : undefined,
+                status: 'Active',
+              },
+            },
+            { upsert: true, new: true }
+          ).lean();
+        }
+      }
+    }
+
+    const details = {
+      email: request?.email || user.email || '',
+      phone: request?.phone || user.phone || '',
+      ...(user.brandingDetails || {}),
+      ...(request?.brandingDetails || {}),
+    };
+
+    const revisionsUsed = Number(details.revisionsUsed || 0);
+    const revisionsRemaining = Math.max(0, 2 - revisionsUsed);
+
+    return res.json({
+      success: true,
+      data: {
+        status: status || 'not_purchased',
+        paid_at: paidAt,
+        amount: amount || (status !== 'not_purchased' ? CBR_PRICE_INR : null),
+        onboarding_details: {
+          ...details,
+          revisionsUsed,
+          revisionsRemaining,
+        },
+        request: request || null,
+      },
+    });
+  } catch (err) {
+    console.error('[customBrandedReport] getBrandingStatus error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch branding status.' });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,12 +239,28 @@ async function getQuote(req, res) {
 async function payWithWallet(req, res) {
   try {
     const partnerId = req.user._id;
+
+    // Idempotency check 1: Ensure user has not already purchased
+    const currentUser = await User.findById(partnerId);
+    if (currentUser && currentUser.brandingStatus && currentUser.brandingStatus !== 'not_purchased') {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_REQUEST',
+        message: 'You have already paid for the AI Custom Branded Report. Duplicate charge blocked.',
+        data: {
+          status: currentUser.brandingStatus,
+          paid_at: currentUser.brandingPaidAt,
+          amount: currentUser.brandingAmount,
+        },
+      });
+    }
+
     const blocked = await findBlockingRequest(partnerId);
     if (blocked) {
       return res.status(409).json({
         success: false,
         code: 'DUPLICATE_REQUEST',
-        message: 'You already have an active custom branded report request.',
+        message: 'You already have an active custom branded report request. Duplicate charge blocked.',
         data: blocked,
       });
     }
@@ -139,13 +272,38 @@ async function payWithWallet(req, res) {
     }
     const digitsOnly = String(phone).replace(/^\+91/, '').replace(/\D/g, '');
 
-    // Atomic guard — balance can never go negative under concurrency.
+    // ATOMIC GUARD: Debit balance AND set brandingStatus = 'paid' in a single atomic update.
+    // Guarantees balance cannot go negative AND user cannot be double-charged.
+    const now = new Date();
     const debit = await User.updateOne(
-      { _id: partnerId, walletBalance: { $gte: CBR_PRICE_INR } },
-      { $inc: { walletBalance: -CBR_PRICE_INR } },
+      {
+        _id: partnerId,
+        walletBalance: { $gte: CBR_PRICE_INR },
+        $or: [
+          { brandingStatus: 'not_purchased' },
+          { brandingStatus: { $exists: false } },
+          { brandingStatus: null },
+        ],
+      },
+      {
+        $inc: { walletBalance: -CBR_PRICE_INR },
+        $set: {
+          brandingStatus: 'paid',
+          brandingPaidAt: now,
+          brandingAmount: CBR_PRICE_INR,
+        },
+      },
     );
+
     if (debit.modifiedCount === 0) {
-      const me = await User.findById(partnerId).select('walletBalance').lean();
+      const me = await User.findById(partnerId).select('walletBalance brandingStatus').lean();
+      if (me && me.brandingStatus && me.brandingStatus !== 'not_purchased') {
+        return res.status(409).json({
+          success: false,
+          code: 'DUPLICATE_REQUEST',
+          message: 'You have already paid for the AI Custom Branded Report. Duplicate charge blocked.',
+        });
+      }
       return res.status(402).json({
         success: false,
         code: 'INSUFFICIENT_BALANCE',
@@ -188,26 +346,15 @@ async function payWithWallet(req, res) {
         message: 'You already have an active custom branded report request. Duplicate charge refunded.',
         data: raced,
       });
+      await newRequest.save();
     }
 
-    const newRequest = new CustomBrandedRequest({
-      partnerId,
-      email: String(email).trim().toLowerCase(),
-      phone: digitsOnly,
-      status: 'Active',
-      amount: CBR_PRICE_INR,
-      paymentStatus: 'Paid',
-      paymentMethod: 'WALLET',
-      orderId,
-      paymentId: String(txn._id),
-    });
-    await newRequest.save();
-
     notifySubscription(newRequest, req.user, txn);
-    const me = await User.findById(partnerId).select('walletBalance').lean();
+    const me = await User.findById(partnerId).select('walletBalance brandingStatus').lean();
     return res.status(201).json({
       success: true,
       data: newRequest,
+      status: 'paid',
       walletBalance: me?.walletBalance ?? null,
       transactionId: txn._id,
     });
@@ -361,11 +508,170 @@ async function verifyPayment(req, res) {
     request.paymentMethod = 'RAZORPAY';
     await request.save();
 
+    // Set User brandingStatus atomically
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $set: {
+          brandingStatus: 'paid',
+          brandingPaidAt: new Date(),
+          brandingAmount: CBR_PRICE_INR,
+        },
+      }
+    );
+
     notifySubscription(request, req.user, txn);
-    return res.status(200).json({ success: true, message: 'Payment verified successfully.', data: request });
+    return res.status(200).json({
+      success: true,
+      message: 'Payment verified successfully.',
+      data: request,
+      status: 'paid',
+    });
   } catch (err) {
     console.error('[customBrandedReport] verifyPayment error:', err);
     return res.status(500).json({ success: false, message: 'Payment verification failed.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/partner/custom-branded-report/assets
+// Body: { logoUrl, brandColors, companyName, tagline, contactPhone, contactEmail, notes }
+// Saves assets and transitions status to 'onboarding'
+// ---------------------------------------------------------------------------
+async function submitBrandAssets(req, res) {
+  try {
+    const partnerId = req.user._id;
+    const user = await User.findById(partnerId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    if (user.brandingStatus === 'not_purchased') {
+      return res.status(403).json({
+        success: false,
+        message: 'Please purchase the AI Custom Branded Report before submitting assets.',
+      });
+    }
+
+    const {
+      logoUrl,
+      brandColors,
+      companyName,
+      tagline,
+      contactPhone,
+      contactEmail,
+      notes,
+    } = req.body;
+
+    const existingDetails = user.brandingDetails || {};
+    const updatedDetails = {
+      ...existingDetails,
+      logoUrl: logoUrl !== undefined ? String(logoUrl).trim() : existingDetails.logoUrl,
+      brandColors: Array.isArray(brandColors) ? brandColors : existingDetails.brandColors,
+      companyName: companyName !== undefined ? String(companyName).trim() : existingDetails.companyName,
+      tagline: tagline !== undefined ? String(tagline).trim() : existingDetails.tagline,
+      contactPhone: contactPhone !== undefined ? String(contactPhone).trim() : existingDetails.contactPhone,
+      contactEmail: contactEmail !== undefined ? String(contactEmail).trim() : existingDetails.contactEmail,
+      notes: notes !== undefined ? String(notes).trim() : existingDetails.notes,
+      submittedAt: new Date(),
+      revisionsUsed: existingDetails.revisionsUsed || 0,
+      revisionNotes: existingDetails.revisionNotes || [],
+    };
+
+    // Transition status to 'onboarding' if currently 'paid'
+    const nextStatus = user.brandingStatus === 'active' ? 'active' : 'onboarding';
+
+    user.brandingDetails = updatedDetails;
+    user.brandingStatus = nextStatus;
+    await user.save();
+
+    await CustomBrandedRequest.updateMany(
+      { partnerId, paymentStatus: 'Paid' },
+      { $set: { brandingDetails: updatedDetails } }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Brand assets submitted successfully. Our design team will configure your report.',
+      data: {
+        status: nextStatus,
+        brandingDetails: updatedDetails,
+      },
+    });
+  } catch (err) {
+    console.error('[customBrandedReport] submitBrandAssets error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to submit brand assets.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/partner/custom-branded-report/request-revision
+// Body: { revisionNotes }
+// Up to 2 free revisions allowed.
+// ---------------------------------------------------------------------------
+async function requestRevision(req, res) {
+  try {
+    const partnerId = req.user._id;
+    const user = await User.findById(partnerId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    if (user.brandingStatus !== 'active' && user.brandingStatus !== 'onboarding') {
+      return res.status(400).json({
+        success: false,
+        message: 'Revisions can only be requested for paid or active branding.',
+      });
+    }
+
+    const { revisionNotes } = req.body;
+    if (!revisionNotes || !String(revisionNotes).trim()) {
+      return res.status(400).json({ success: false, message: 'Revision instructions are required.' });
+    }
+
+    const details = user.brandingDetails || {};
+    const used = Number(details.revisionsUsed || 0);
+
+    if (used >= 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'All 2 complimentary revision rounds have been used. Contact support for additional changes.',
+      });
+    }
+
+    const newUsed = used + 1;
+    const notesList = [...(details.revisionNotes || []), String(revisionNotes).trim()];
+
+    user.brandingDetails = {
+      ...details,
+      revisionsUsed: newUsed,
+      revisionNotes: notesList,
+    };
+    user.brandingStatus = 'onboarding';
+    await user.save();
+
+    await CustomBrandedRequest.updateMany(
+      { partnerId, paymentStatus: 'Paid' },
+      {
+        $set: {
+          'brandingDetails.revisionsUsed': newUsed,
+          'brandingDetails.revisionNotes': notesList,
+        },
+      }
+    );
+
+    return res.json({
+      success: true,
+      message: `Revision request submitted (${newUsed}/2 used). Our designer will review within 1–2 working days.`,
+      data: {
+        revisionsUsed: newUsed,
+        revisionsRemaining: 2 - newUsed,
+        status: 'onboarding',
+      },
+    });
+  } catch (err) {
+    console.error('[customBrandedReport] requestRevision error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to request revision.' });
   }
 }
 
@@ -406,8 +712,11 @@ async function getRequest(req, res) {
 module.exports = {
   createRequest,
   getRequest,
+  getBrandingStatus,
   getQuote,
   payWithWallet,
   createOrder,
   verifyPayment,
+  submitBrandAssets,
+  requestRevision,
 };

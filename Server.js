@@ -204,6 +204,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/partner", partnerRoutes);
 app.use("/api/partner/custom-branded-report", customBrandedReportRoutes);
+app.use("/api/branding", customBrandedReportRoutes);
+app.use("/api/partner/branding", customBrandedReportRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
 
