@@ -326,25 +326,25 @@ async function payWithWallet(req, res) {
         purpose: 'CUSTOM_BRAND_FEE',
         status: 'SUCCESS',
         gateway: 'WALLET',
-        description: 'Report charge · CUSTOM BRAND FEE −₹2,500',
+        description: 'AI Branded Report one-time fee (wallet)',
       }),
       // Remove any stale unpaid skeleton so only the paid request remains.
       CustomBrandedRequest.deleteMany({ partnerId, paymentStatus: 'Unpaid' }),
     ]);
 
-    // Create or update the paid CustomBrandedRequest
-    let newRequest = await CustomBrandedRequest.findOne({ partnerId, paymentStatus: 'Paid' });
-    if (!newRequest) {
-      newRequest = new CustomBrandedRequest({
-        partnerId,
-        email: String(email).trim().toLowerCase(),
-        phone: digitsOnly,
-        status: 'Active',
-        amount: CBR_PRICE_INR,
-        paymentStatus: 'Paid',
-        paymentMethod: 'WALLET',
-        orderId,
-        paymentId: String(txn._id),
+    // Lost a double-submit race (two debits in flight)? Refund this one and
+    // return the winner instead of creating a second Active request.
+    const raced = await findBlockingRequest(partnerId);
+    if (raced) {
+      await User.updateOne({ _id: partnerId }, { $inc: { walletBalance: CBR_PRICE_INR } });
+      txn.status = 'REFUNDED';
+      txn.description = 'AI Branded Report one-time fee (wallet) — refunded: duplicate request';
+      await txn.save();
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_REQUEST',
+        message: 'You already have an active custom branded report request. Duplicate charge refunded.',
+        data: raced,
       });
       await newRequest.save();
     }
@@ -436,7 +436,7 @@ async function createOrder(req, res) {
       purpose: 'CUSTOM_BRAND_FEE',
       status: 'PENDING',
       gateway: 'RAZORPAY',
-      description: `Custom Branded Report one-time fee (${skeleton.requestId})`,
+      description: `AI Branded Report one-time fee (${skeleton.requestId})`,
     });
 
     return res.status(200).json({

@@ -215,7 +215,7 @@ exports.getPublicPlans = async (req, res) => {
     }
     const ai = pricing
       ? quoteForProduct(pricing, "ai", "starter", "success")
-      : { base: 100, gstRate: 18, gstAmount: 18, total: 118 };
+      : { base: 100, gstRate: 0, gstAmount: 0, total: 100 };
     const otherFailed = pricing
       ? quoteForProduct(pricing, "experian", "starter", "fail")
       : { base: 30, gstRate: 0, gstAmount: 0, total: 30 };
