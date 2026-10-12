@@ -51,7 +51,7 @@ const PRICING_DEFAULTS = {
     pro: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
     enterprise: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
   },
-  ai: { base: 100, gstRate: 18 },
+  ai: { base: 100, gstRate: 0 },
   aiFail: { base: 100, gstRate: 0 },
   rc: { base: 10, gstRate: 0 },
   gst: { base: 10, gstRate: 0 },
@@ -97,6 +97,13 @@ Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upse
         }
         const res = await Pricing.updateOne({ key: "default" }, { $set: sync });
         if (res.modifiedCount > 0) console.log("[Pricing] single-plan prices force-synced (cibil 60 / exp 40 / crif 50 / eq 40)");
+        // AI GST removed per founder (base 100 = charge 100): normalize any
+        // pre-existing doc still carrying ai.gstRate 18 to 0.
+        const aiFix = await Pricing.updateOne(
+          { key: "default", "ai.gstRate": { $ne: 0 } },
+          { $set: { "ai.gstRate": 0 } },
+        );
+        if (aiFix.modifiedCount > 0) console.log("[Pricing] AI GST removed (ai.gstRate -> 0, charge 100 flat)");
         // No forced plan pick in single-plan mode: unblock anyone stuck on the
         // legacy gate and land everyone on the single plan.
         // TODO(multi-plan-restore): delete this unblock.

@@ -29,7 +29,7 @@ const productPriceSchema = new mongoose.Schema(
 // Tier numbers are GST-inclusive totals (gstRate 0) unless the founder says
 // otherwise.
 // AI + failure fallbacks stay flat across all tiers:
-//   AI success = base + GST, any other failure = otherFailedCharge.
+//   AI success = base flat (no GST), any other failure = otherFailedCharge.
 // Single-plan launch mode: one effective plan ("starter") with founder prices.
 // All 5 tier rows are kept identical so stale activePlan values still bill
 // correctly. Flip SINGLE_PLAN_MODE to false to restore multi-tier slabs.
@@ -67,7 +67,7 @@ const pricingSchema = new mongoose.Schema(
         default: { recharge: 1000, cibil: 60, experian: 40, crif: 50, equifax: 40, cibilFailed: 60 },
       },
     },
-    ai: { type: productPriceSchema, default: { base: 100, gstRate: 18 } },
+    ai: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
     // Dedicated AI failure price (flat total — GST inputs are hidden on the
     // Admin Pricing page, so gstRate stays 0 here; totals show GST-inclusive).
     aiFail: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
@@ -124,11 +124,12 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
     if (kind === "fail") {
       if (SINGLE_PLAN_MODE) {
         const aiFail = pricing.aiFail || { base: pricing.ai.base, gstRate: 0 };
-        return totalsFor(aiFail.base, aiFail.gstRate);
+        return totalsFor(aiFail.base, 0);
       }
       return totalsFor(pricing.otherFailedCharge.base, pricing.otherFailedCharge.gstRate);
     }
-    return totalsFor(pricing.ai.base, pricing.ai.gstRate);
+    // AI success is flat — GST removed per founder: base 100 = charge 100.
+    return totalsFor(pricing.ai.base, 0);
   }
   if (key === "rc") {
     // Single-plan launch: RC failures bill the same ₹10 as success.
