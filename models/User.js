@@ -137,6 +137,9 @@ const userSchema = new mongoose.Schema(
   },
 );
 
+// Sheets Partners-tab sync (watermark filter + createdAt sort).
+userSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
+
 // Generate partner_id before saving a new user
 userSchema.pre("save", async function () {
   if (this.isNew && !this.partner_id) {

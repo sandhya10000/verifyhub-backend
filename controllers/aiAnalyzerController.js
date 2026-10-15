@@ -9,6 +9,7 @@ const ALLOWED_LANGUAGE_CODES = new Set(['en','hi','ta','te','kn','mr','bn','gu',
 
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
 const { logStep } = require('../utils/logger');
+const { verifyReportLink } = require('../utils/reportShare');
 
 
 exports.uploadReport = async (req, res) => {
@@ -232,6 +233,34 @@ exports.listAnalyses = async (req, res) => {
   } catch (err) {
     console.error('listAnalyses error:', err);
     res.status(500).json({ success: false, message: 'Could not fetch analyses.' });
+  }
+};
+
+// GET /api/ai-analyzer/shared/:id?exp=<ms>&sig=<hex> — PUBLIC (no login).
+// Serves the same resulted .html report as downloadPdf, authorized by the
+// HMAC share link embedded in the Google Sheet "Report Link" column instead
+// of a Bearer token (browser clicks from a sheet carry none).
+exports.downloadSharedPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { exp, sig } = req.query || {};
+    if (!verifyReportLink(id, exp, sig)) {
+      return res.status(403).json({ success: false, message: 'This report link is invalid or has expired.' });
+    }
+    const analysis = await AIAnalysis.findById(id);
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Analysis not found.' });
+    }
+    if (analysis.status !== 'completed' || analysis.htmlStatus === 'failed' || !analysis.htmlReport) {
+      return res.status(422).json({ success: false, message: 'Report is not ready yet.' });
+    }
+    return res.set({
+      'Content-Type': 'text/html',
+      'Content-Disposition': `attachment; filename="credit-analysis-${id}.html"`,
+    }).send(analysis.htmlReport);
+  } catch (err) {
+    console.error('[downloadSharedPdf] error:', err);
+    res.status(500).json({ success: false, message: 'Could not open report.' });
   }
 };
 

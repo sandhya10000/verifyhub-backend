@@ -110,6 +110,8 @@ const gstVerificationSchema = new mongoose.Schema(
 
 gstVerificationSchema.index({ status: 1, createdAt: -1 });
 gstVerificationSchema.index({ userId: 1, status: 1 });
+// Sheets sync filter+sort (sheetSyncedAt == null, sort by createdAt).
+gstVerificationSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
 
 // Auto-fill failure fields on save — same behavior as other verifications.
 gstVerificationSchema.pre("save", function () {
