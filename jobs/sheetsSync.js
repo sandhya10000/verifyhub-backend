@@ -17,11 +17,13 @@ const GstVerification = require('../models/GstVerification');
 const User = require('../models/User');
 const {
   HEADERS,
+  DATE_COLS,
   getSheetsConfig,
   saveSheetsConfig,
   resolveSpreadsheetId,
   getSheetsClient,
   ensureHeaders,
+  ensureDateColumnFormat,
   appendRows,
   updateRow,
   getPartnerIdRowMap,
@@ -29,9 +31,27 @@ const {
 
 const BATCH_LIMIT = 500;
 
+// Locale-proof IST timestamp, forced to TEXT in Sheets via a leading
+// apostrophe: "'2026-10-15 14:30". The apostrophe is Sheets' text-forcing
+// marker (stored but not displayed), so the value can NEVER be parsed into
+// a date serial (46292.97…) no matter the sheet locale or column format.
+// ISO order keeps the column chronologically sortable as text.
 const fmtDate = (d) => {
   try {
-    return d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '';
+    if (!d) return '';
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(d));
+    const p = {};
+    for (const x of parts) p[x.type] = x.value;
+    const hour = p.hour === '24' ? '00' : p.hour;
+    return `'${p.year}-${p.month}-${p.day} ${hour}:${p.minute}`;
   } catch {
     return '';
   }
@@ -71,7 +91,28 @@ function aiRow(doc) {
     fmtDate(doc.createdAt), p.name, p.email, doc.fileName || '',
     r.score ?? '', r.scoreBand || '', r.foirPercent ?? '',
     r.maxEligibleAmount ?? '', r.recommendation || '', doc.status || '',
+    aiReportLink(doc),
   ];
+}
+
+// Link to the resulted AI document (the same .html report the app's download
+// button serves). Sheet clicks carry no login token, so completed analyses get
+// a signed public share URL (HMAC, 2-year validity) instead of the authed
+// download endpoint, which 401s with "missing token" in a browser.
+function aiReportLink(doc) {
+  if (doc.resultPdfPath) return pdfLink(doc);
+  const ready = doc.htmlStatus === 'completed' || doc.status === 'completed';
+  if (!ready || !doc._id) return '';
+  try {
+    const { signReportLink } = require('../utils/reportShare');
+    const signed = signReportLink(String(doc._id));
+    if (signed) return signed;
+  } catch (e) {
+    console.error('[sheets] report share-sign failed:', e.message);
+  }
+  const base = (process.env.PUBLIC_APP_URL || '').replace(/\/+$/, '');
+  if (!base) return '';
+  return `${base}/api/ai-analyzer/${doc._id}/download-pdf`;
 }
 
 function rcRow(doc) {
@@ -126,9 +167,13 @@ async function syncPartnersUpsert(sheets, spreadsheetId, tab, { backfill = false
     .find(filter)
     .sort({ createdAt: 1 })
     .limit(BATCH_LIMIT)
+    .setOptions({ allowDiskUse: true })
     .lean();
-  if (docs.length === 0) return { pushed: 0, updated: 0 };
+  // Headers + date-column formatting run on EVERY pass (even with zero new
+  // docs) so already-synced serial columns get repaired without a re-push.
   await ensureHeaders(sheets, spreadsheetId, tab, HEADERS.partners);
+  await ensureDateColumnFormat(sheets, spreadsheetId, tab, DATE_COLS.partners);
+  if (docs.length === 0) return { pushed: 0, updated: 0 };
   const idRowMap = await getPartnerIdRowMap(sheets, spreadsheetId, tab);
   let pushed = 0;
   let updated = 0;
@@ -166,9 +211,20 @@ async function syncSource(sheets, spreadsheetId, key, tab, { backfill = false } 
     .populate('userId', 'name email')
     .sort(sort)
     .limit(BATCH_LIMIT)
+    // Large unsynced backlogs can spill past the 32 MB in-memory sort limit
+    // (seen on AIAnalysis) — allow disk use; compound indexes on
+    // {sheetSyncedAt, createdAt} keep the steady state indexed.
+    .setOptions({ allowDiskUse: true })
+    // AI docs carry huge inline payloads (htmlReport, rawModelResponse)
+    // that the sheet never needs — exclude them to keep batches light.
+    // Harmless for models that lack these paths.
+    .select('-htmlReport -rawModelResponse')
     .lean();
-  if (docs.length === 0) return { pushed: 0 };
+  // Headers + date-column formatting run on EVERY pass (even with zero new
+  // docs) so already-synced serial columns get repaired without a re-push.
   await ensureHeaders(sheets, spreadsheetId, tab, HEADERS[key]);
+  await ensureDateColumnFormat(sheets, spreadsheetId, tab, DATE_COLS[key]);
+  if (docs.length === 0) return { pushed: 0 };
   const rows = docs.map(toRow);
   const pushed = await appendRows(sheets, spreadsheetId, tab, rows);
   const now = new Date();

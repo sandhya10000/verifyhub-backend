@@ -32,6 +32,7 @@ const HEADERS = {
   ai: [
     'Date', 'Partner Name', 'Partner Email', 'File Name', 'Score',
     'Score Band', 'FOIR %', 'Eligible Amount', 'Recommendation', 'Status',
+    'Report Link',
   ],
   rc: [
     'Date', 'Partner Name', 'Partner Email', 'Vehicle No.', 'Owner Name',
@@ -161,6 +162,19 @@ function resetSheetsClient() {
 }
 
 // Create the header row if the tab is empty (lets the backend own columns).
+// When we ship a NEW trailing column (e.g. AI "Report Link"), existing tabs
+// only get the missing tail appended — existing headers (including admin
+// renames/reorders) are never overwritten.
+function colLetter(idx) {
+  let s = '';
+  let n = idx;
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
 async function ensureHeaders(sheets, spreadsheetId, tab, headers) {
   const read = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -173,6 +187,16 @@ async function ensureHeaders(sheets, spreadsheetId, tab, headers) {
       range: `${tab}!A1`,
       valueInputOption: 'RAW',
       requestBody: { values: [headers] },
+    });
+    return;
+  }
+  if (rows[0].length < headers.length) {
+    const missing = headers.slice(rows[0].length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${tab}!${colLetter(rows[0].length)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [missing] },
     });
   }
 }
@@ -187,6 +211,61 @@ async function appendRows(sheets, spreadsheetId, tab, rows) {
     requestBody: { values: rows },
   });
   return rows.length;
+}
+
+// Date-bearing column indexes (0-based) per tab. Sheets auto-parses our
+// date strings but may display them as raw serial numbers (e.g. 46290.73)
+// when the column has no date format — so every sync enforces a DateTime
+// number format on these columns (below the header row). Idempotent and
+// column-wide, so already-synced rows get fixed too.
+const DATE_COLS = {
+  bureau: [0],
+  ai: [0],
+  rc: [0],
+  gst: [0],
+  partners: [0, 11],
+};
+
+async function ensureDateColumnFormat(sheets, spreadsheetId, tab, cols) {
+  try {
+    if (!cols || cols.length === 0) return;
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties',
+    });
+    const sheet = (meta.data.sheets || []).find(
+      (s) => s.properties && s.properties.title === tab,
+    );
+    if (!sheet || sheet.properties.sheetId == null) {
+      const titles = (meta.data.sheets || []).map((s) => s.properties && s.properties.title).join(', ');
+      console.error(`[sheets] tab "${tab}" not found in spreadsheet (tabs: ${titles}) — check Admin → Settings tab names`);
+      return;
+    }
+    const sheetId = sheet.properties.sheetId;
+    const requests = cols.map((c) => ({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: 1,
+          startColumnIndex: c,
+          endColumnIndex: c + 1,
+        },
+        cell: {
+          userEnteredFormat: {
+            numberFormat: { type: 'DATE_TIME', pattern: 'dd-mmm-yyyy hh:mm' },
+          },
+        },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    }));
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests },
+    });
+  } catch (err) {
+    // Formatting must never fail a sync — data already landed above.
+    console.error(`[sheets] date-format skipped for tab "${tab}":`, err.message);
+  }
 }
 
 // Overwrite one full row (1-indexed sheet row number, header is row 1).
@@ -223,6 +302,7 @@ async function getPartnerIdRowMap(sheets, spreadsheetId, tab) {
 
 module.exports = {
   HEADERS,
+  DATE_COLS,
   DEFAULT_CONFIG,
   getSheetsConfig,
   saveSheetsConfig,
@@ -232,6 +312,7 @@ module.exports = {
   getSheetsClient,
   resetSheetsClient,
   ensureHeaders,
+  ensureDateColumnFormat,
   appendRows,
   updateRow,
   getPartnerIdRowMap,

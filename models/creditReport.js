@@ -206,6 +206,8 @@ const creditReportSchema = new mongoose.Schema(
 
 creditReportSchema.index({ status: 1, bureau: 1, createdAt: -1 });
 creditReportSchema.index({ userId: 1, status: 1 });
+// Sheets sync filter+sort (sheetSyncedAt == null, sort by createdAt).
+creditReportSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
 
 // Auto-fill failure fields on save: new failures and legacy docs that only
 // have reportData.error get a readable reason without touching controllers.
