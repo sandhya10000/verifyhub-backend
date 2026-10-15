@@ -151,12 +151,16 @@ function metaRow(label, value) {
 // for everyone, so receipts talk wallet + standard rates only.
 // TODO(multi-plan-restore): revive plan branches below.
 function rechargeInvoiceHtml(d) {
+  const bonus = Math.max(0, Number(d.bonusCredit) || 0);
   const invoiceRows = [
     row("Wallet top-up (GST-inclusive)", inr(d.baseAmount)),
     ...(Number(d.gstAmount) > 0 ? [row(`GST @ 18% on top-up`, inr(d.gstAmount))] : []),
+    // Bonus line only when the plan carries extra credit (recharge above ₹1000).
+    ...(bonus > 0 ? [row("Bonus credits (extra, free)", inr(bonus))] : []),
   ].join("");
   const totals = [
     totalRow("Paid via Razorpay", inr(d.totalPaid), false),
+    ...(bonus > 0 ? [totalRow("Bonus credits", inr(bonus), false)] : []),
     totalRow("Wallet credited", inr(d.walletCredit), false),
     totalRow("New wallet balance", inr(d.walletBalance), true),
   ].join("");
@@ -167,7 +171,9 @@ function rechargeInvoiceHtml(d) {
     metaRow("Date (IST)", istDate(d.date)),
     ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
   ].join("");
-  const intro = `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet — pull any report, anytime; every report is billed per pull at standard rates.`;
+  const intro = bonus > 0
+    ? `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet — including <b>${esc(inr(bonus))} bonus credits</b> on this plan. Pull any report, anytime; every report is billed per pull at standard rates.`
+    : `Thanks for your payment of <b>${esc(inr(d.totalPaid))}</b>. <b>${esc(inr(d.walletCredit))}</b> has been credited to your wallet — pull any report, anytime; every report is billed per pull at standard rates.`;
   return receiptShell({
     title: "Payment Receipt — Wallet Top-up",
     preheader: `Wallet credited ${inr(d.walletCredit)} · Balance ${inr(d.walletBalance)}`,
@@ -176,12 +182,14 @@ function rechargeInvoiceHtml(d) {
 }
 
 async function sendRechargeSuccessMail(to, d) {
+  const bonus = Math.max(0, Number(d.bonusCredit) || 0);
   const subject = `VerifyHub: wallet recharged — ${inr(d.walletCredit)} credited`;
   const html = rechargeInvoiceHtml(d);
   const text = [
     `Hi ${d.name || "Partner"},`,
     `Your wallet top-up was successful. Pull any report, anytime; every report is billed per pull at standard rates.`,
     ...(Number(d.gstAmount) > 0 ? [`Base: ${inr(d.baseAmount)} | GST: ${inr(d.gstAmount)} | Paid: ${inr(d.totalPaid)}`] : [`Paid (GST-inclusive): ${inr(d.totalPaid)}`]),
+    ...(bonus > 0 ? [`Bonus credits: ${inr(bonus)}`] : []),
     `Wallet credited: ${inr(d.walletCredit)} | New balance: ${inr(d.walletBalance)}`,
     `Order: ${d.orderId} | Payment: ${d.paymentId} | Date: ${istDate(d.date)}`,
   ].join("\n");

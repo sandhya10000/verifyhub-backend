@@ -829,7 +829,8 @@ exports.getPricing = async (req, res) => {
 // PATCH /api/admin/pricing — whitelisted matrix edits only.
 // Body may contain any subset of: plans.{tiers}.{recharge,cibil,experian,crif,equifax,cibilFailed},
 // ai.{base,gstRate}, aiFail.{base,gstRate}, rc.{base,gstRate}, gst.{base,gstRate},
-// otherFailedCharge.{base,gstRate}, minRecharge, lowBalanceThreshold, lowBalanceAlertIntervalDays.
+// otherFailedCharge.{base,gstRate}, minRecharge, lowBalanceThreshold, lowBalanceAlertIntervalDays,
+// rechargePlans: [{ pay, credit }].
 exports.updatePricing = async (req, res) => {
   try {
     const set = {};
@@ -856,6 +857,25 @@ exports.updatePricing = async (req, res) => {
     for (const field of ["minRecharge", "lowBalanceThreshold", "lowBalanceAlertIntervalDays"]) {
       const n = num(req.body?.[field]);
       if (n !== undefined && Number.isFinite(n) && n >= 0) set[field] = n;
+    }
+
+    // Recharge plans (pay -> credit). Replaces the whole array; entries need
+    // pay >= 0, credit >= pay, unique pay values, max 12 rows.
+    if (Array.isArray(req.body?.rechargePlans)) {
+      const seen = new Set();
+      const cleaned = [];
+      for (const entry of req.body.rechargePlans.slice(0, 12)) {
+        const pay = Number(entry?.pay);
+        const credit = Number(entry?.credit);
+        if (!Number.isFinite(pay) || !Number.isFinite(credit) || pay < 0 || credit < pay) continue;
+        if (seen.has(pay)) continue;
+        seen.add(pay);
+        cleaned.push({ pay, credit });
+      }
+      if (cleaned.length) {
+        cleaned.sort((a, b) => a.pay - b.pay);
+        set["rechargePlans"] = cleaned;
+      }
     }
 
     // Single-plan mode: mirror the single plan row to all tiers so stale

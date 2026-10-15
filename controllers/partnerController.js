@@ -4,7 +4,8 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
 const Pricing = require('../models/Pricing');
-const { PLAN_KEYS, quoteForProduct } = require('../models/Pricing');
+const { PLAN_KEYS, quoteForProduct, DEFAULT_RECHARGE_PLANS } = require('../models/Pricing');
+const { getBannerConfig } = require('./bannerController');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
@@ -230,6 +231,11 @@ exports.getPublicPlans = async (req, res) => {
     const gst = pricing
       ? quoteForProduct(pricing, "gst", "starter", "success")
       : { base: 10, gstRate: 0, gstAmount: 0, total: 10 };
+    // Admin-editable Add Funds banner (falls back to the bundled default).
+    let addFundsBanner = { imageUrl: "/Add_Funds_banner.png", enabled: true, cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0 };
+    try {
+      addFundsBanner = await getBannerConfig();
+    } catch { /* default banner stays */ }
     res.json({
       success: true,
       data: {
@@ -240,6 +246,15 @@ exports.getPublicPlans = async (req, res) => {
         rc: { base: rc.base, gstRate: rc.gstRate, total: rc.total },
         gst: { base: gst.base, gstRate: gst.gstRate, total: gst.total },
         minRecharge: pricing?.minRecharge ?? 1000,
+        rechargePlans: pricing?.rechargePlans?.length ? pricing.rechargePlans : DEFAULT_RECHARGE_PLANS,
+        addFundsBanner: {
+          imageUrl: addFundsBanner.imageUrl,
+          enabled: addFundsBanner.enabled !== false,
+          cropTop: Number(addFundsBanner.cropTop) || 0,
+          cropBottom: Number(addFundsBanner.cropBottom) || 0,
+          cropLeft: Number(addFundsBanner.cropLeft) || 0,
+          cropRight: Number(addFundsBanner.cropRight) || 0,
+        },
         singlePlanMode: true, // TODO(multi-plan-restore): remove flag once multi-tier returns
         singlePlanKey: "starter",
       },
