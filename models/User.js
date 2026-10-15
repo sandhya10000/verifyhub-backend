@@ -122,6 +122,14 @@ const userSchema = new mongoose.Schema(
       revisionsUsed: { type: Number, default: 0 },
       revisionNotes: { type: [String], default: [] },
     },
+    // Google Sheets export watermark for the Partners tab (Admin → Settings).
+    // Stamped after a successful upsert; edits are detected via
+    // updatedAt > sheetSyncedAt so wallet/status/profile changes re-sync.
+    sheetSyncedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
 
   {

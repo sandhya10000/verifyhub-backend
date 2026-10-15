@@ -45,6 +45,18 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Recharge bonus bookkeeping (single CREDIT row — no separate ledger entry).
+    // amount = paid via Razorpay, walletCredit = amount + bonusCredit.
+    bonusCredit: {
+      type: Number,
+      default: 0,
+    },
+
+    walletCredit: {
+      type: Number,
+      default: null,
+    },
+
     paymentId: {
       type: String,
       default: null,

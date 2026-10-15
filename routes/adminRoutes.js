@@ -35,6 +35,20 @@ router.get('/integrations/google-sheets', auth, isAdmin, sheetsController.getShe
 router.put('/integrations/google-sheets', auth, isAdmin, sheetsController.updateSheetsSettings);
 router.post('/integrations/google-sheets/sync-now', auth, isAdmin, sheetsController.triggerSheetsSync);
 
+// Add Funds banner (Admin → Banners tab). Upload uses its own multer config
+// (image-only); multer errors surface as 400 with the reason.
+const bannerController = require('../controllers/bannerController');
+const { bannerUpload } = require('../config/bannerUpload');
+router.get('/banners/add-funds', auth, isAdmin, bannerController.getAddFundsBanner);
+router.post('/banners/add-funds', auth, isAdmin, (req, res, next) => {
+  bannerUpload.single('banner')(req, res, (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    next();
+  });
+}, bannerController.uploadAddFundsBanner);
+router.patch('/banners/add-funds', auth, isAdmin, bannerController.setAddFundsBannerEnabled);
+router.delete('/banners/add-funds', auth, isAdmin, bannerController.resetAddFundsBanner);
+
 // Support Ticket routes
 router.get('/tickets/unread-count', auth, isAdmin, ticketController.getUnreadCount);
 router.post('/tickets/mark-seen', auth, isAdmin, ticketController.markTicketsSeen);

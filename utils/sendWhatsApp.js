@@ -134,11 +134,14 @@ function templateStatus(r) {
 // Single-plan launch: no plan names — one rate card for everyone.
 // TODO(multi-plan-restore): revive plan lines below.
 async function sendRechargeSuccessWhatsApp(phone, d) {
+  const bonus = Math.max(0, Number(d.bonus) || 0);
+  const paid = d.paid != null ? inr(d.paid) : null;
   return sendWhatsApp({
     to: phone,
     text:
       `Payment Successful \u2705\n` +
       `Dear Partner, ${inr(d.credited)} has been credited to your VerifyHub wallet.\n` +
+      (bonus > 0 ? `Paid: ${paid || inr(Number(d.credited) - bonus)} · Bonus: *${inr(bonus)}*\n` : ``) +
       `New wallet balance: *${inr(d.walletBalance)}*\n` +
       `Reports are billed per pull at standard rates.\n\n` +
       `Thank you for choosing VerifyHub.`,
