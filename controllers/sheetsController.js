@@ -11,6 +11,9 @@ const CreditReport = require('../models/creditReport');
 const AIAnalysis = require('../models/AIAnalysis');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
+const User = require('../models/User');
+
+const SHEET_KEYS = ['bureau', 'ai', 'rc', 'gst', 'partners'];
 
 // GET /api/admin/integrations/google-sheets
 exports.getSheetsSettings = async (req, res) => {
@@ -21,6 +24,13 @@ exports.getSheetsSettings = async (req, res) => {
       ai: await AIAnalysis.countDocuments({ sheetSyncedAt: null }),
       rc: await RcVerification.countDocuments({ sheetSyncedAt: null }),
       gst: await GstVerification.countDocuments({ sheetSyncedAt: null }),
+      partners: await User.countDocuments({
+        role: 'user',
+        $or: [
+          { sheetSyncedAt: null },
+          { $expr: { $gt: ['$updatedAt', '$sheetSyncedAt'] } },
+        ],
+      }),
     };
     res.json({
       success: true,
@@ -33,7 +43,7 @@ exports.getSheetsSettings = async (req, res) => {
 };
 
 // PUT /api/admin/integrations/google-sheets
-// Body: { spreadsheetId?, tabs?({bureau,ai,rc,gst}), enabled?({bureau,ai,rc,gst}), scheduleMinutes? }
+// Body: { spreadsheetId?, spreadsheetIds?({bureau,ai,rc,gst,partners}), tabs?({bureau,ai,rc,gst,partners}), enabled?({bureau,ai,rc,gst,partners}), scheduleMinutes? }
 exports.updateSheetsSettings = async (req, res) => {
   try {
     const patch = {};
@@ -41,16 +51,23 @@ exports.updateSheetsSettings = async (req, res) => {
     if (typeof body.spreadsheetId === 'string' && body.spreadsheetId.trim()) {
       patch.spreadsheetId = body.spreadsheetId.trim();
     }
+    if (body.spreadsheetIds && typeof body.spreadsheetIds === 'object') {
+      const ids = {};
+      for (const k of SHEET_KEYS) {
+        if (typeof body.spreadsheetIds[k] === 'string') ids[k] = body.spreadsheetIds[k].trim();
+      }
+      if (Object.keys(ids).length) patch.spreadsheetIds = ids;
+    }
     if (body.tabs && typeof body.tabs === 'object') {
       const tabs = {};
-      for (const k of ['bureau', 'ai', 'rc', 'gst']) {
+      for (const k of SHEET_KEYS) {
         if (typeof body.tabs[k] === 'string' && body.tabs[k].trim()) tabs[k] = body.tabs[k].trim();
       }
       if (Object.keys(tabs).length) patch.tabs = tabs;
     }
     if (body.enabled && typeof body.enabled === 'object') {
       const enabled = {};
-      for (const k of ['bureau', 'ai', 'rc', 'gst']) {
+      for (const k of SHEET_KEYS) {
         if (typeof body.enabled[k] === 'boolean') enabled[k] = body.enabled[k];
       }
       if (Object.keys(enabled).length) patch.enabled = enabled;

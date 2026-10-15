@@ -18,6 +18,7 @@ const DEFAULT_TABS = {
   ai: 'AI',
   rc: 'RC',
   gst: 'GST',
+  partners: 'Partners',
 };
 
 // Essential columns (row 1 of each tab). Admin can rename/reorder later —
@@ -40,16 +41,23 @@ const HEADERS = {
     'Date', 'Partner Name', 'Partner Email', 'GSTIN', 'Legal Name',
     'Status', 'Failure Reason', 'PDF Link',
   ],
+  partners: [
+    'Date Joined', 'Partner ID', 'Name', 'Email', 'Phone', 'State',
+    'City', 'Pincode', 'Wallet Balance', 'Plan', 'Active', 'Last Login',
+  ],
 };
 
 const DEFAULT_CONFIG = {
   spreadsheetId: DEFAULT_SPREADSHEET_ID,
   tabs: { ...DEFAULT_TABS },
-  enabled: { bureau: true, ai: true, rc: true, gst: true },
+  enabled: { bureau: true, ai: true, rc: true, gst: true, partners: true },
+  // Optional per-tab spreadsheet override. Empty/missing falls back to the
+  // main spreadsheetId above — use it when Partners lives in its own file.
+  spreadsheetIds: { bureau: '', ai: '', rc: '', gst: '', partners: '' },
   scheduleMinutes: 15,
   // Last-run bookkeeping (updated by the job, shown in Admin → Settings).
-  lastSync: { bureau: null, ai: null, rc: null, gst: null },
-  lastError: { bureau: null, ai: null, rc: null, gst: null },
+  lastSync: { bureau: null, ai: null, rc: null, gst: null, partners: null },
+  lastError: { bureau: null, ai: null, rc: null, gst: null, partners: null },
 };
 
 async function getSheetsConfig() {
@@ -60,9 +68,15 @@ async function getSheetsConfig() {
     ...stored,
     tabs: { ...DEFAULT_TABS, ...(stored.tabs || {}) },
     enabled: { ...DEFAULT_CONFIG.enabled, ...(stored.enabled || {}) },
+    spreadsheetIds: { ...DEFAULT_CONFIG.spreadsheetIds, ...(stored.spreadsheetIds || {}) },
     lastSync: { ...DEFAULT_CONFIG.lastSync, ...(stored.lastSync || {}) },
     lastError: { ...DEFAULT_CONFIG.lastError, ...(stored.lastError || {}) },
   };
+}
+
+function resolveSpreadsheetId(config, key) {
+  const override = (config.spreadsheetIds && config.spreadsheetIds[key]) || '';
+  return (override && override.trim()) || config.spreadsheetId;
 }
 
 async function saveSheetsConfig(patch) {
@@ -72,6 +86,7 @@ async function saveSheetsConfig(patch) {
     ...patch,
     tabs: { ...current.tabs, ...(patch.tabs || {}) },
     enabled: { ...current.enabled, ...(patch.enabled || {}) },
+    spreadsheetIds: { ...current.spreadsheetIds, ...(patch.spreadsheetIds || {}) },
     lastSync: { ...current.lastSync, ...(patch.lastSync || {}) },
     lastError: { ...current.lastError, ...(patch.lastError || {}) },
   };
@@ -98,10 +113,11 @@ async function ensureSheetsConfigSeeded() {
       value: {
         spreadsheetId: DEFAULT_SPREADSHEET_ID,
         tabs: { ...DEFAULT_TABS },
-        enabled: { bureau: true, ai: true, rc: true, gst: true },
+        enabled: { bureau: true, ai: true, rc: true, gst: true, partners: true },
+        spreadsheetIds: { bureau: '', ai: '', rc: '', gst: '', partners: '' },
         scheduleMinutes: 15,
-        lastSync: { bureau: null, ai: null, rc: null, gst: null },
-        lastError: { bureau: null, ai: null, rc: null, gst: null },
+        lastSync: { bureau: null, ai: null, rc: null, gst: null, partners: null },
+        lastError: { bureau: null, ai: null, rc: null, gst: null, partners: null },
       },
       description: 'Google Sheets data-export sync (Admin → Settings)',
     });
@@ -173,15 +189,50 @@ async function appendRows(sheets, spreadsheetId, tab, rows) {
   return rows.length;
 }
 
+// Overwrite one full row (1-indexed sheet row number, header is row 1).
+async function updateRow(sheets, spreadsheetId, tab, rowNumber, row) {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${tab}!A${rowNumber}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [row] },
+  });
+}
+
+// Map column B (Partner ID) values → 1-indexed sheet row numbers.
+// Used by the Partners upsert so edits update the same row instead of
+// appending duplicates. Returns {} when the tab is empty/missing.
+async function getPartnerIdRowMap(sheets, spreadsheetId, tab) {
+  try {
+    const read = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tab}!B2:B`,
+    });
+    const values = read.data.values || [];
+    const map = {};
+    values.forEach((r, idx) => {
+      const id = (r && r[0] && String(r[0]).trim()) || '';
+      if (id && !map[id]) map[id] = idx + 2;
+    });
+    return map;
+  } catch (err) {
+    if (err && (err.code === 400 || /Unable to parse range/i.test(err.message || ''))) return {};
+    throw err;
+  }
+}
+
 module.exports = {
   HEADERS,
   DEFAULT_CONFIG,
   getSheetsConfig,
   saveSheetsConfig,
+  resolveSpreadsheetId,
   ensureSheetsConfigSeeded,
   keyFileStatus,
   getSheetsClient,
   resetSheetsClient,
   ensureHeaders,
   appendRows,
+  updateRow,
+  getPartnerIdRowMap,
 };

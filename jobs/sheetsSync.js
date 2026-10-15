@@ -14,13 +14,17 @@ const CreditReport = require('../models/creditReport');
 const AIAnalysis = require('../models/AIAnalysis');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
+const User = require('../models/User');
 const {
   HEADERS,
   getSheetsConfig,
   saveSheetsConfig,
+  resolveSpreadsheetId,
   getSheetsClient,
   ensureHeaders,
   appendRows,
+  updateRow,
+  getPartnerIdRowMap,
 } = require('../utils/googleSheets');
 
 const BATCH_LIMIT = 500;
@@ -86,12 +90,73 @@ function gstRow(doc) {
   ];
 }
 
+function partnerRow(doc) {
+  return [
+    fmtDate(doc.createdAt), doc.partner_id || '', doc.name || '',
+    doc.email || '', doc.phone || '', doc.state || '', doc.city || '',
+    doc.pincode || '', doc.walletBalance ?? '', doc.activePlan || '',
+    doc.isActive ? 'Active' : 'Suspended', fmtDate(doc.lastLoginAt),
+  ];
+}
+
 const SOURCES = {
   bureau: { model: CreditReport, toRow: bureauRow, sort: { createdAt: 1 } },
   ai: { model: AIAnalysis, toRow: aiRow, sort: { createdAt: 1 } },
   rc: { model: RcVerification, toRow: rcRow, sort: { createdAt: 1 } },
   gst: { model: GstVerification, toRow: gstRow, sort: { createdAt: 1 } },
+  partners: { model: User, toRow: partnerRow, sort: { createdAt: 1 }, upsert: true },
 };
+
+// Partners use upsert semantics (update the same row on wallet/status/
+// profile edits) keyed by Partner ID (column B). New partners append,
+// known IDs overwrite their row in place. Backfill upserts everything
+// (up to BATCH_LIMIT per run); incremental runs only pick up never-synced
+// docs plus docs edited since their last sync stamp.
+async function syncPartnersUpsert(sheets, spreadsheetId, tab, { backfill = false } = {}) {
+  const filter = backfill
+    ? { role: 'user' }
+    : {
+        role: 'user',
+        $or: [
+          { sheetSyncedAt: null },
+          { $expr: { $gt: ['$updatedAt', '$sheetSyncedAt'] } },
+        ],
+      };
+  const docs = await User
+    .find(filter)
+    .sort({ createdAt: 1 })
+    .limit(BATCH_LIMIT)
+    .lean();
+  if (docs.length === 0) return { pushed: 0, updated: 0 };
+  await ensureHeaders(sheets, spreadsheetId, tab, HEADERS.partners);
+  const idRowMap = await getPartnerIdRowMap(sheets, spreadsheetId, tab);
+  let pushed = 0;
+  let updated = 0;
+  const appendBatch = [];
+  const appendDocs = [];
+  for (const doc of docs) {
+    const key = (doc.partner_id && String(doc.partner_id).trim()) || '';
+    // Docs without a partner_id (legacy) can't be matched reliably — append.
+    const rowNumber = key ? idRowMap[key] : null;
+    if (rowNumber) {
+      await updateRow(sheets, spreadsheetId, tab, rowNumber, partnerRow(doc));
+      updated += 1;
+    } else {
+      appendBatch.push(partnerRow(doc));
+      appendDocs.push(doc);
+      if (key) idRowMap[key] = true; // dedupe repeats within the same batch
+    }
+  }
+  if (appendBatch.length) {
+    pushed = await appendRows(sheets, spreadsheetId, tab, appendBatch);
+  }
+  const now = new Date();
+  await User.updateMany(
+    { _id: { $in: docs.map((d) => d._id) } },
+    { $set: { sheetSyncedAt: now } },
+  );
+  return { pushed, updated };
+}
 
 async function syncSource(sheets, spreadsheetId, key, tab, { backfill = false } = {}) {
   const { model, toRow, sort } = SOURCES[key];
@@ -130,10 +195,16 @@ async function runSheetsSync({ backfill = false } = {}) {
       continue;
     }
     const tab = (config.tabs && config.tabs[key]) || key;
+    const spreadsheetId = resolveSpreadsheetId(config, key);
     try {
       if (!sheets) sheets = await getSheetsClient();
-      const { pushed } = await syncSource(sheets, config.spreadsheetId, key, tab, { backfill });
-      results[key] = { pushed };
+      if (key === 'partners') {
+        const { pushed, updated } = await syncPartnersUpsert(sheets, spreadsheetId, tab, { backfill });
+        results[key] = { pushed, updated };
+      } else {
+        const { pushed } = await syncSource(sheets, spreadsheetId, key, tab, { backfill });
+        results[key] = { pushed };
+      }
       lastSync[key] = nowIso;
       lastError[key] = null;
     } catch (err) {
@@ -147,4 +218,4 @@ async function runSheetsSync({ backfill = false } = {}) {
   return results;
 }
 
-module.exports = { runSheetsSync, SOURCES };
+module.exports = { runSheetsSync, SOURCES, syncPartnersUpsert };
