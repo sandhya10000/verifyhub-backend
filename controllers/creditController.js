@@ -1031,6 +1031,15 @@ const CrifReport = async (req, res) => {
           documentType: "bureau-verification-crif",
           name,
           mobile,
+          // Identity fields — provider needs them to render PAN/DOB/email
+          // in its PDF and echo them in bureauData. Sent only when provided.
+          ...(panNumber && String(panNumber).trim()
+            ? { pan: String(panNumber).trim().toUpperCase() }
+            : {}),
+          ...(dob ? { dob } : {}),
+          ...(email && String(email).trim()
+            ? { email: String(email).trim().toLowerCase() }
+            : {}),
         },
       },
     };
@@ -1351,80 +1360,207 @@ const CrifReport = async (req, res) => {
     console.log("[CRIF] Report ID:", crifReportId);
 
     // ============================================================
+    // DEBUG: BUREAU DATA SHAPE (to find PDF URL key)
+    // ============================================================
+    console.log("[CRIF] bureauData type:", typeof bureauData);
+    console.log(
+      "[CRIF] bureauData keys:",
+      bureauData && typeof bureauData === "object"
+        ? Object.keys(bureauData)
+        : bureauData,
+    );
+    console.log(
+      "[CRIF] result keys:",
+      result && typeof result === "object" ? Object.keys(result) : result,
+    );
+
+    // ============================================================
     // STEP 22: EXTRACT REPORT URL
     // ============================================================
 
-    const reportUrl =
+    let reportUrl =
       bureauData?.reportUrl ||
       bureauData?.reportURL ||
       bureauData?.pdfUrl ||
       bureauData?.pdfURL ||
       bureauData?.["credit_report_link"] ||
+      bureauData?.report_link ||
+      bureauData?.reportLink ||
+      bureauData?.pdf_link ||
+      bureauData?.fileUrl ||
+      bureauData?.downloadUrl ||
       result?.reportUrl ||
       result?.reportURL ||
       result?.pdfUrl ||
       result?.pdfURL ||
       result?.credit_report_link ||
+      result?.report_link ||
+      result?.fileUrl ||
+      result?.downloadUrl ||
       null;
 
     console.log("[CRIF] Report URL:", reportUrl);
 
     // ============================================================
-    // STEP 23: GENERATE LOCAL PDF
-    // ============================================================
-
-    // ============================================================
-    // STEP 23: DOWNLOAD PROVIDER PDF TO LOCAL STORAGE
+    // STEP 23: SAVE PDF LOCALLY (provider download + local fallback)
     // ============================================================
 
     let localPath = null;
 
-    try {
-      if (!reportUrl) {
-        throw new Error("CRIF provider PDF URL not found");
-      }
+    // Fast path: provider gave us a PDF URL — download it.
+    if (reportUrl) {
+      try {
+        // Physical folder:
+        // backend/uploads/credit-reports/crif
+        const crifUploadDir = path.join(
+          __dirname,
+          "../uploads/credit-reports/crif",
+        );
 
-      // Physical folder:
-      // backend/uploads/credit-reports/crif
-      const crifUploadDir = path.join(
-        __dirname,
-        "../uploads/credit-reports/crif",
-      );
+        // Create folder if it does not exist
+        if (!fs.existsSync(crifUploadDir)) {
+          fs.mkdirSync(crifUploadDir, {
+            recursive: true,
+          });
+        }
 
-      // Create folder if it does not exist
-      if (!fs.existsSync(crifUploadDir)) {
-        fs.mkdirSync(crifUploadDir, {
-          recursive: true,
+        // Use transaction ID for unique filename
+        const fileName = `crif-${transactionId || creditReport._id}.pdf`;
+
+        // Physical file path
+        const physicalFilePath = path.join(crifUploadDir, fileName);
+
+        console.log("[CRIF] Downloading provider PDF...");
+        console.log("[CRIF] Provider PDF URL:", reportUrl);
+        console.log("[CRIF] Local file path:", physicalFilePath);
+
+        const pdfResponse = await axios.get(reportUrl, {
+          responseType: "arraybuffer",
+          timeout: 60000,
         });
+
+        fs.writeFileSync(physicalFilePath, pdfResponse.data);
+
+        // Path to store in MongoDB
+        localPath = `/uploads/credit-reports/crif/${fileName}`;
+
+        console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
+
+        console.log("[CRIF] DB localPath:", localPath);
+      } catch (pdfError) {
+        console.error("[CRIF] Provider PDF download failed:", pdfError.message);
+
+        localPath = null;
       }
+    } else {
+      console.log("[CRIF] No provider PDF URL — will generate PDF locally.");
+    }
 
-      // Use transaction ID for unique filename
-      const fileName = `crif-${transactionId || creditReport._id}.pdf`;
+    // Fallback: generate PDF locally from bureau JSON (same as CIBIL/Experian).
+    if (!localPath) {
+      try {
+        console.log(
+          "[CRIF] Generating local PDF via generateCrifPdf template...",
+        );
 
-      // Physical file path
-      const physicalFilePath = path.join(crifUploadDir, fileName);
+        // Template searches for B2C-REPORT, but live IndiConnect payload
+        // nests the report as bureauData.credit_report — adapt it.
+        let templateInput = apiData;
+        const apiStr = (() => {
+          try {
+            return JSON.stringify(apiData);
+          } catch {
+            return "";
+          }
+        })();
+        if (!apiStr.includes("B2C-REPORT")) {
+          const creditReportJson =
+            bureauData?.credit_report || bureauData || null;
+          if (creditReportJson) {
+            // REQUEST carries the input identity (PAN/DOB/EMAIL/GENDER) —
+            // provider only receives name+mobile, so inject stored values
+            // otherwise PDF shows "-" for PAN/DOB/email.
+            const requestFromDb = {
+              PAN: creditReport.pan || undefined,
+              "PAN-NUMBER": creditReport.pan || undefined,
+              DOB: creditReport.dob || undefined,
+              "DATE-OF-BIRTH": creditReport.dob || undefined,
+              "EMAIL-1": creditReport.email || undefined,
+              EMAIL: creditReport.email || undefined,
+              GENDER: creditReport.gender || undefined,
+              SEX: creditReport.gender || undefined,
+              NAME: name || undefined,
+              "PHONE-1": mobile || undefined,
+              MOBILE: mobile || undefined,
+            };
+            const mergedReport =
+              creditReportJson && typeof creditReportJson === "object"
+                ? { ...creditReportJson }
+                : creditReportJson;
+            if (mergedReport && typeof mergedReport === "object") {
+              // Provider echoes REQUEST with only name+mobile (or empty
+              // DOB/PAN keys) — fill each gap with stored values, preferring
+              // whichever side is non-empty.
+              const providerReq =
+                mergedReport.REQUEST &&
+                typeof mergedReport.REQUEST === "object"
+                  ? mergedReport.REQUEST
+                  : {};
+              const nonEmpty = (v) =>
+                v !== undefined && v !== null && String(v).trim() !== ""
+                  ? v
+                  : undefined;
+              const mergedReq = {};
+              for (const k of new Set([
+                ...Object.keys(requestFromDb),
+                ...Object.keys(providerReq),
+              ])) {
+                mergedReq[k] =
+                  nonEmpty(providerReq[k]) ?? nonEmpty(requestFromDb[k]);
+              }
+              mergedReport.REQUEST = mergedReq;
+              console.log("[CRIF] Stored identity:", {
+                pan: creditReport.pan || null,
+                dob: creditReport.dob || null,
+                email: creditReport.email || null,
+              });
+              console.log("[CRIF] Template REQUEST:", {
+                PAN: mergedReq.PAN || null,
+                DOB: mergedReq.DOB || null,
+                "EMAIL-1": mergedReq["EMAIL-1"] || null,
+              });
+            }
+            templateInput = { "B2C-REPORT": mergedReport };
+            console.log(
+              "[CRIF] Adapted credit_report -> B2C-REPORT for template.",
+            );
+          }
+        }
 
-      console.log("[CRIF] Downloading provider PDF...");
-      console.log("[CRIF] Provider PDF URL:", reportUrl);
-      console.log("[CRIF] Local file path:", physicalFilePath);
+        const generatedAbsPath = await generateCrifPdf(
+          templateInput,
+          creditReport._id.toString(),
+        );
 
-      const pdfResponse = await axios.get(reportUrl, {
-        responseType: "arraybuffer",
-        timeout: 60000,
-      });
+        const generatedFileName = path.basename(generatedAbsPath);
 
-      fs.writeFileSync(physicalFilePath, pdfResponse.data);
+        localPath = `/uploads/credit-reports/crif/${generatedFileName}`;
 
-      // Path to store in MongoDB
-      localPath = `/uploads/credit-reports/crif/${fileName}`;
+        // No provider link — point reportUrl at our own file so history
+        // buttons open the generated PDF (CIBIL pattern).
+        if (!reportUrl) {
+          reportUrl = localPath;
+        }
 
-      console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
-
-      console.log("[CRIF] DB localPath:", localPath);
-    } catch (pdfError) {
-      console.error("[CRIF] Provider PDF download failed:", pdfError.message);
-
-      localPath = null;
+        console.log("[CRIF] Local PDF generated successfully:", generatedAbsPath);
+        console.log("[CRIF] DB localPath:", localPath);
+      } catch (genError) {
+        console.error(
+          "[CRIF] Local PDF generation failed:",
+          genError.message,
+          genError.stack ? genError.stack.split("\n").slice(0, 4).join(" | ") : "",
+        );
+      }
     }
 
     // ============================================================
@@ -1481,6 +1617,10 @@ const CrifReport = async (req, res) => {
       transactionId,
 
       score: creditReport.score,
+
+      pan: creditReport.pan,
+      email: creditReport.email,
+      dob: creditReport.dob,
 
       reportUrl: creditReport.reportUrl,
 
