@@ -20,6 +20,25 @@ const productPriceSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Recharge plan: pay X via Razorpay, wallet credited Y (Y - X = bonus).
+// Plans-only checkout: the amount must exactly match a plan's pay value.
+const rechargePlanSchema = new mongoose.Schema(
+  {
+    pay: { type: Number, required: true, min: 0 },
+    credit: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const DEFAULT_RECHARGE_PLANS = [
+  { pay: 1000, credit: 1000 },
+  { pay: 2000, credit: 2100 },
+  { pay: 5000, credit: 5500 },
+  { pay: 10000, credit: 12000 },
+  { pay: 25000, credit: 28000 },
+  { pay: 50000, credit: 60000 },
+];
+
 // Single-document pricing config.
 //
 // Plans are FREE eligibility tiers, not purchases: `recharge` is the minimum
@@ -76,6 +95,9 @@ const pricingSchema = new mongoose.Schema(
     // One-time Custom Branded Report fee — flat GST-inclusive total (no split).
     cbr: { type: productPriceSchema, default: { base: 2500, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
+    // Recharge plans (pay -> wallet credit). Bonus = credit - pay.
+    // Admin-editable; checkout requires an exact pay match.
+    rechargePlans: { type: [rechargePlanSchema], default: DEFAULT_RECHARGE_PLANS },
     minRecharge: { type: Number, default: 1000, min: 0 },
     lowBalanceThreshold: { type: Number, default: 500, min: 0 },
     lowBalanceAlertIntervalDays: { type: Number, default: 7, min: 1 },
@@ -102,6 +124,16 @@ function tierForAmount(amount) {
   if (amt >= 1000) return "starter";
   if (amt >= 200) return "startup";
   return null;
+}
+
+// Wallet credit for an exact plan pay amount, or null when no plan matches.
+// `plans` is the Pricing.rechargePlans array (falls back to defaults).
+function creditForRecharge(amount, plans) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt)) return null;
+  const list = Array.isArray(plans) && plans.length ? plans : DEFAULT_RECHARGE_PLANS;
+  const hit = list.find((p) => Number(p.pay) === amt);
+  return hit ? Number(hit.credit) : null;
 }
 
 function totalsFor(base, gstRate) {
@@ -183,6 +215,8 @@ module.exports.PLAN_KEYS = PLAN_KEYS;
 module.exports.PRODUCT_KEYS = PRODUCT_KEYS;
 module.exports.tierForAmount = tierForAmount;
 module.exports.totalsFor = totalsFor;
+module.exports.creditForRecharge = creditForRecharge;
+module.exports.DEFAULT_RECHARGE_PLANS = DEFAULT_RECHARGE_PLANS;
 module.exports.quoteForProduct = quoteForProduct;
 module.exports.SINGLE_PLAN_MODE = SINGLE_PLAN_MODE;
 module.exports.SINGLE_PLAN_KEY = SINGLE_PLAN_KEY;

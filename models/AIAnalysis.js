@@ -66,4 +66,8 @@ const AIAnalysisSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Sheets sync filter+sort (sheetSyncedAt == null, sort by createdAt) —
+// without this the AI sort spills past the 32 MB in-memory limit.
+AIAnalysisSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
+
 module.exports = mongoose.model('AIAnalysis', AIAnalysisSchema);

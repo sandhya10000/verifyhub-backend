@@ -131,6 +131,7 @@ exports.addMessage = async (req, res) => {
       ticket.assignedAdminId = req.user._id;
     }
     await ticket.save();
+    await ticket.populate('partnerId', 'name email phone partner_id');
     await ticket.populate('messages.sender', 'name role');
 
     res.json({ success: true, data: ticket, message: 'Reply added' });
@@ -149,7 +150,8 @@ const getUserIdFilter = async (partnerSearch) => {
   const users = await User.find({
     $or: [
       { name: { $regex: partnerSearch, $options: 'i' } },
-      { email: { $regex: partnerSearch, $options: 'i' } }
+      { email: { $regex: partnerSearch, $options: 'i' } },
+      { partner_id: { $regex: partnerSearch, $options: 'i' } }
     ]
   }).select('_id');
   return users.map(u => u._id);
@@ -176,7 +178,7 @@ exports.getAllTickets = async (req, res) => {
 
     const total = await Ticket.countDocuments(query);
     const tickets = await Ticket.find(query)
-      .populate('partnerId', 'name email phone')
+      .populate('partnerId', 'name email phone partner_id')
       .populate('assignedAdminId', 'name email')
       .populate('messages.sender', 'name role')
       .sort({ updatedAt: -1 })
@@ -199,7 +201,7 @@ exports.getAllTickets = async (req, res) => {
 exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
-      .populate('partnerId', 'name email phone')
+      .populate('partnerId', 'name email phone partner_id')
       .populate('assignedAdminId', 'name email')
       .populate('messages.sender', 'name role');
 

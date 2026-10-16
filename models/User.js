@@ -95,12 +95,50 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // AI Custom Branded Report status: not_purchased -> paid -> onboarding -> active
+    brandingStatus: {
+      type: String,
+      enum: ['not_purchased', 'paid', 'onboarding', 'active'],
+      default: 'not_purchased',
+      index: true,
+    },
+    brandingPaidAt: {
+      type: Date,
+      default: null,
+    },
+    brandingAmount: {
+      type: Number,
+      default: null,
+    },
+    brandingDetails: {
+      logoUrl: { type: String, default: '' },
+      brandColors: { type: [String], default: [] },
+      companyName: { type: String, default: '' },
+      tagline: { type: String, default: '' },
+      contactPhone: { type: String, default: '' },
+      contactEmail: { type: String, default: '' },
+      notes: { type: String, default: '' },
+      submittedAt: { type: Date, default: null },
+      revisionsUsed: { type: Number, default: 0 },
+      revisionNotes: { type: [String], default: [] },
+    },
+    // Google Sheets export watermark for the Partners tab (Admin → Settings).
+    // Stamped after a successful upsert; edits are detected via
+    // updatedAt > sheetSyncedAt so wallet/status/profile changes re-sync.
+    sheetSyncedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
 
   {
     timestamps: true,
   },
 );
+
+// Sheets Partners-tab sync (watermark filter + createdAt sort).
+userSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
 
 // Generate partner_id before saving a new user
 userSchema.pre("save", async function () {

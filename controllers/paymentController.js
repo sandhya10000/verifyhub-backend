@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const Pricing = require("../models/Pricing");
-const { PLAN_KEYS, tierForAmount, SINGLE_PLAN_MODE, SINGLE_PLAN_KEY } = require("../models/Pricing");
+const { PLAN_KEYS, tierForAmount, SINGLE_PLAN_MODE, SINGLE_PLAN_KEY, creditForRecharge, DEFAULT_RECHARGE_PLANS } = require("../models/Pricing");
 const { sendRechargeSuccessMail, sendPlanActivationMail } = require("../utils/sendMail");
 
 const razorpay = new Razorpay({
@@ -20,7 +20,8 @@ const createWalletRechargeOrder = async (req, res) => {
     const pricing = await Pricing.findOne({ key: "default" }).lean();
     const MIN_RECHARGE = pricing?.minRecharge ?? 200;
 
-    // 1. Validate amount
+    // 1. Validate amount — plans-only checkout: must exactly match a plan.
+    const livePlans = pricing?.rechargePlans?.length ? pricing.rechargePlans : DEFAULT_RECHARGE_PLANS;
     if (!amount || Number(amount) < MIN_RECHARGE) {
       return res.status(400).json({
         success: false,
@@ -29,6 +30,13 @@ const createWalletRechargeOrder = async (req, res) => {
     }
 
     const baseAmount = Number(amount);
+    const planCredit = creditForRecharge(baseAmount, livePlans);
+    if (planCredit == null) {
+      return res.status(400).json({
+        success: false,
+        message: `Please choose one of the recharge plans: ${livePlans.map((p) => `₹${Number(p.pay).toLocaleString('en-IN')}`).join(', ')}`,
+      });
+    }
 
     // 2. Validate user
     const user = await User.findById(userId);
@@ -70,7 +78,9 @@ const createWalletRechargeOrder = async (req, res) => {
     }
 
     const planFee = 0;
-    const walletCredit = baseAmount;
+    // Razorpay collects baseAmount; wallet gets planCredit (bonus = diff).
+    const walletCredit = planCredit;
+    const bonusCredit = Math.max(0, planCredit - baseAmount);
 
     // 4. No GST on top-ups and no plan fee — the customer pays exactly the
     // entered amount via Razorpay and the full amount lands in the wallet.
@@ -119,6 +129,10 @@ const createWalletRechargeOrder = async (req, res) => {
       planSelected: plan,
 
       planFee,
+
+      bonusCredit,
+
+      walletCredit,
     });
 
     await transaction.save();
@@ -140,12 +154,15 @@ const createWalletRechargeOrder = async (req, res) => {
       plan,
       planFee,
       walletCredit,
+      bonusCredit,
       autoAssigned,
 
       breakdown: {
         baseAmount: baseAmount,
         gstAmount: gstAmount,
         totalAmount: totalAmount,
+        bonusCredit,
+        walletCredit,
       },
     });
   } catch (error) {
@@ -287,7 +304,19 @@ const verifyPayment = async (req, res) => {
       // Legacy orders predating free plans may carry a locked planFee —
       // ignore it: plans cost nothing, the full amount is always credited.
       const planFee = 0;
-      const walletCredit = Math.max(0, Number(transaction.amount));
+      // Bonus locked at order time wins (mid-checkout reprice can't change it).
+      // Legacy rows without bonus fields recompute from live pricing.
+      let walletCredit = Number(transaction.walletCredit);
+      let bonusCredit = Number(transaction.bonusCredit);
+      if (!Number.isFinite(walletCredit) || walletCredit <= 0) {
+        const livePlans = pricing?.rechargePlans?.length ? pricing.rechargePlans : DEFAULT_RECHARGE_PLANS;
+        const recomputed = creditForRecharge(Number(transaction.amount), livePlans);
+        walletCredit = recomputed != null ? recomputed : Math.max(0, Number(transaction.amount));
+        bonusCredit = Math.max(0, walletCredit - Number(transaction.amount));
+        transaction.walletCredit = walletCredit;
+        transaction.bonusCredit = bonusCredit;
+      }
+      if (!Number.isFinite(bonusCredit)) bonusCredit = Math.max(0, walletCredit - Number(transaction.amount));
 
       // Single-plan mode: every successful recharge lands on the single plan.
       // TODO(multi-plan-restore): restore checkout-wins logic below.
@@ -345,7 +374,7 @@ const verifyPayment = async (req, res) => {
           name: current.name, baseAmount: Number(transaction.amount),
           gstAmount: Number(transaction.gstAmount) || 0,
           totalPaid: Number(transaction.totalAmount),
-          walletCredit, plan, planFee,
+          walletCredit, bonusCredit, plan, planFee,
           walletBalance: updatedUser.walletBalance,
           activePlan: updatedUser.activePlan,
           paymentId: transaction.paymentId, orderId: transaction.orderId,
@@ -356,6 +385,8 @@ const verifyPayment = async (req, res) => {
       if (current.phone) {
         const { sendRechargeSuccessWhatsApp } = require("../utils/sendWhatsApp");
         sendRechargeSuccessWhatsApp(current.phone, {
+          paid: Number(transaction.amount),
+          bonus: bonusCredit,
           credited: walletCredit,
           walletBalance: updatedUser.walletBalance,
           activePlan: updatedUser.activePlan,
@@ -378,7 +409,7 @@ const verifyPayment = async (req, res) => {
           if (current.email) recipients.delete(current.email); // partner already got the receipt
           const payload = {
             name: current.name, email: current.email, phone: current.phone,
-            walletCredit, walletBalance: updatedUser.walletBalance,
+            walletCredit, bonusCredit, walletBalance: updatedUser.walletBalance,
             activePlan: updatedUser.activePlan,
             paymentId: transaction.paymentId, orderId: transaction.orderId,
             transactionId: String(transaction._id),
@@ -406,6 +437,7 @@ const verifyPayment = async (req, res) => {
         plan,
         planFee,
         credited: walletCredit,
+        bonusCredit,
         autoAssigned,
         pendingPlanChoice: updatedUser.pendingPlanChoice ?? false,
       });

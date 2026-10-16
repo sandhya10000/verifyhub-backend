@@ -110,6 +110,8 @@ const rcVerificationSchema = new mongoose.Schema(
 
 rcVerificationSchema.index({ status: 1, createdAt: -1 });
 rcVerificationSchema.index({ userId: 1, status: 1 });
+// Sheets sync filter+sort (sheetSyncedAt == null, sort by createdAt).
+rcVerificationSchema.index({ sheetSyncedAt: 1, createdAt: 1 });
 
 // Auto-fill failure fields on save — same behavior as CreditReport.
 rcVerificationSchema.pre("save", function () {
