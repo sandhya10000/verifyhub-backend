@@ -131,6 +131,7 @@ exports.addMessage = async (req, res) => {
       ticket.assignedAdminId = req.user._id;
     }
     await ticket.save();
+    await ticket.populate('partnerId', 'name email phone partner_id');
     await ticket.populate('messages.sender', 'name role');
 
     res.json({ success: true, data: ticket, message: 'Reply added' });
