@@ -1141,7 +1141,7 @@ exports.getAllTransactions = async (req, res) => {
     const [total, rows, sums] = await Promise.all([
       Transaction.countDocuments(query),
       Transaction.find(query)
-        .populate("userId", "name email")
+        .populate("userId", "name email partner_id")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit))
