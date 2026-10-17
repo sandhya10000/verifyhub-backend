@@ -150,22 +150,67 @@ const debitFailedPull = async (
   }
 };
 
-// CIBIL failure billing classifier — single source of truth for both the
-// empty-data branch and the catch branch.
-// Policy: deduct the fail fee on provider status 400 (bad request —
-// partner-side input fault, including 400 + bureau "source down" text)
-// and on partner input-fault messages (wrong/invalid PAN, validation
-// failures, no-record) even when the GraphQL status is not 400 —
-// IndiConnect answers those over HTTP 200 with ok:false.
-// Never deduct on 502/503/504 (service API down), on transport failures
-// with no provider response, on "try again later" / gateway-timeout
-// wording, or when IndiConnect reports our own balance is exhausted
-// (owner must recharge).
-// Bureau-side "source/bureau down" IS billed (IndiConnect attempted the
-// pull and bills us) unless the status itself is 502/503/504 or the
-// message also carries service-down wording (try again / gateway /
-// maintenance), which stays free.
-// Returns { bill: boolean, reason: string } — reason is for server logs.
+// Reject a request that failed backend input validation and bill it.
+// Policy (single-plan launch onward): every backend-hit failure is billed,
+// regardless of status code — including missing/invalid input and missing
+// consent. A Failed CreditReport is persisted first (placeholder for any
+// missing required field) so the ledger has a unique reportId, then the
+// product fail price is charged. Never throws.
+const failValidationPull = async (req, res, options) => {
+  const {
+    statusCode = 400,
+    productKey,
+    bureauLabel,
+    message,
+    body = {},
+    name = "",
+    mobile = "",
+    pan = "",
+    consent = "N",
+  } = options || {};
+
+  const userId = req.user?._id;
+  let creditReport = null;
+  let charge = { ok: false, total: 0 };
+
+  if (userId) {
+    try {
+      creditReport = await CreditReport.create({
+        userId,
+        name: String(name || "").trim() || "(invalid)",
+        mobile: String(mobile || "").trim() || "(invalid)",
+        pan: String(pan || "").trim().toUpperCase() || "(invalid)",
+        reportType: bureauLabel || "CIBIL",
+        bureau: bureauLabel || "CIBIL",
+        consent: consent === "Y" ? "Y" : "N",
+        status: "Failed",
+        reportData: { error: { message } },
+        isPublic: false,
+      });
+      charge = await debitFailedPull(creditReport, productKey, bureauLabel);
+    } catch (err) {
+      console.error(
+        `[wallet] validation fail-charge error (${productKey}):`,
+        err.message,
+      );
+    }
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    ...body,
+    creditReportId: creditReport?._id || null,
+    failureCharge: charge.ok ? charge.total : 0,
+  });
+};
+
+// CIBIL failure classifier — used ONLY to shape the HTTP response (503 vs
+// 400 and the "temporarily unavailable" wording) and for server-side logging.
+// It NO LONGER gates billing: every failed CIBIL pull is billed regardless
+// of status code or message (the `bill` field is retained for reference but
+// is not consulted).
+// Returns { bill: boolean, reason: string }.
 // `status`: Number(provider status) or NaN when unknown.
 // `texts`: array of message strings from every provider field available.
 const classifyCibilFailure = (status, texts) => {
@@ -303,74 +348,37 @@ const CibilReportFromDigi = async (req, res) => {
     const customerName =
       fullname || `${firstName || ""} ${lastName || ""}`.trim();
 
-    if (!customerName) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name is required",
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const cibilReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "cibil",
+        bureauLabel: "CIBIL",
+        message,
+        name: customerName,
+        mobile,
+        pan,
+        consent,
       });
-    }
 
-    if (!mobile) {
-      return res.status(400).json({
-        success: false,
-        message: "Mobile number is required",
-      });
-    }
+    if (!customerName) return cibilReject("Full name is required");
 
-    if (!pan) {
-      return res.status(400).json({
-        success: false,
-        message: "PAN number is required",
-      });
-    }
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
+    if (!mobile) return cibilReject("Mobile number is required");
 
-    if (!gender) {
-      return res.status(400).json({
-        success: false,
-        message: "Gender is required",
-      });
-    }
+    if (!pan) return cibilReject("PAN number is required");
 
-    if (!dob) {
-      return res.status(400).json({
-        success: false,
-        message: "Date of birth is required",
-      });
-    }
+    if (!email) return cibilReject("Email is required");
 
-    if (!state) {
-      return res.status(400).json({
-        success: false,
-        message: "State is required",
-      });
-    }
+    if (!gender) return cibilReject("Gender is required");
 
-    if (!city) {
-      return res.status(400).json({
-        success: false,
-        message: "City is required",
-      });
-    }
+    if (!dob) return cibilReject("Date of birth is required");
 
-    if (!pincode) {
-      return res.status(400).json({
-        success: false,
-        message: "Pincode is required",
-      });
-    }
+    if (!state) return cibilReject("State is required");
 
-    if (consent !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent is required",
-      });
-    }
+    if (!city) return cibilReject("City is required");
+
+    if (!pincode) return cibilReject("Pincode is required");
+
+    if (consent !== "Y") return cibilReject("Customer consent is required");
 
     // Wallet gate: 0/insufficient balance par IndiConnect API hit hi nahi hogi —
     // na Pending doc banega, na provider cost lagegi.
@@ -570,25 +578,18 @@ const CibilReportFromDigi = async (req, res) => {
         indiBureauStatus,
       );
 
-      // Fail fee on status 400 / bureau source-down / partner input-fault
-      // (billable to us). Service-down, 502/503/504 and our IndiConnect
-      // balance exhaustion stay free — same policy as provider auth failures.
+      // Bill every failed CIBIL pull regardless of status code / message.
+      // classifyCibilFailure is kept ONLY to shape the response (503 vs 400
+      // and the "temporarily unavailable" wording) — it no longer gates billing.
       const emptyVerdict = classifyCibilFailure(
         cibilFailureStatus,
         cibilFailureTexts,
       );
-      let cibilEmptyCharge = { ok: false, total: 0 };
-      if (emptyVerdict.bill) {
-        cibilEmptyCharge = await debitFailedPull(
-          creditReport,
-          "cibil",
-          "CIBIL",
-        );
-      } else {
-        console.log(
-          `[wallet] CIBIL fail free (${emptyVerdict.reason}) for report ${creditReport._id}`,
-        );
-      }
+      const cibilEmptyCharge = await debitFailedPull(
+        creditReport,
+        "cibil",
+        "CIBIL",
+      );
       if (emptyVerdict.reason === "indiconnect-balance-exhausted") {
         console.error(
           "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
@@ -836,22 +837,14 @@ const CibilReportFromDigi = async (req, res) => {
       catchTexts,
     );
 
-    // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
-    // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
-    let cibilFailCharge = { ok: false, total: 0 };
-    if (!isIndiAuthFailure && catchVerdict.bill) {
-      cibilFailCharge = await debitFailedPull(
-        creditReport,
-        "cibil",
-        "CIBIL",
-      );
-    } else {
-      console.log(
-        `[wallet] CIBIL fail free (${
-          isIndiAuthFailure ? "provider auth failure" : catchVerdict.reason
-        })`,
-      );
-    }
+    // Bill every failed CIBIL pull regardless of status code / message,
+    // including provider auth failures, timeouts, service-down wording and
+    // our own IndiConnect balance exhaustion. Never throws.
+    const cibilFailCharge = await debitFailedPull(
+      creditReport,
+      "cibil",
+      "CIBIL",
+    );
     if (catchVerdict.reason === "indiconnect-balance-exhausted") {
       console.error(
         "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
@@ -943,16 +936,24 @@ const CrifReport = async (req, res) => {
     // STEP 4: INPUT VALIDATION
     // ============================================================
 
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const crifReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "crif",
+        bureauLabel: "CRIF",
+        message,
+        name: fullName,
+        mobile: mobileNumber,
+        pan: panNumber,
+      });
+
     if (
       !fullName ||
       String(fullName).trim() === "" ||
       !mobileNumber ||
       String(mobileNumber).trim() === ""
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name and mobile number are required",
-      });
+      return crifReject("Full name and mobile number are required");
     }
 
     const name = String(fullName).trim();
@@ -963,10 +964,7 @@ const CrifReport = async (req, res) => {
     // ============================================================
 
     if (!/^[6-9]\d{9}$/.test(mobile)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid 10 digit mobile number",
-      });
+      return crifReject("Please provide a valid 10 digit mobile number");
     }
 
     // ============================================================
@@ -1696,6 +1694,9 @@ const CrifReport = async (req, res) => {
     // ============================================================
 
     if (error.request) {
+      const crifTimeoutCharge = creditReport
+        ? await debitFailedPull(creditReport, "crif", "CRIF")
+        : { ok: false, total: 0 };
       return res.status(504).json({
         success: false,
         status: "failed",
@@ -1703,12 +1704,18 @@ const CrifReport = async (req, res) => {
         message: "CRIF API did not respond",
 
         creditReportId: creditReport?._id || null,
+
+        failureCharge: crifTimeoutCharge.ok ? crifTimeoutCharge.total : 0,
       });
     }
 
     // ============================================================
     // INTERNAL ERROR
     // ============================================================
+
+    const crifInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "crif", "CRIF")
+      : { ok: false, total: 0 };
 
     return res.status(500).json({
       success: false,
@@ -1719,6 +1726,8 @@ const CrifReport = async (req, res) => {
       creditReportId: creditReport?._id || null,
 
       error: error.message,
+
+      failureCharge: crifInternalCharge.ok ? crifInternalCharge.total : 0,
     });
   }
 };
@@ -1780,12 +1789,20 @@ const ExperianReport = async (req, res) => {
       )
       .map(([key]) => key);
 
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Required fields are missing",
-        missingFields,
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const experianReject = (message, extra = {}) =>
+      failValidationPull(req, res, {
+        productKey: "experian",
+        bureauLabel: "EXPERIAN",
+        message,
+        body: extra,
+        name: fullName,
+        mobile: mobileNumber,
+        pan: panNumber,
       });
+
+    if (missingFields.length > 0) {
+      return experianReject("Required fields are missing", { missingFields });
     }
 
     // ============================================================
@@ -1793,10 +1810,7 @@ const ExperianReport = async (req, res) => {
     // ============================================================
 
     if (String(customerConsent).trim().toUpperCase() !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent must be Y",
-      });
+      return experianReject("Customer consent must be Y");
     }
 
     // ============================================================
@@ -1814,10 +1828,7 @@ const ExperianReport = async (req, res) => {
     const dateOfBirth = String(dob).trim();
 
     if (!dobRegex.test(dateOfBirth)) {
-      return res.status(400).json({
-        success: false,
-        message: "DOB must be in YYYY-MM-DD format",
-      });
+      return experianReject("DOB must be in YYYY-MM-DD format");
     }
 
     // ============================================================
@@ -1827,10 +1838,9 @@ const ExperianReport = async (req, res) => {
     const nameParts = String(fullName).trim().split(/\s+/);
 
     if (nameParts.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name must contain first name and last name",
-      });
+      return experianReject(
+        "Full name must contain first name and last name",
+      );
     }
 
     const firstName = nameParts.shift();
@@ -2414,6 +2424,9 @@ const ExperianReport = async (req, res) => {
     // ============================================================
 
     if (error.request) {
+      const expTimeoutCharge = creditReport
+        ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
+        : { ok: false, total: 0 };
       return res.status(504).json({
         success: false,
 
@@ -2424,12 +2437,18 @@ const ExperianReport = async (req, res) => {
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
+
+        failureCharge: expTimeoutCharge.ok ? expTimeoutCharge.total : 0,
       });
     }
 
     // ============================================================
     // INTERNAL ERROR
     // ============================================================
+
+    const expInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
+      : { ok: false, total: 0 };
 
     return res.status(500).json({
       success: false,
@@ -2443,6 +2462,8 @@ const ExperianReport = async (req, res) => {
       userId: creditReport?.userId || null,
 
       error: error.message,
+
+      failureCharge: expInternalCharge.ok ? expInternalCharge.total : 0,
     });
   }
 };
@@ -2638,10 +2659,20 @@ const EquifaxReport = async (req, res) => {
       )
       .map(([key]) => key);
 
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const equifaxReject = (message, extra = {}) =>
+      failValidationPull(req, res, {
+        productKey: "equifax",
+        bureauLabel: "EQUIFAX",
+        message,
+        body: extra,
+        name,
+        mobile,
+        pan: panNumber,
+      });
+
     if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Required Equifax fields are missing",
+      return equifaxReject("Required Equifax fields are missing", {
         missingFields,
       });
     }
@@ -2653,10 +2684,7 @@ const EquifaxReport = async (req, res) => {
     const normalizedConsent = String(consent).trim().toUpperCase();
 
     if (normalizedConsent !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent must be Y",
-      });
+      return equifaxReject("Customer consent must be Y");
     }
 
     // ========================================================
@@ -2678,10 +2706,7 @@ const EquifaxReport = async (req, res) => {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 
     if (!panRegex.test(cleanPan)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid PAN number",
-      });
+      return equifaxReject("Invalid PAN number");
     }
 
     // ========================================================
@@ -2691,10 +2716,7 @@ const EquifaxReport = async (req, res) => {
     const mobileRegex = /^[6-9][0-9]{9}$/;
 
     if (!mobileRegex.test(cleanMobile)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid mobile number",
-      });
+      return equifaxReject("Invalid mobile number");
     }
 
     // Wallet gate: 0/insufficient balance par Surepass API hit hi nahi hogi —
@@ -3086,6 +3108,9 @@ const EquifaxReport = async (req, res) => {
       // ======================================================
 
       if (error.response.status === 401 || error.response.status === 403) {
+        const eqAuthCharge = creditReport
+          ? await debitFailedPull(creditReport, "equifax", "EQUIFAX")
+          : { ok: false, total: 0 };
         return res.status(error.response.status).json({
           success: false,
 
@@ -3099,6 +3124,8 @@ const EquifaxReport = async (req, res) => {
           userId: creditReport?.userId || null,
 
           error: error.response.data,
+
+          failureCharge: eqAuthCharge.ok ? eqAuthCharge.total : 0,
         });
       }
 
@@ -3178,6 +3205,10 @@ const EquifaxReport = async (req, res) => {
     // INTERNAL ERROR
     // ========================================================
 
+    const eqInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "equifax", "EQUIFAX")
+      : { ok: false, total: 0 };
+
     return res.status(500).json({
       success: false,
 
@@ -3190,6 +3221,8 @@ const EquifaxReport = async (req, res) => {
       userId: creditReport?.userId || null,
 
       error: error.message,
+
+      failureCharge: eqInternalCharge.ok ? eqInternalCharge.total : 0,
     });
   }
 };

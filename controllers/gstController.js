@@ -34,6 +34,55 @@ const affordOr402 = async (req, res, productKey) => {
   }
 };
 
+// Reject a request that failed backend input validation and bill it.
+// Policy: every backend-hit failure is billed, regardless of status code —
+// including missing/invalid input and missing consent. A Failed
+// GstVerification is persisted first (placeholder for a missing gstin) so
+// the ledger has a unique reportId, then the GST fail price is charged.
+// Never throws.
+const failValidationGst = async (req, res, options) => {
+  const {
+    statusCode = 400,
+    message,
+    body = {},
+    gstin = "",
+    consent = "N",
+  } = options || {};
+
+  const userId = req.user?._id;
+  let verification = null;
+  let charge = { ok: false, total: 0 };
+
+  if (userId) {
+    try {
+      verification = await GstVerification.create({
+        userId,
+        gstin: String(gstin || "").trim().toUpperCase() || "(invalid)",
+        consent: consent === "Y" ? "Y" : "N",
+        status: "Failed",
+        gstData: { error: { message } },
+      });
+      charge = await chargeFailedReport(
+        userId,
+        verification._id,
+        "gst",
+        "GST",
+        true,
+      );
+    } catch (err) {
+      console.error(`[wallet] validation fail-charge error (gst):`, err.message);
+    }
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    ...body,
+    verificationId: verification?._id || null,
+    failureCharge: charge.ok ? charge.total : 0,
+  });
+};
+
 const buildGstQuery = (gstin, documentType) =>
   `mutation {\n  verify(\n    input: {\n      gstin: "${gstin}",\n      documentType: "${documentType}"\n    }\n  ) {\n    ok\n    message\n    status\n    result {\n      ... on DTGSTINAdvancedResult {\n          taxpayerDetails\n          taxpayerReturnDetails\n          goods_service\n          business_places\n      }\n    }\n    error {\n      status\n      message\n      decryptedError\n    }\n  }\n}`;
 
@@ -54,17 +103,26 @@ const verifyGst = async (req, res) => {
       .replace(/[\s-]/g, "");
     const consent = req.body?.consent;
 
+    // Every backend-hit validation failure is billed (see failValidationGst).
+    const gstReject = (message, extra = {}) =>
+      failValidationGst(req, res, {
+        message,
+        body: extra,
+        gstin,
+        consent,
+      });
+
     const missingFields = [];
     if (!gstin) missingFields.push("gstin");
     if (!consent) missingFields.push("consent");
     if (missingFields.length > 0) {
-      return res.status(400).json({ success: false, message: "Missing required fields", missingFields });
+      return gstReject("Missing required fields", { missingFields });
     }
     if (consent !== "Y") {
-      return res.status(400).json({ success: false, message: "Customer consent (Y) is required" });
+      return gstReject("Customer consent (Y) is required");
     }
     if (!GSTIN_RE.test(gstin)) {
-      return res.status(400).json({ success: false, message: "Invalid GSTIN format (e.g. 27AAXCA1628A1ZR)" });
+      return gstReject("Invalid GSTIN format (e.g. 27AAXCA1628A1ZR)");
     }
 
     const baseUrl = process.env.INDICONNECT_BASE_URL?.trim();
@@ -168,8 +226,8 @@ const verifyGst = async (req, res) => {
         await verification.save();
       } catch { /* ignore */ }
     }
-    // Single-plan launch: provider errors/timeouts on an existing doc bill ₹10.
-    // TODO(multi-plan-restore): restore failureCharge 0 below.
+    // Every backend-hit failure is billed, regardless of status code —
+    // including provider errors, timeouts and internal errors.
     let catchCharge = { ok: false, total: 0 };
     if (verification?._id) {
       try {
@@ -200,6 +258,7 @@ const verifyGst = async (req, res) => {
       success: false,
       message: "Internal server error",
       verificationId: verification?._id || null,
+      failureCharge: catchCharge.ok ? catchCharge.total : 0,
     });
   }
 };

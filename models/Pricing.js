@@ -164,28 +164,12 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
     return totalsFor(pricing.ai.base, 0);
   }
   if (key === "rc") {
-    // Single-plan launch: RC failures bill the same ₹10 as success.
-    // TODO(multi-plan-restore): restore free fails (totalsFor(0,0)).
-    if (kind === "fail") {
-      if (SINGLE_PLAN_MODE) {
-        const rc = pricing.rc || { base: 10, gstRate: 0 };
-        return totalsFor(rc.base, rc.gstRate);
-      }
-      return totalsFor(0, 0);
-    }
+    // Failures bill the same ₹10 as success — permanently, in every mode.
     const rc = pricing.rc || { base: 10, gstRate: 0 };
     return totalsFor(rc.base, rc.gstRate);
   }
   if (key === "gst") {
-    // Single-plan launch: GST failures bill the same ₹10 as success.
-    // TODO(multi-plan-restore): restore free fails (totalsFor(0,0)).
-    if (kind === "fail") {
-      if (SINGLE_PLAN_MODE) {
-        const gst = pricing.gst || { base: 10, gstRate: 0 };
-        return totalsFor(gst.base, gst.gstRate);
-      }
-      return totalsFor(0, 0);
-    }
+    // Failures bill the same ₹10 as success — permanently, in every mode.
     const gst = pricing.gst || { base: 10, gstRate: 0 };
     return totalsFor(gst.base, gst.gstRate);
   }
