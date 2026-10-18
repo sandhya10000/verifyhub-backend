@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy Production VPS
+    name: Deploy Production
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -25,17 +25,6 @@ jobs:
         with:
           ref: master
 
-      - name: Validate secrets
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          test -n "$SSH_HOST"
-          test -n "$SSH_USER"
-          test -n "$SSH_PRIVATE_KEY"
-
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -44,26 +33,12 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/verifyhub_deploy
           chmod 600 ~/.ssh/verifyhub_deploy
-
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Verify VPS connection
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-        run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/verifyhub_deploy \
-            -o IdentitiesOnly=yes \
-            -o BatchMode=yes \
-            "$SSH_USER@$SSH_HOST" \
-            'echo "VPS SSH connection successful"'
-
-      - name: Verify deployment target
+      - name: Deploy upstream master
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -75,11 +50,42 @@ jobs:
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             "$SSH_USER@$SSH_HOST" \
-            "set -eu
-             test -d /var/www/api/.git
-             test -f /var/www/api/.env
-             test -f /var/www/api/Server.js
-             test -d /var/www/api/uploads
-             echo 'Production prerequisites verified.'
-             echo 'Requested upstream commit: $TARGET_SHA'
-             echo 'No application files changed; deployment is not enabled yet.'"
+            "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd /var/www/api
+
+          # Ensure this is the expected upstream commit.
+          git fetch upstream master
+          test "$(git rev-parse upstream/master)" = "$TARGET_SHA"
+
+          # Remove the unneeded local log changes.
+          git restore --source=HEAD --staged --worktree -- analysis_logs.txt
+
+          # Deploy the exact upstream commit.
+          git reset --hard "$TARGET_SHA"
+
+          # Keep production configuration and uploads present.
+          test -f .env
+          test -d uploads
+          test -f Server.js
+
+          # Install dependencies from the committed lockfile.
+          npm ci --omit=dev
+
+          # Restart production only.
+          pm2 restart verifyhub-api
+
+          # Check the public API.
+          for attempt in $(seq 1 12); do
+            if curl -fsS https://docs.verifyhub.in/; then
+              echo
+              echo "Production health check passed."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Production health check failed."
+          exit 1
+          REMOTE
