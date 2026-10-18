@@ -10,6 +10,12 @@ const ALLOWED_LANGUAGE_CODES = new Set(['en','hi','ta','te','kn','mr','bn','gu',
 const { generateAnalysisPdf, generatePdfFromHtml } = require('../utils/pdfGenerator');
 const { logStep } = require('../utils/logger');
 const { verifyReportLink } = require('../utils/reportShare');
+const {
+  DAY_MS,
+  startOfIstDay,
+  startOfIstMonth,
+  istDayKey,
+} = require('../utils/istTime');
 
 
 exports.uploadReport = async (req, res) => {
@@ -275,18 +281,11 @@ exports.downloadSharedPdf = async (req, res) => {
 //   todayTrend / monthTrend  — 7-day daily trend based on AI analyses.
 exports.getReportStats = async (req, res) => {
   try {
-    const now = new Date();
-
-    // ── Window boundaries (UTC) ──────────────────────────────────────────────
-    const todayStart = new Date(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()
-    ));
-    const monthStart = new Date(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(), 1
-    ));
-    // 7 full days ago (inclusive of today)
-    const sevenDaysAgo = new Date(todayStart);
-    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+    // ── Window boundaries (Asia/Kolkata business days/months) ─────────────────
+    const todayStart = startOfIstDay();
+    const monthStart = startOfIstMonth();
+    // 7 full IST days ago (inclusive of today)
+    const sevenDaysAgo = new Date(todayStart.getTime() - 6 * DAY_MS);
 
     const userId = req.user._id;
     const aiBaseMatch   = { userId, status: 'completed' };
@@ -311,7 +310,7 @@ exports.getReportStats = async (req, res) => {
 
       AIAnalysis.aggregate([
         { $match: { ...aiBaseMatch, createdAt: { $gte: sevenDaysAgo } } },
-        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
 
@@ -349,13 +348,13 @@ exports.getReportStats = async (req, res) => {
 
       // 2. Heuristic — only applicable to CIBIL rows
       const aiScore = typeof ai.result?.score === 'number' ? ai.result.score : null;
-      const aiDay   = ai.createdAt ? new Date(ai.createdAt).toDateString() : null;
+      const aiDay   = ai.createdAt ? istDayKey(ai.createdAt) : null;
 
       if (aiScore !== null && aiDay) {
         for (const cr of crMonthDocs) {
           if (cr.bureau?.toUpperCase() !== 'CIBIL') continue;
           const crScore = typeof cr.score === 'number' ? cr.score : null;
-          const crDay   = cr.createdAt ? new Date(cr.createdAt).toDateString() : null;
+          const crDay   = cr.createdAt ? istDayKey(cr.createdAt) : null;
           if (crScore !== null && crScore === aiScore && crDay === aiDay) {
             suppressedCrIds.add(String(cr._id));
           }
@@ -378,9 +377,8 @@ exports.getReportStats = async (req, res) => {
 
     const trend = [];
     for (let i = 0; i < 7; i++) {
-      const d = new Date(sevenDaysAgo);
-      d.setUTCDate(d.getUTCDate() + i);
-      const dateStr = d.toISOString().slice(0, 10);
+      const d = new Date(sevenDaysAgo.getTime() + i * DAY_MS);
+      const dateStr = istDayKey(d);
       trend.push({ date: dateStr, count: dailyMap[dateStr] || 0 });
     }
 

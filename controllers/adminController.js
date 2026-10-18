@@ -5,39 +5,39 @@ const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
+const {
+  DAY_MS,
+  startOfIstDay,
+  endOfIstDay,
+  startOfIstMonth,
+  endOfIstMonth,
+  istDayKey,
+  istDayLabel,
+} = require('../utils/istTime');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
   return Math.round(((curr - prev) / prev) * 100);
 };
 
-// IST day key (YYYY-MM-DD) for a Date — matches $dateToString + Asia/Kolkata
-const istDayKey = (d) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(d);
-  return parts; // en-CA yields YYYY-MM-DD
-};
-
 exports.getOverviewSummary = async (req, res) => {
   try {
-    const now = new Date();
-
-    // Today: midnight → now
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    // All boundaries are IST (Asia/Kolkata) business days/months, independent
+    // of the server clock — see utils/istTime.js.
+    const todayStart = startOfIstDay();
+    const todayEnd   = endOfIstDay();
 
     // Yesterday (trend deltas)
-    const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const yesterdayEnd = new Date(todayEnd); yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+    const yesterdayStart = startOfIstDay(Date.now(), -1);
+    const yesterdayEnd   = endOfIstDay(Date.now(), -1);
 
     // This month / last month
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const monthStart     = startOfIstMonth();
+    const monthEnd       = endOfIstMonth();
+    const prevMonthStart = startOfIstMonth(Date.now(), -1);
+    const prevMonthEnd   = endOfIstMonth(Date.now(), -1);
 
-    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
+    const weekStart = startOfIstDay(Date.now(), -6);
 
     const [
       aiToday, crToday,
@@ -925,7 +925,7 @@ exports.updatePricing = async (req, res) => {
 exports.getMoneyTimeseries = async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days || "14", 10), 90);
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
+    const start = startOfIstDay(Date.now(), -(days - 1));
 
     const [inRows, outRows, aiRows, crRows] = await Promise.all([
       Transaction.aggregate([
@@ -953,11 +953,11 @@ exports.getMoneyTimeseries = async (req, res) => {
 
     const series = [];
     for (let i = 0; i < days; i++) {
-      const d = new Date(start); d.setDate(d.getDate() + i);
+      const d = new Date(start.getTime() + i * DAY_MS);
       const key = istDayKey(d);
       series.push({
         date: key,
-        label: d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+        label: istDayLabel(d),
         collected: inMap[key] || 0,
         consumed: outMap[key] || 0,
         reports: (aiMap[key] || 0) + (crMap[key] || 0),
