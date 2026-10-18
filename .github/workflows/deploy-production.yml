@@ -15,14 +15,17 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to Production VPS
+    name: Deploy Production VPS
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: Checkout upstream master
         uses: actions/checkout@v4
+        with:
+          ref: master
 
-      - name: Validate deployment configuration
+      - name: Validate secrets
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -32,7 +35,6 @@ jobs:
           test -n "$SSH_HOST"
           test -n "$SSH_USER"
           test -n "$SSH_PRIVATE_KEY"
-          echo "Deployment secrets are configured."
 
       - name: Configure SSH
         env:
@@ -42,8 +44,10 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/verifyhub_deploy
           chmod 600 ~/.ssh/verifyhub_deploy
+
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
@@ -58,3 +62,24 @@ jobs:
             -o BatchMode=yes \
             "$SSH_USER@$SSH_HOST" \
             'echo "VPS SSH connection successful"'
+
+      - name: Verify deployment target
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/verifyhub_deploy \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "set -eu
+             test -d /var/www/api/.git
+             test -f /var/www/api/.env
+             test -f /var/www/api/Server.js
+             test -d /var/www/api/uploads
+             echo 'Production prerequisites verified.'
+             echo 'Requested upstream commit: $TARGET_SHA'
+             echo 'No application files changed; deployment is not enabled yet.'"
