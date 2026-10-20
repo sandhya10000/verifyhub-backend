@@ -14,6 +14,7 @@ const {
   endOfIstMonth,
   istDayKey,
   istDayLabel,
+  istDateRange,
 } = require('../utils/istTime');
 
 const pctChange = (curr, prev) => {
@@ -317,9 +318,8 @@ exports.getMyTransactions = async (req, res) => {
 
     const query = { userId };
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
     if (type && type !== "All") query.type = String(type).toUpperCase();
     if (status && status !== "All") query.status = String(status).toUpperCase();

@@ -2,6 +2,7 @@ const axios = require("axios");
 const RcVerification = require("../models/RcVerification");
 const User = require("../models/User");
 const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
+const { istDateRange } = require("../utils/istTime");
 const { generateRcPdf } = require("../services/rcPdf.service");
 
 const RC_DETAIL_PROJECTION =
@@ -355,9 +356,11 @@ const getAllRcVerifications = async (req, res) => {
       query.status = status;
     }
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      // IST day boundaries: `new Date("2026-01-15")` is UTC midnight (05:30
+      // IST), so an inclusive "to 15 Jan" filter used to drop every row
+      // later on the 15th.
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     const [total, rows] = await Promise.all([

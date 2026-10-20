@@ -47,6 +47,50 @@ function istDayKey(d = Date.now()) {
   }).format(new Date(d));
 }
 
+// Parse a "YYYY-MM-DD" calendar date into the UTC instant at which that IST
+// day begins. Returns null for anything that is not a plain calendar date.
+//
+// Why: `new Date("2026-01-15")` is parsed as UTC midnight, i.e. 05:30 IST on
+// the 15th — so a "from 15 Jan" filter silently drops every transaction
+// between 00:00 and 05:30 IST on the 15th.
+function startOfIstDayFromDateString(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value == null ? '' : value).trim());
+  if (!m) return null;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - IST_OFFSET_MS);
+}
+
+// Last millisecond of the IST day named by a "YYYY-MM-DD" calendar date.
+// Returns null for anything that is not a plain calendar date.
+//
+// Why: `new Date("2026-01-15")` as an $lte bound is midnight at the START of
+// the 15th, so an inclusive "to 15 Jan" filter drops every transaction that
+// happened later on the 15th.
+function endOfIstDayFromDateString(value) {
+  const start = startOfIstDayFromDateString(value);
+  if (!start) return null;
+  return new Date(start.getTime() + DAY_MS - 1);
+}
+
+// Mongo range object for a pair of YYYY-MM-DD bounds. Both ends are optional
+// and inclusive, and both are pinned to IST day boundaries.
+//
+// Returns null when no usable bound was supplied, so callers can simply do
+// `const range = istDateRange(startDate, endDate); if (range) query.createdAt = range;`
+function istDateRange(startDate, endDate) {
+  const range = {};
+
+  if (startDate) {
+    const s = startOfIstDayFromDateString(startDate);
+    if (s) range.$gte = s;
+  }
+  if (endDate) {
+    const e = endOfIstDayFromDateString(endDate);
+    if (e) range.$lte = e;
+  }
+
+  return Object.keys(range).length ? range : null;
+}
+
 const pad2 = (n) => String(n).padStart(2, '0');
 
 // e.g. "18 Oct" label in IST.
@@ -64,4 +108,7 @@ module.exports = {
   endOfIstMonth,
   istDayKey,
   istDayLabel,
+  startOfIstDayFromDateString,
+  endOfIstDayFromDateString,
+  istDateRange,
 };

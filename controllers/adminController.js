@@ -13,6 +13,7 @@ const {
   endOfIstMonth,
   istDayKey,
   istDayLabel,
+  istDateRange,
 } = require('../utils/istTime');
 
 const pctChange = (curr, prev) => {
@@ -178,9 +179,8 @@ exports.getAllAiAnalyses = async (req, res) => {
     }
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (partnerSearch) {
@@ -217,9 +217,8 @@ exports.getAllCreditReports = async (req, res) => {
     let query = { status: 'Success' };
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (bureau && bureau !== 'All') {
@@ -263,9 +262,8 @@ exports.getFailedCreditReports = async (req, res) => {
     const query = { status: 'Failed' };
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (bureau && bureau !== 'All') {
@@ -316,6 +314,12 @@ exports.getAllPartners = async (req, res) => {
   try {
     const { page = 1, limit = 50, search } = req.query;
 
+    // all=1 returns every matching partner (used by the CSV export). The
+    // per-partner stats are bulk-aggregated below, so a full export stays
+    // a fixed number of queries instead of 4 per partner.
+    const wantsAll = String(req.query.all || '') === '1';
+    const perPage = Math.min(parseInt(limit, 10) || 50, 200);
+
     let query = { role: { $ne: 'admin' } };
 
     if (search) {
@@ -327,50 +331,83 @@ exports.getAllPartners = async (req, res) => {
     }
 
     const total = await User.countDocuments(query);
-    const users = await User.find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
-      .select('-password')
-      .lean();
 
-    // Fetch stats for the paginated users concurrently
-    const partnersWithStats = await Promise.all(
-      users.map(async (user) => {
-        const [crCount, aiCount, lastCr, lastAi] = await Promise.all([
-          CreditReport.countDocuments({ userId: user._id, status: 'Success' }),
-          AIAnalysis.countDocuments({ userId: user._id, status: 'completed' }),
-          CreditReport.findOne({ userId: user._id }).sort({ createdAt: -1 }).select('createdAt').lean(),
-          AIAnalysis.findOne({ userId: user._id }).sort({ createdAt: -1 }).select('createdAt').lean()
-        ]);
+    let userQuery = User.find(query).sort({ createdAt: -1 }).select('-password');
 
-        const totalReports = crCount + aiCount;
-        
-        // Find most recent date
-        let lastReportDate = null;
-        const crDate = lastCr ? new Date(lastCr.createdAt) : null;
-        const aiDate = lastAi ? new Date(lastAi.createdAt) : null;
-        
-        if (crDate && aiDate) {
-          lastReportDate = crDate > aiDate ? crDate : aiDate;
-        } else {
-          lastReportDate = crDate || aiDate || null;
-        }
+    if (wantsAll) {
+      userQuery = userQuery.limit(0);
+    } else {
+      userQuery = userQuery.skip((page - 1) * perPage).limit(perPage);
+    }
 
-        return {
-          ...user,
-          totalReports,
-          lastReportDate
-        };
-      })
-    );
+    const users = await userQuery.lean();
+
+    // Bulk stats for the returned partners: 4 aggregate queries for the whole
+    // page instead of 4 queries per partner.
+    const userIds = users.map((u) => u._id);
+
+    const [crCounts, aiCounts, lastCrRows, lastAiRows] = await Promise.all([
+      CreditReport.aggregate([
+        { $match: { userId: { $in: userIds }, status: 'Success' } },
+        { $group: { _id: '$userId', n: { $sum: 1 } } },
+      ]),
+      AIAnalysis.aggregate([
+        { $match: { userId: { $in: userIds }, status: 'completed' } },
+        { $group: { _id: '$userId', n: { $sum: 1 } } },
+      ]),
+      CreditReport.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$userId', d: { $first: '$createdAt' } } },
+      ]),
+      AIAnalysis.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$userId', d: { $first: '$createdAt' } } },
+      ]),
+    ]);
+
+    const toMap = (rows) => {
+      const map = {};
+      rows.forEach((r) => { map[String(r._id)] = r; });
+      return map;
+    };
+
+    const crCountMap = toMap(crCounts);
+    const aiCountMap = toMap(aiCounts);
+    const lastCrMap = toMap(lastCrRows);
+    const lastAiMap = toMap(lastAiRows);
+
+    const partnersWithStats = users.map((user) => {
+      const key = String(user._id);
+
+      const crCount = crCountMap[key] ? crCountMap[key].n : 0;
+      const aiCount = aiCountMap[key] ? aiCountMap[key].n : 0;
+
+      const crDate = lastCrMap[key] && lastCrMap[key].d ? new Date(lastCrMap[key].d) : null;
+      const aiDate = lastAiMap[key] && lastAiMap[key].d ? new Date(lastAiMap[key].d) : null;
+
+      // Find most recent date
+      let lastReportDate = null;
+      if (crDate && aiDate) {
+        lastReportDate = crDate > aiDate ? crDate : aiDate;
+      } else {
+        lastReportDate = crDate || aiDate || null;
+      }
+
+      return {
+        ...user,
+        totalReports: crCount + aiCount,
+        lastReportDate
+      };
+    });
 
     res.json({
       success: true,
       data: partnersWithStats,
       total,
       page: parseInt(page),
-      pages: Math.ceil(total / limit)
+      pages: wantsAll ? 1 : Math.ceil(total / perPage)
     });
   } catch (err) {
     console.error('getAllPartners Admin Error:', err);
@@ -1136,9 +1173,8 @@ exports.getAllTransactions = async (req, res) => {
 
     const query = {};
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
     if (type && type !== "All") query.type = type.toUpperCase();
     if (status && status !== "All") query.status = status.toUpperCase();

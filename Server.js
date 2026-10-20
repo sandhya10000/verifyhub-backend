@@ -215,12 +215,23 @@ app.use("/api/partner/branding", customBrandedReportRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
 
-// Low-balance mail sweep (cron-only): daily + once shortly after boot.
-// Per-user dedup (max once per lowBalanceAlertIntervalDays) lives in the service.
-const { runLowBalanceAlerts } = require("./services/lowBalanceAlert.service");
-const LOW_BALANCE_SWEEP_MS = Number(process.env.LOW_BALANCE_SWEEP_MS) || 24 * 60 * 60 * 1000;
-setTimeout(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] startup run failed:", e.message)), 30 * 1000);
-setInterval(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] sweep failed:", e.message)), LOW_BALANCE_SWEEP_MS);
+// Low-balance mail sweep — DISABLED by default.
+//
+// It was hitting the daily Hostinger mail limit, so the schedule is now
+// opt-in. Set LOW_BALANCE_SWEEP_ENABLED=true in .env to bring it back; the
+// service itself (services/lowBalanceAlert.service.js) is unchanged.
+//
+// Per-user dedup (max once per lowBalanceAlertIntervalDays) lives in the
+// service.
+if (String(process.env.LOW_BALANCE_SWEEP_ENABLED || '').toLowerCase() === 'true') {
+  const { runLowBalanceAlerts } = require("./services/lowBalanceAlert.service");
+  const LOW_BALANCE_SWEEP_MS = Number(process.env.LOW_BALANCE_SWEEP_MS) || 24 * 60 * 60 * 1000;
+  setTimeout(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] startup run failed:", e.message)), 30 * 1000);
+  setInterval(() => runLowBalanceAlerts().catch((e) => console.error("[low-balance] sweep failed:", e.message)), LOW_BALANCE_SWEEP_MS);
+  console.log('[low-balance] sweep ENABLED — interval', LOW_BALANCE_SWEEP_MS, 'ms');
+} else {
+  console.log('[low-balance] sweep disabled (set LOW_BALANCE_SWEEP_ENABLED=true to enable)');
+}
 
 // Google Sheets export: seed default config + start the scheduled sync.
 // Failures never affect verification APIs (the job only logs).
