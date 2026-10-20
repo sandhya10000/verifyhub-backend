@@ -179,7 +179,8 @@ function plainAmount(n) {
 // via env (WASIMPLE_PAYMENT_RETRY_TEMPLATE / _LANG). Two payload shapes:
 //   - "button" (default): link lives in a URL button, so only 2 body vars
 //     [name, amount] are sent.
-//   - "body": link is body var {{3}} -> [name, amount, link].
+//   - "body": link is body var {{3}} -> [name, ₹amount, link]; the ₹ is
+//     included because these templates don't print the symbol themselves.
 // Falls back to a free-form message when no template is configured (free-form
 // only reaches contacts inside the 24h window).
 async function sendPaymentRetryWhatsApp(phone, { name, amount, link, mode }) {
@@ -200,7 +201,7 @@ async function sendPaymentRetryWhatsApp(phone, { name, amount, link, mode }) {
 
   const variables =
     templateMode === "body"
-      ? [String(name || "Partner"), plainAmount(amount), linkUrl]
+      ? [String(name || "Partner"), `\u20B9${plainAmount(amount)}`, linkUrl]
       : [String(name || "Partner"), plainAmount(amount)];
 
   return sendTemplateMessage({
