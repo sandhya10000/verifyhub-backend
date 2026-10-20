@@ -17,6 +17,7 @@ async function sendRetryLink({
   purpose,
   description,
   callbackPath,
+  mode,
 }) {
   if (!transaction || !transaction._id) {
     return { sent: false, reason: "no-transaction" };
@@ -72,13 +73,20 @@ async function sendRetryLink({
 
     await Transaction.updateOne(
       { _id: transaction._id },
-      { $set: { retryLinkId: link.id, retryLinkUrl: link.shortUrl } },
+      {
+        $set: {
+          retryLinkId: link.id,
+          retryLinkUrl: link.shortUrl,
+          retryLinkExpiresAt: link.expiresAt || null,
+        },
+      },
     );
 
     const whatsapp = await sendPaymentRetryWhatsApp(phone, {
       name,
       amount,
       link: link.shortUrl,
+      mode,
     });
 
     console.log(

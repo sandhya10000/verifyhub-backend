@@ -121,6 +121,12 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // When the stored Razorpay payment link expires; the retry page creates a
+    // fresh one once this passes.
+    retryLinkExpiresAt: {
+      type: Date,
+      default: null,
+    },
     retryLinkSentAt: {
       type: Date,
       default: null,

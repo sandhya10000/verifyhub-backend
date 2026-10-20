@@ -162,14 +162,26 @@ async function sendPlanActivationWhatsApp(phone, d) {
   });
 }
 
+// Plain, symbol-free amount ("1,000") for templates whose body already prints
+// the currency (₹{{2}}). Passing inr() would render "₹₹1,000".
+function plainAmount(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "0";
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(num);
+}
+
 // Payment-failure retry link. Uses the approved utility template configured
-// via env (WASIMPLE_PAYMENT_RETRY_TEMPLATE / _LANG) with positional variables
-// [name, amount, link]. Falls back to a free-form message when no template is
-// configured (free-form only reaches contacts inside the 24h window).
-async function sendPaymentRetryWhatsApp(phone, { name, amount, link }) {
+// via env (WASIMPLE_PAYMENT_RETRY_TEMPLATE / _LANG). Two payload shapes:
+//   - "button" (default): link lives in a URL button, so only 2 body vars
+//     [name, amount] are sent.
+//   - "body": link is body var {{3}} -> [name, amount, link].
+// Falls back to a free-form message when no template is configured (free-form
+// only reaches contacts inside the 24h window).
+async function sendPaymentRetryWhatsApp(phone, { name, amount, link, mode }) {
   const linkUrl = String(link || "");
   const templateName = process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE;
   const language = process.env.WASIMPLE_PAYMENT_RETRY_LANG || "en";
+  const templateMode = mode || process.env.WASIMPLE_PAYMENT_RETRY_MODE || "button";
 
   if (!templateName) {
     return sendWhatsApp({
@@ -181,11 +193,16 @@ async function sendPaymentRetryWhatsApp(phone, { name, amount, link }) {
     });
   }
 
+  const variables =
+    templateMode === "body"
+      ? [String(name || "Partner"), plainAmount(amount), linkUrl]
+      : [String(name || "Partner"), plainAmount(amount)];
+
   return sendTemplateMessage({
     to: phone,
     templateName,
     language,
-    variables: [String(name || "Partner"), inr(amount), linkUrl],
+    variables,
   });
 }
 

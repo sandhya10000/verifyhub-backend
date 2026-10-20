@@ -58,6 +58,7 @@ async function createPaymentLink({
 
   const expirySeconds =
     Number(process.env.PAYMENT_LINK_EXPIRY_SECONDS) || 24 * 60 * 60;
+  const expireBy = Math.floor(Date.now() / 1000) + expirySeconds;
 
   const customer = {
     name: name ? String(name) : undefined,
@@ -82,11 +83,16 @@ async function createPaymentLink({
     },
     callback_url: `${frontendBase()}${callbackPath || "/partner/add-funds"}`,
     callback_method: "get",
-    expire_by: Math.floor(Date.now() / 1000) + expirySeconds,
+    expire_by: expireBy,
   };
 
   const link = await client.paymentLink.create(payload);
-  return { id: link.id, shortUrl: link.short_url, status: link.status };
+  return {
+    id: link.id,
+    shortUrl: link.short_url,
+    status: link.status,
+    expiresAt: new Date(expireBy * 1000),
+  };
 }
 
 module.exports = { createPaymentLink, toRazorpayContact, frontendBase };

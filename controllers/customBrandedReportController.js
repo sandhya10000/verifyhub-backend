@@ -563,7 +563,9 @@ async function verifyPayment(req, res) {
 // POST /api/partner/custom-branded-report/cancel
 // Body: { orderId, failed } — marks the PENDING fee row FAILED.
 // When failed === true (a genuine gateway failure, not a modal dismiss) a
-// Razorpay payment link is sent to the partner's WhatsApp.
+// Razorpay payment link is sent to the partner's WhatsApp — only when
+// CBR_RETRY_WHATSAPP_ENABLED=true. CBR retry messaging is deferred for now so
+// the wallet-specific template is never sent for a branded-report failure.
 // ---------------------------------------------------------------------------
 async function cancelCustomBrandedOrder(req, res) {
   try {
@@ -584,7 +586,7 @@ async function cancelCustomBrandedOrder(req, res) {
       { new: true },
     );
 
-    if (updated && failed === true) {
+    if (updated && failed === true && process.env.CBR_RETRY_WHATSAPP_ENABLED === 'true') {
       const [partner, request] = await Promise.all([
         User.findById(partnerId).select('name email phone').lean(),
         CustomBrandedRequest.findOne({ orderId: updated.orderId, partnerId })
