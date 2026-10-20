@@ -17,21 +17,46 @@ const getTrueLinkCreditReport = (apiResponse) => {
 
 // ============================================================
 // SHAPE COERCION
-// The bureau sometimes returns a singleton object where the docs show
-// an array (single account / address / phone / enquiry). Coercing here
-// prevents whole sections from silently rendering empty.
+// The bureau returns collections in three different shapes:
+//   1. a real array                      -> [ {..}, {..} ]
+//   2. an index-keyed map                -> { "1": {..}, "2": {..} }
+//   3. a singleton object where docs
+//      show an array (single account /
+//      address / phone / enquiry)        -> { Tradeline: {..} }
+// Coercing here prevents whole sections from silently rendering empty.
 // ============================================================
+
+// An index-keyed map has only numeric keys ("1", "2", ...). A singleton
+// record object has descriptive keys ("Tradeline", "ID", ...), so the two
+// can be told apart reliably.
+const isIndexedMap = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+
+  const keys = Object.keys(value);
+
+  return keys.length > 0 && keys.every((key) => /^\d+$/.test(key));
+};
 
 const asArray = (value) => {
   if (value === null || value === undefined) return [];
   if (Array.isArray(value)) return value;
+
+  if (isIndexedMap(value)) {
+    return Object.keys(value)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => value[key]);
+  }
+
   return [value];
 };
 
 // Returns true when the raw value was present but NOT an array, so the
 // caller can record a data-quality warning.
 const wasSingleton = (value) => {
-  return value !== null && value !== undefined && !Array.isArray(value);
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return false;
+
+  return !isIndexedMap(value);
 };
 
 // ============================================================
@@ -331,6 +356,7 @@ const extractIdentifiers = (borrower) => {
       type:
         typeFromObject ||
         (typeof rawType === "string" ? rawType : null) ||
+        item?.ID?.IdentifierName ||
         item?.idType ||
         item?.IDType ||
         item?.typeCode ||
@@ -350,6 +376,7 @@ const extractIdentifiers = (borrower) => {
         item?.IDNumber ||
         item?.IdValue ||
         item?.IDValue ||
+        item?.ID?.Id ||
         item?.identifierNumber ||
         item?.documentNumber ||
         item?.value ||
@@ -436,16 +463,34 @@ const getAccountType = (partition, grantedTrade) => {
 
 // ============================================================
 // ACCOUNT STATUS
+// The provider frequently ships OpenClosed / AccountCondition with
+// empty description + symbol. When that happens the status is
+// derived from the closure date instead of rendering "-".
 // ============================================================
 
 const getAccountStatus = (tradeline) => {
-  return (
+  const bureauStatus =
     tradeline?.OpenClosed?.description ||
     tradeline?.OpenClosed?.symbol ||
     tradeline?.AccountCondition?.description ||
     tradeline?.AccountCondition?.symbol ||
-    "-"
-  );
+    "";
+
+  if (bureauStatus) {
+    return bureauStatus;
+  }
+
+  const closedDate = normalizeDate(tradeline?.dateClosed);
+
+  if (closedDate && closedDate !== "-") {
+    return "Closed";
+  }
+
+  if (normalizeDate(tradeline?.dateOpened) !== "-") {
+    return "Open";
+  }
+
+  return "-";
 };
 
 // ============================================================
@@ -710,6 +755,11 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
   if (wasSingleton(report?.TradeLinePartition)) {
     parseWarnings.push(
       "TradeLinePartition arrived as a single object; coerced to a one-account list.",
+    );
+  }
+  if (isIndexedMap(report?.TradeLinePartition)) {
+    parseWarnings.push(
+      "TradeLinePartition arrived as an index-keyed map; coerced to a list.",
     );
   }
   if (wasSingleton(report?.InquiryPartition)) {

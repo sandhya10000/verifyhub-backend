@@ -10,6 +10,7 @@ const {
   verifyPayment,
   activatePlan,
 } = require("../controllers/paymentController");
+const { listWalletRechargeRetries } = require("../controllers/paymentRetryController");
 
 //API route for wallet recharge
 //
@@ -29,6 +30,12 @@ router.post("/verify/payment", auth, verifyPayment);
 // @desc    mark own PENDING recharge FAILED (SUCCESS rows untouched)
 // @access  Private/User
 router.post("/wallet-recharge/cancel", auth, cancelWalletRechargeOrder);
+
+// Failed wallet recharges that have a live retry link (WhatsApp button target).
+// @route   GET /api/wallet-recharge/retries
+// @desc    list own retryable failed recharges (creates a fresh link if expired)
+// @access  Private/User
+router.get("/wallet-recharge/retries", auth, listWalletRechargeRetries);
 
 // Free plan selection gated by wallet balance (no Razorpay, no debit).
 // @route   POST /api/plan/activate

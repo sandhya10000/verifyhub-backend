@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { CBR_PRICE_INR } = require('../models/Pricing');
 const { sendCbrReceiptMail, sendCbrAdminNotifyMail } = require('../utils/sendMail');
+const { sendRetryLink } = require('../services/paymentRetry.service');
 
 function razorpayClient() {
   // eslint-disable-next-line global-require
@@ -64,6 +65,49 @@ function notifySubscription(request, partner, txn) {
   } catch (e) {
     console.error('[mail] CBR notify failed:', e.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared success path: mark the linked request paid/active + activate the
+// partner's branding. Used by /verify and the Razorpay webhook (payment link).
+// ---------------------------------------------------------------------------
+async function activateCustomBrandedReport(transaction, paymentId) {
+  let request = await CustomBrandedRequest.findOne({
+    orderId: transaction.orderId,
+    partnerId: transaction.userId,
+  });
+  // The skeleton's orderId can change if the partner re-opens checkout, so
+  // fall back to the partner's resumable unpaid row.
+  if (!request) {
+    request = await CustomBrandedRequest.findOne({
+      partnerId: transaction.userId,
+      paymentStatus: 'Unpaid',
+    });
+  }
+  if (!request) throw new Error('Linked request not found');
+
+  request.paymentId = paymentId || transaction.paymentId;
+  request.paymentStatus = 'Paid';
+  request.status = 'Active';
+  request.amount = CBR_PRICE_INR;
+  request.paymentMethod = 'RAZORPAY';
+  await request.save();
+
+  await User.updateOne(
+    { _id: transaction.userId },
+    {
+      $set: {
+        brandingStatus: 'paid',
+        brandingPaidAt: new Date(),
+        brandingAmount: CBR_PRICE_INR,
+      },
+    },
+  );
+
+  const partner = await User.findById(transaction.userId);
+  if (!partner) throw new Error('User not found');
+  notifySubscription(request, partner, transaction);
+  return request;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,35 +545,77 @@ async function verifyPayment(req, res) {
     if (!request) {
       return res.status(404).json({ success: false, message: 'Linked request not found. Contact support.' });
     }
-    request.paymentId = razorpay_payment_id;
-    request.paymentStatus = 'Paid';
-    request.status = 'Active';
-    request.amount = CBR_PRICE_INR;
-    request.paymentMethod = 'RAZORPAY';
-    await request.save();
 
-    // Set User brandingStatus atomically
-    await User.updateOne(
-      { _id: req.user._id },
-      {
-        $set: {
-          brandingStatus: 'paid',
-          brandingPaidAt: new Date(),
-          brandingAmount: CBR_PRICE_INR,
-        },
-      }
-    );
-
-    notifySubscription(request, req.user, txn);
+    const activated = await activateCustomBrandedReport(txn, razorpay_payment_id);
     return res.status(200).json({
       success: true,
       message: 'Payment verified successfully.',
-      data: request,
+      data: activated,
       status: 'paid',
     });
   } catch (err) {
     console.error('[customBrandedReport] verifyPayment error:', err);
     return res.status(500).json({ success: false, message: 'Payment verification failed.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/partner/custom-branded-report/cancel
+// Body: { orderId, failed } — marks the PENDING fee row FAILED.
+// When failed === true (a genuine gateway failure, not a modal dismiss) a
+// Razorpay payment link is sent to the partner's WhatsApp — only when
+// CBR_RETRY_WHATSAPP_ENABLED=true. CBR retry messaging is deferred for now so
+// the wallet-specific template is never sent for a branded-report failure.
+// ---------------------------------------------------------------------------
+async function cancelCustomBrandedOrder(req, res) {
+  try {
+    const partnerId = req.user._id;
+    const { orderId, failed } = req.body || {};
+    if (!orderId) {
+      return res.status(400).json({ success: false, message: 'orderId is required.' });
+    }
+
+    const updated = await Transaction.findOneAndUpdate(
+      {
+        orderId: String(orderId).trim(),
+        userId: partnerId,
+        purpose: 'CUSTOM_BRAND_FEE',
+        status: 'PENDING',
+      },
+      { $set: { status: 'FAILED' } },
+      { new: true },
+    );
+
+    if (updated && failed === true && process.env.CBR_RETRY_WHATSAPP_ENABLED === 'true') {
+      const [partner, request] = await Promise.all([
+        User.findById(partnerId).select('name email phone').lean(),
+        CustomBrandedRequest.findOne({ orderId: updated.orderId, partnerId })
+          .select('phone')
+          .lean(),
+      ]);
+      const phone = request?.phone || partner?.phone;
+      if (phone) {
+        sendRetryLink({
+          transaction: updated,
+          phone,
+          name: partner?.name,
+          email: partner?.email,
+          amount: Number(updated.totalAmount) || Number(updated.amount) || CBR_PRICE_INR,
+          purpose: 'CUSTOM_BRAND_FEE',
+          description: 'VerifyHub AI Branded Report fee',
+          callbackPath: '/partner/custom-branded-report',
+        }).catch((e) => console.error('[payment-retry] CBR link failed:', e.message));
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      alreadyResolved: !updated,
+      transactionId: updated?._id || null,
+    });
+  } catch (err) {
+    console.error('[customBrandedReport] cancelCustomBrandedOrder error:', err);
+    return res.status(500).json({ success: false, message: 'Could not cancel the payment attempt.' });
   }
 }
 
@@ -717,6 +803,8 @@ module.exports = {
   payWithWallet,
   createOrder,
   verifyPayment,
+  cancelCustomBrandedOrder,
+  activateCustomBrandedReport,
   submitBrandAssets,
   requestRevision,
 };

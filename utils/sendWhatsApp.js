@@ -56,7 +56,7 @@ async function sendWhatsApp({ to, text }) {
   const messageId =
     res.data?.messageId || res.data?.data?.messageId || res.data?.id || null;
   console.log(`[whatsapp] sent to ${maskPhone(phone)} id=${messageId || "n/a"}`);
-  return { mocked: false, messageId, data: res.data };
+  return { sent: true, mocked: false, messageId, data: res.data };
 }
 
 // Template sender — POST /api/v1/whatsapp/sendMessage with a template body.
@@ -99,12 +99,17 @@ async function sendTemplateMessage({ to, templateName, language, variables }) {
     console.log(`[whatsapp] template ${templateName} sent to ${maskPhone(phone)} id=${messageId || "n/a"}`);
     return { sent: true, mocked: false, messageId, data: res.data };
   } catch (err) {
+    const data = err.response?.data;
     const detail =
-      err.response?.data?.message ||
-      err.response?.data?.error ||
-      JSON.stringify(err.response?.data || "").slice(0, 200) ||
+      (typeof data?.message === "string" && data.message) ||
+      (typeof data?.error === "string" && data.error) ||
+      (data?.error ? JSON.stringify(data.error) : "") ||
+      (data ? JSON.stringify(data).slice(0, 300) : "") ||
       err.message;
-    console.error(`[whatsapp] template ${templateName} failed for ${maskPhone(phone)}:`, detail);
+    console.error(
+      `[whatsapp] template ${templateName} failed for ${maskPhone(phone)} (status ${err.response?.status || "n/a"}):`,
+      detail,
+    );
     return { sent: false, reason: detail };
   }
 }
@@ -162,6 +167,55 @@ async function sendPlanActivationWhatsApp(phone, d) {
   });
 }
 
+// Plain, symbol-free amount ("1,000") for templates whose body already prints
+// the currency (₹{{2}}). Passing inr() would render "₹₹1,000".
+function plainAmount(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "0";
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(num);
+}
+
+// Payment-failure retry link. Uses the approved utility template configured
+// via env (WASIMPLE_PAYMENT_RETRY_TEMPLATE / _LANG). Two payload shapes:
+//   - "button" (default): link lives in a URL button, so only 2 body vars
+//     [name, amount] are sent.
+//   - "body": link is body var {{3}} -> [name, amount, link].
+// Templates normally print the currency themselves (e.g. "₹{{2}}"), so the
+// amount is sent as a bare number. Set WASIMPLE_PAYMENT_RETRY_CURRENCY_SYMBOL
+// only for a template that prints no currency at all.
+// Falls back to a free-form message when no template is configured (free-form
+// only reaches contacts inside the 24h window).
+async function sendPaymentRetryWhatsApp(phone, { name, amount, link, mode }) {
+  const linkUrl = String(link || "");
+  const templateName = process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE;
+  const language = process.env.WASIMPLE_PAYMENT_RETRY_LANG || "en";
+  const templateMode = mode || process.env.WASIMPLE_PAYMENT_RETRY_MODE || "button";
+
+  if (!templateName) {
+    return sendWhatsApp({
+      to: phone,
+      text:
+        `Payment not completed\n` +
+        `Dear ${name || "Partner"}, your VerifyHub payment of ${inr(amount)} could not be completed.\n` +
+        `Please retry securely using this link (valid for 24 hours):\n${linkUrl}`,
+    });
+  }
+
+  const symbol = process.env.WASIMPLE_PAYMENT_RETRY_CURRENCY_SYMBOL || "";
+  const amountText = `${symbol}${plainAmount(amount)}`;
+  const variables =
+    templateMode === "body"
+      ? [String(name || "Partner"), amountText, linkUrl]
+      : [String(name || "Partner"), amountText];
+
+  return sendTemplateMessage({
+    to: phone,
+    templateName,
+    language,
+    variables,
+  });
+}
+
 async function sendLowBalanceWhatsApp(phone, { balance, threshold }) {
   const url = process.env.FRONTEND_URL || "https://verifyhub.in";
   return sendWhatsApp({
@@ -212,6 +266,7 @@ module.exports = {
   templateStatus,
   sendWhatsAppOtp,
   sendRechargeSuccessWhatsApp,
+  sendPaymentRetryWhatsApp,
   sendPlanActivationWhatsApp,
   sendLowBalanceWhatsApp,
   sendAdminTopupWhatsApp,
