@@ -11,11 +11,12 @@ function amountOf(txn) {
   return Number(txn.totalAmount) || Number(txn.amount) || 0;
 }
 
-// GET /api/wallet-recharge/retries — the caller's failed wallet recharges that
-// already received a WhatsApp retry link. Each row is backed by a live hosted
-// Razorpay Payment Link (created at failure time); if that link is missing or
-// expired a fresh one is created here and persisted, so the partner can always
-// pay from the retry page.
+// GET /api/wallet-recharge/retries — the caller's failed wallet recharges in
+// the lookback window. Each row is backed by a live hosted Razorpay Payment
+// Link (created at failure time); if that link is missing or expired a fresh
+// one is created here and persisted, so the partner can always pay from the
+// retry page. Deliberately independent of retryLinkSentAt: a failure whose
+// WhatsApp send did not go out is still retryable from here.
 const listWalletRechargeRetries = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -25,9 +26,9 @@ const listWalletRechargeRetries = async (req, res) => {
       userId,
       purpose: "WALLET_RECHARGE",
       status: "FAILED",
-      retryLinkSentAt: { $gte: since },
+      createdAt: { $gte: since },
     })
-      .sort({ retryLinkSentAt: -1 })
+      .sort({ createdAt: -1 })
       .limit(MAX_ROWS)
       .lean();
 
