@@ -111,6 +111,21 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Payment-retry link (sent over WhatsApp after a genuine gateway failure).
+    // retryLinkSentAt doubles as the once-per-order send guard.
+    retryLinkId: {
+      type: String,
+      default: null,
+    },
+    retryLinkUrl: {
+      type: String,
+      default: null,
+    },
+    retryLinkSentAt: {
+      type: Date,
+      default: null,
+    },
+
     description: {
       type: String,
       default: null,

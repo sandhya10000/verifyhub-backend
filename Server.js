@@ -174,6 +174,12 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Razorpay webhooks need the RAW body for HMAC signature verification, so this
+// route must be registered BEFORE express.json().
+const { razorpayWebhook } = require("./controllers/razorpayWebhookController");
+app.post("/api/razorpay/webhook", express.raw({ type: "application/json" }), razorpayWebhook);
+
 app.use(express.json());
 
 // =========================

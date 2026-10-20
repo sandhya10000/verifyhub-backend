@@ -162,6 +162,33 @@ async function sendPlanActivationWhatsApp(phone, d) {
   });
 }
 
+// Payment-failure retry link. Uses the approved utility template configured
+// via env (WASIMPLE_PAYMENT_RETRY_TEMPLATE / _LANG) with positional variables
+// [name, amount, link]. Falls back to a free-form message when no template is
+// configured (free-form only reaches contacts inside the 24h window).
+async function sendPaymentRetryWhatsApp(phone, { name, amount, link }) {
+  const linkUrl = String(link || "");
+  const templateName = process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE;
+  const language = process.env.WASIMPLE_PAYMENT_RETRY_LANG || "en";
+
+  if (!templateName) {
+    return sendWhatsApp({
+      to: phone,
+      text:
+        `Payment not completed\n` +
+        `Dear ${name || "Partner"}, your VerifyHub payment of ${inr(amount)} could not be completed.\n` +
+        `Please retry securely using this link (valid for 24 hours):\n${linkUrl}`,
+    });
+  }
+
+  return sendTemplateMessage({
+    to: phone,
+    templateName,
+    language,
+    variables: [String(name || "Partner"), inr(amount), linkUrl],
+  });
+}
+
 async function sendLowBalanceWhatsApp(phone, { balance, threshold }) {
   const url = process.env.FRONTEND_URL || "https://verifyhub.in";
   return sendWhatsApp({
@@ -212,6 +239,7 @@ module.exports = {
   templateStatus,
   sendWhatsAppOtp,
   sendRechargeSuccessWhatsApp,
+  sendPaymentRetryWhatsApp,
   sendPlanActivationWhatsApp,
   sendLowBalanceWhatsApp,
   sendAdminTopupWhatsApp,

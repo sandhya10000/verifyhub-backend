@@ -5,6 +5,8 @@ const User = require("../models/User");
 const Pricing = require("../models/Pricing");
 const { PLAN_KEYS, tierForAmount, SINGLE_PLAN_MODE, SINGLE_PLAN_KEY, creditForRecharge, DEFAULT_RECHARGE_PLANS } = require("../models/Pricing");
 const { sendRechargeSuccessMail, sendPlanActivationMail } = require("../utils/sendMail");
+const { creditWalletRecharge } = require("../services/paymentCredit.service");
+const { sendRetryLink } = require("../services/paymentRetry.service");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -184,7 +186,7 @@ const createWalletRechargeOrder = async (req, res) => {
 // if the partner retries and pays on the same order.
 const cancelWalletRechargeOrder = async (req, res) => {
   try {
-    const { orderId } = req.body;
+    const { orderId, failed } = req.body;
     const userId = req.user.id;
 
     if (!orderId) {
@@ -204,8 +206,27 @@ const cancelWalletRechargeOrder = async (req, res) => {
       { $set: { status: "FAILED" } },
       { new: true },
     )
-      .select("_id orderId status")
+      .select("_id orderId status amount totalAmount userId purpose")
       .lean();
+
+    // A genuine gateway failure (not a modal dismiss) → WhatsApp retry link.
+    // Only fires when this call actually flipped the row PENDING -> FAILED,
+    // so repeats and deliberate dismissals send nothing.
+    if (updated && failed === true) {
+      const user = await User.findById(userId).select("name email phone").lean();
+      if (user?.phone) {
+        sendRetryLink({
+          transaction: updated,
+          phone: user.phone,
+          name: user.name,
+          email: user.email,
+          amount: Number(updated.totalAmount) || Number(updated.amount),
+          purpose: "WALLET_RECHARGE",
+          description: "VerifyHub wallet recharge",
+          callbackPath: "/partner/add-funds",
+        }).catch((e) => console.error("[payment-retry] wallet link failed:", e.message));
+      }
+    }
 
     // Idempotent: already SUCCESS/FAILED (or unknown order) is still a
     // successful no-op from the caller's perspective.
@@ -289,157 +310,19 @@ const verifyPayment = async (req, res) => {
     // tier untouched). Plans are free — no fee is ever withheld.
     // Re-derive defensively and never strand paid money.
     if (transaction.purpose === "WALLET_RECHARGE") {
-      const pricing = await Pricing.findOne({ key: "default" }).lean();
-
-      const current = await User.findById(transaction.userId).select("activePlan email name phone partner_id").lean();
-      if (!current) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      let plan = transaction.planSelected;
-      if (plan && !PLAN_KEYS.includes(plan)) plan = null; // corrupt value -> treat as pure top-up
-      // Legacy orders predating free plans may carry a locked planFee —
-      // ignore it: plans cost nothing, the full amount is always credited.
-      const planFee = 0;
-      // Bonus locked at order time wins (mid-checkout reprice can't change it).
-      // Legacy rows without bonus fields recompute from live pricing.
-      let walletCredit = Number(transaction.walletCredit);
-      let bonusCredit = Number(transaction.bonusCredit);
-      if (!Number.isFinite(walletCredit) || walletCredit <= 0) {
-        const livePlans = pricing?.rechargePlans?.length ? pricing.rechargePlans : DEFAULT_RECHARGE_PLANS;
-        const recomputed = creditForRecharge(Number(transaction.amount), livePlans);
-        walletCredit = recomputed != null ? recomputed : Math.max(0, Number(transaction.amount));
-        bonusCredit = Math.max(0, walletCredit - Number(transaction.amount));
-        transaction.walletCredit = walletCredit;
-        transaction.bonusCredit = bonusCredit;
-      }
-      if (!Number.isFinite(bonusCredit)) bonusCredit = Math.max(0, walletCredit - Number(transaction.amount));
-
-      // Single-plan mode: every successful recharge lands on the single plan.
-      // TODO(multi-plan-restore): restore checkout-wins logic below.
-      let effectivePlan;
-      if (SINGLE_PLAN_MODE) {
-        effectivePlan = SINGLE_PLAN_KEY;
-        plan = SINGLE_PLAN_KEY;
-        transaction.planTier = SINGLE_PLAN_KEY;
-      } else {
-        // The plan chosen at checkout wins (upgrades and downgrades both
-        // allowed). Pure top-ups never touch the tier at all.
-        effectivePlan = plan || current.activePlan || null;
-        // Stamp the tier on the ledger row for per-tier revenue (pure top-ups
-        // attribute to the tier the partner currently holds)
-        transaction.planTier = plan || current.activePlan || null;
-      }
-      await transaction.save();
-      // First funding ever? (no other successful recharge besides this one)
-      const autoAssigned = !(await Transaction.exists({
-        userId: transaction.userId,
-        purpose: "WALLET_RECHARGE",
-        status: "SUCCESS",
-        _id: { $ne: transaction._id },
-      }));
-      // Single-plan launch: no forced plan pick — every recharge lands on the
-      // single plan with pendingPlanChoice always false.
-      // TODO(multi-plan-restore): restore pendingPlanChoice: !plan gate.
-      const updatedUser = await User.findByIdAndUpdate(
-        transaction.userId,
-        {
-          $inc: {
-            walletBalance: walletCredit,
-          },
-          $set: {
-            activePlan: effectivePlan,
-            pendingPlanChoice: false,
-          },
-        },
-        {
-          new: true,
-        },
-      );
-
-      if (!updatedUser) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      // Fire-and-forget receipt mail + clear stale low-balance flag
-      // once the wallet is healthy again. Never blocks the response.
-      if (current.email) {
-        sendRechargeSuccessMail(current.email, {
-          name: current.name, baseAmount: Number(transaction.amount),
-          gstAmount: Number(transaction.gstAmount) || 0,
-          totalPaid: Number(transaction.totalAmount),
-          walletCredit, bonusCredit, plan, planFee,
-          walletBalance: updatedUser.walletBalance,
-          activePlan: updatedUser.activePlan,
-          paymentId: transaction.paymentId, orderId: transaction.orderId,
-          transactionId: String(transaction._id),
-          partnerId: current.partner_id, date: new Date(),
-        }).catch((e) => console.error("[mail] recharge receipt failed:", e.message));
-      }
-      if (current.phone) {
-        const { sendRechargeSuccessWhatsApp } = require("../utils/sendWhatsApp");
-        sendRechargeSuccessWhatsApp(current.phone, {
-          paid: Number(transaction.amount),
-          bonus: bonusCredit,
-          credited: walletCredit,
-          walletBalance: updatedUser.walletBalance,
-          activePlan: updatedUser.activePlan,
-        }).catch((e) => console.error("[whatsapp] recharge receipt failed:", e.message));
-      }
-      // Platform + admin top-up alert (short, in addition to the partner's
-      // own receipt above). Fully fire-and-forget: failures here never affect
-      // the recharge response. One recipient failing never blocks the others.
-      (async () => {
-        try {
-          const { sendTopupAdminNotifyMail } = require("../utils/sendMail");
-          const platform = String(process.env.TOPUP_NOTIFY_EMAILS || "info@verifyhub.in")
-            .split(",").map((s) => s.trim()).filter(Boolean);
-          const admins = await User.find({ role: "admin", isActive: { $ne: false } })
-            .select("email").lean();
-          const recipients = new Set([
-            ...platform,
-            ...admins.map((a) => a && a.email).filter(Boolean),
-          ]);
-          if (current.email) recipients.delete(current.email); // partner already got the receipt
-          const payload = {
-            name: current.name, email: current.email, phone: current.phone,
-            walletCredit, bonusCredit, walletBalance: updatedUser.walletBalance,
-            activePlan: updatedUser.activePlan,
-            paymentId: transaction.paymentId, orderId: transaction.orderId,
-            transactionId: String(transaction._id),
-            partnerId: current.partner_id, date: new Date(),
-          };
-          await Promise.allSettled([...recipients].map((to) =>
-            sendTopupAdminNotifyMail(to, payload).catch((e) =>
-              console.error("[mail] top-up admin notify failed:", to, e.message)),
-          ));
-        } catch (e) {
-          console.error("[mail] top-up admin notify failed:", e.message);
-        }
-      })();
-      const _threshold = pricing?.lowBalanceThreshold ?? 500;
-      if ((updatedUser.walletBalance ?? 0) >= _threshold) {
-        User.updateOne({ _id: transaction.userId }, { $set: { lowBalanceLastAlertAt: null } }).exec().catch(() => {});
-      }
-
+      const result = await creditWalletRecharge(transaction);
       return res.status(200).json({
         success: true,
         message: "Wallet recharged successfully",
         transaction,
-        walletBalance: updatedUser.walletBalance,
-        activePlan: updatedUser.activePlan,
-        plan,
-        planFee,
-        credited: walletCredit,
-        bonusCredit,
-        autoAssigned,
-        pendingPlanChoice: updatedUser.pendingPlanChoice ?? false,
+        walletBalance: result.updatedUser.walletBalance,
+        activePlan: result.updatedUser.activePlan,
+        plan: result.plan,
+        planFee: result.planFee,
+        credited: result.walletCredit,
+        bonusCredit: result.bonusCredit,
+        autoAssigned: result.autoAssigned,
+        pendingPlanChoice: result.updatedUser.pendingPlanChoice ?? false,
       });
     }
 
