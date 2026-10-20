@@ -2,6 +2,7 @@ const axios = require("axios");
 const GstVerification = require("../models/GstVerification");
 const User = require("../models/User");
 const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
+const { istDateRange } = require("../utils/istTime");
 const { generateGstPdf } = require("../services/gstPdf.service");
 
 const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
@@ -340,9 +341,11 @@ const getAllGstVerifications = async (req, res) => {
       query.status = status;
     }
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      // IST day boundaries: `new Date("2026-01-15")` is UTC midnight (05:30
+      // IST), so an inclusive "to 15 Jan" filter used to drop every row
+      // later on the 15th.
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     const [total, rows] = await Promise.all([
