@@ -89,8 +89,14 @@ async function sendRetryLink({
       mode,
     });
 
+    const waStatus = whatsapp?.sent
+      ? "whatsapp sent"
+      : `whatsapp not sent (${
+          whatsapp?.reason ||
+          (whatsapp?.mocked ? "not configured" : whatsapp?.skipped ? "skipped" : "no reason")
+        })`;
     console.log(
-      `[payment-retry] link ${link.id} for txn ${transaction._id} -> ${whatsapp?.sent ? "whatsapp sent" : "whatsapp not sent"}`,
+      `[payment-retry] link ${link.id} for txn ${transaction._id} -> ${waStatus} [template=${process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE || "none"}]`,
     );
     return { sent: true, url: link.shortUrl, whatsapp };
   } catch (e) {

@@ -56,7 +56,7 @@ async function sendWhatsApp({ to, text }) {
   const messageId =
     res.data?.messageId || res.data?.data?.messageId || res.data?.id || null;
   console.log(`[whatsapp] sent to ${maskPhone(phone)} id=${messageId || "n/a"}`);
-  return { mocked: false, messageId, data: res.data };
+  return { sent: true, mocked: false, messageId, data: res.data };
 }
 
 // Template sender — POST /api/v1/whatsapp/sendMessage with a template body.
@@ -99,12 +99,17 @@ async function sendTemplateMessage({ to, templateName, language, variables }) {
     console.log(`[whatsapp] template ${templateName} sent to ${maskPhone(phone)} id=${messageId || "n/a"}`);
     return { sent: true, mocked: false, messageId, data: res.data };
   } catch (err) {
+    const data = err.response?.data;
     const detail =
-      err.response?.data?.message ||
-      err.response?.data?.error ||
-      JSON.stringify(err.response?.data || "").slice(0, 200) ||
+      (typeof data?.message === "string" && data.message) ||
+      (typeof data?.error === "string" && data.error) ||
+      (data?.error ? JSON.stringify(data.error) : "") ||
+      (data ? JSON.stringify(data).slice(0, 300) : "") ||
       err.message;
-    console.error(`[whatsapp] template ${templateName} failed for ${maskPhone(phone)}:`, detail);
+    console.error(
+      `[whatsapp] template ${templateName} failed for ${maskPhone(phone)} (status ${err.response?.status || "n/a"}):`,
+      detail,
+    );
     return { sent: false, reason: detail };
   }
 }
