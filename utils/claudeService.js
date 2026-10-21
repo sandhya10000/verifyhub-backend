@@ -827,14 +827,14 @@ async function saveToCreditReport(analysisId, userId, result) {
 // Routes to single-call path (<=100 pages) or chunked path (>100 pages).
 // language: ISO code for the report output language (e.g. 'hi'). Default 'en'.
 // ---------------------------------------------------------------------------
-async function processAnalysisInBackground(analysisId, language = 'en') {
+async function processAnalysisInBackground(analysisId, language = 'en', brand = null) {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`[claudeService:${analysisId}] Background job started at ${new Date().toISOString()}`);
   console.log('='.repeat(60));
 
   try {
     const { executePipeline } = require('./newPipelineAi');
-    await executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, saveToCreditReport, debitAiPull, buildLanguageInstruction, QUALITATIVE_TOOL);
+    await executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, saveToCreditReport, debitAiPull, buildLanguageInstruction, QUALITATIVE_TOOL, brand);
     return; // Exit here, bypassing the old logic completely
   } catch (err) {
     console.error(`[claudeService:${analysisId}] ai newPipeline failed:`, err);

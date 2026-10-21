@@ -136,8 +136,30 @@ const BATCH_EXTRACT_TOOL = {
   }
 };
 
-async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, saveToCreditReport, debitAiPull, buildLanguageInstruction, QUALITATIVE_TOOL) {
-  console.log(`[newPipeline:${analysisId}] Starting new robust pipeline...`);
+function buildBrandVoiceInstruction(brand) {
+  if (!brand || process.env.ENABLE_BRANDED_AI_VOICE !== 'true') {
+    return '';
+  }
+
+  // Sanitise firmName: strip " < > { } \ and newlines, keep apostrophes, clamp to 80 chars
+  const rawName = brand.firmName || '';
+  const sanitisedName = rawName
+    .replace(/["<>{}\\\r\n]/g, '')
+    .trim()
+    .slice(0, 80);
+
+  return (
+    `\n\n<advisory_firm>Firm Name: "${sanitisedName}"</advisory_firm>\n` +
+    `Write the executive summary and recommendation as the advisory team at that firm. ` +
+    `Output no HTML, URLs, phone numbers, emails, or brand metadata. ` +
+    `Do not claim licences, regulatory approvals, or insurer/lender affiliations. ` +
+    `Do not promise loan approval or guaranteed score improvement. ` +
+    `All numbers and facts must match the extracted data exactly.`
+  );
+}
+
+async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, saveToCreditReport, debitAiPull, buildLanguageInstruction, QUALITATIVE_TOOL, brand = null) {
+  console.log(`[newPipeline:${analysisId}] Starting new robust pipeline...${brand ? ' (Branded: ' + brand.firmName + ')' : ''}`);
   const analysis = await AIAnalysis.findById(analysisId);
   if (!analysis) return;
 
@@ -345,7 +367,7 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
     model: CLAUDE_MODEL,
     max_tokens: 5000,
     messages: [
-      { role: 'user', content: [{ type: 'text', text: 'You are a senior credit analyst. Produce a qualitative analysis using the submit_qualitative_analysis tool.\n\n```json\n' + JSON.stringify(compactContext, null, 2) + '\n```' + buildLanguageInstruction(language) }] }
+      { role: 'user', content: [{ type: 'text', text: 'You are a senior credit analyst. Produce a qualitative analysis using the submit_qualitative_analysis tool.\n\n```json\n' + JSON.stringify(compactContext, null, 2) + '\n```' + buildLanguageInstruction(language) + buildBrandVoiceInstruction(brand) }] }
     ],
     tools: [QUALITATIVE_TOOL],
     tool_choice: { type: 'tool', name: 'submit_qualitative_analysis' }
@@ -371,7 +393,7 @@ async function executePipeline(analysisId, language, anthropic, CLAUDE_MODEL, sa
   };
 
   console.log(`[newPipeline:${analysisId}] Rendering HTML...`);
-  const htmlReport = await renderCreditReport(fullData);
+  const htmlReport = await renderCreditReport(fullData, { brand });
 
   console.log(`[newPipeline:${analysisId}] Saving and finalizing...`);
   await saveToCreditReport(analysisId, analysis.userId, fullData);
