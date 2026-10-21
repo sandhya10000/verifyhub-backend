@@ -12,7 +12,16 @@ const {
   cancelCustomBrandedOrder,
   submitBrandAssets,
   requestRevision,
+  uploadBrandedReport,
+  getActiveBrandProfile,
 } = require('../controllers/customBrandedReportController');
+const { upload } = require('../config/uploadConfig');
+
+// GET  /api/partner/custom-branded-report/profile  — fetch active brand profile (firmName, tagline, logo)
+router.get('/profile', auth, getActiveBrandProfile);
+
+// POST /api/partner/custom-branded-report/analyze  — upload and analyze credit report with partner branding
+router.post('/analyze', auth, upload.single('file'), uploadBrandedReport);
 
 // GET  /api/partner/custom-branded-report/status   — fetch user branding status & onboarding details
 router.get('/status', auth, getBrandingStatus);
