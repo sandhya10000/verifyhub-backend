@@ -150,22 +150,67 @@ const debitFailedPull = async (
   }
 };
 
-// CIBIL failure billing classifier — single source of truth for both the
-// empty-data branch and the catch branch.
-// Policy: deduct the fail fee on provider status 400 (bad request —
-// partner-side input fault, including 400 + bureau "source down" text)
-// and on partner input-fault messages (wrong/invalid PAN, validation
-// failures, no-record) even when the GraphQL status is not 400 —
-// IndiConnect answers those over HTTP 200 with ok:false.
-// Never deduct on 502/503/504 (service API down), on transport failures
-// with no provider response, on "try again later" / gateway-timeout
-// wording, or when IndiConnect reports our own balance is exhausted
-// (owner must recharge).
-// Bureau-side "source/bureau down" IS billed (IndiConnect attempted the
-// pull and bills us) unless the status itself is 502/503/504 or the
-// message also carries service-down wording (try again / gateway /
-// maintenance), which stays free.
-// Returns { bill: boolean, reason: string } — reason is for server logs.
+// Reject a request that failed backend input validation and bill it.
+// Policy (single-plan launch onward): every backend-hit failure is billed,
+// regardless of status code — including missing/invalid input and missing
+// consent. A Failed CreditReport is persisted first (placeholder for any
+// missing required field) so the ledger has a unique reportId, then the
+// product fail price is charged. Never throws.
+const failValidationPull = async (req, res, options) => {
+  const {
+    statusCode = 400,
+    productKey,
+    bureauLabel,
+    message,
+    body = {},
+    name = "",
+    mobile = "",
+    pan = "",
+    consent = "N",
+  } = options || {};
+
+  const userId = req.user?._id;
+  let creditReport = null;
+  let charge = { ok: false, total: 0 };
+
+  if (userId) {
+    try {
+      creditReport = await CreditReport.create({
+        userId,
+        name: String(name || "").trim() || "(invalid)",
+        mobile: String(mobile || "").trim() || "(invalid)",
+        pan: String(pan || "").trim().toUpperCase() || "(invalid)",
+        reportType: bureauLabel || "CIBIL",
+        bureau: bureauLabel || "CIBIL",
+        consent: consent === "Y" ? "Y" : "N",
+        status: "Failed",
+        reportData: { error: { message } },
+        isPublic: false,
+      });
+      charge = await debitFailedPull(creditReport, productKey, bureauLabel);
+    } catch (err) {
+      console.error(
+        `[wallet] validation fail-charge error (${productKey}):`,
+        err.message,
+      );
+    }
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    ...body,
+    creditReportId: creditReport?._id || null,
+    failureCharge: charge.ok ? charge.total : 0,
+  });
+};
+
+// CIBIL failure classifier — used ONLY to shape the HTTP response (503 vs
+// 400 and the "temporarily unavailable" wording) and for server-side logging.
+// It NO LONGER gates billing: every failed CIBIL pull is billed regardless
+// of status code or message (the `bill` field is retained for reference but
+// is not consulted).
+// Returns { bill: boolean, reason: string }.
 // `status`: Number(provider status) or NaN when unknown.
 // `texts`: array of message strings from every provider field available.
 const classifyCibilFailure = (status, texts) => {
@@ -303,74 +348,37 @@ const CibilReportFromDigi = async (req, res) => {
     const customerName =
       fullname || `${firstName || ""} ${lastName || ""}`.trim();
 
-    if (!customerName) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name is required",
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const cibilReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "cibil",
+        bureauLabel: "CIBIL",
+        message,
+        name: customerName,
+        mobile,
+        pan,
+        consent,
       });
-    }
 
-    if (!mobile) {
-      return res.status(400).json({
-        success: false,
-        message: "Mobile number is required",
-      });
-    }
+    if (!customerName) return cibilReject("Full name is required");
 
-    if (!pan) {
-      return res.status(400).json({
-        success: false,
-        message: "PAN number is required",
-      });
-    }
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
+    if (!mobile) return cibilReject("Mobile number is required");
 
-    if (!gender) {
-      return res.status(400).json({
-        success: false,
-        message: "Gender is required",
-      });
-    }
+    if (!pan) return cibilReject("PAN number is required");
 
-    if (!dob) {
-      return res.status(400).json({
-        success: false,
-        message: "Date of birth is required",
-      });
-    }
+    if (!email) return cibilReject("Email is required");
 
-    if (!state) {
-      return res.status(400).json({
-        success: false,
-        message: "State is required",
-      });
-    }
+    if (!gender) return cibilReject("Gender is required");
 
-    if (!city) {
-      return res.status(400).json({
-        success: false,
-        message: "City is required",
-      });
-    }
+    if (!dob) return cibilReject("Date of birth is required");
 
-    if (!pincode) {
-      return res.status(400).json({
-        success: false,
-        message: "Pincode is required",
-      });
-    }
+    if (!state) return cibilReject("State is required");
 
-    if (consent !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent is required",
-      });
-    }
+    if (!city) return cibilReject("City is required");
+
+    if (!pincode) return cibilReject("Pincode is required");
+
+    if (consent !== "Y") return cibilReject("Customer consent is required");
 
     // Wallet gate: 0/insufficient balance par IndiConnect API hit hi nahi hogi —
     // na Pending doc banega, na provider cost lagegi.
@@ -570,25 +578,18 @@ const CibilReportFromDigi = async (req, res) => {
         indiBureauStatus,
       );
 
-      // Fail fee on status 400 / bureau source-down / partner input-fault
-      // (billable to us). Service-down, 502/503/504 and our IndiConnect
-      // balance exhaustion stay free — same policy as provider auth failures.
+      // Bill every failed CIBIL pull regardless of status code / message.
+      // classifyCibilFailure is kept ONLY to shape the response (503 vs 400
+      // and the "temporarily unavailable" wording) — it no longer gates billing.
       const emptyVerdict = classifyCibilFailure(
         cibilFailureStatus,
         cibilFailureTexts,
       );
-      let cibilEmptyCharge = { ok: false, total: 0 };
-      if (emptyVerdict.bill) {
-        cibilEmptyCharge = await debitFailedPull(
-          creditReport,
-          "cibil",
-          "CIBIL",
-        );
-      } else {
-        console.log(
-          `[wallet] CIBIL fail free (${emptyVerdict.reason}) for report ${creditReport._id}`,
-        );
-      }
+      const cibilEmptyCharge = await debitFailedPull(
+        creditReport,
+        "cibil",
+        "CIBIL",
+      );
       if (emptyVerdict.reason === "indiconnect-balance-exhausted") {
         console.error(
           "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
@@ -836,22 +837,14 @@ const CibilReportFromDigi = async (req, res) => {
       catchTexts,
     );
 
-    // Failed CIBIL pulls bill per pricing config (₹60 fail fee in
-    // single-plan mode) — same as CRIF/Experian/Equifax. Never throws.
-    let cibilFailCharge = { ok: false, total: 0 };
-    if (!isIndiAuthFailure && catchVerdict.bill) {
-      cibilFailCharge = await debitFailedPull(
-        creditReport,
-        "cibil",
-        "CIBIL",
-      );
-    } else {
-      console.log(
-        `[wallet] CIBIL fail free (${
-          isIndiAuthFailure ? "provider auth failure" : catchVerdict.reason
-        })`,
-      );
-    }
+    // Bill every failed CIBIL pull regardless of status code / message,
+    // including provider auth failures, timeouts, service-down wording and
+    // our own IndiConnect balance exhaustion. Never throws.
+    const cibilFailCharge = await debitFailedPull(
+      creditReport,
+      "cibil",
+      "CIBIL",
+    );
     if (catchVerdict.reason === "indiconnect-balance-exhausted") {
       console.error(
         "[CIBIL] IndiConnect provider balance exhausted — owner recharge needed.",
@@ -943,16 +936,24 @@ const CrifReport = async (req, res) => {
     // STEP 4: INPUT VALIDATION
     // ============================================================
 
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const crifReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "crif",
+        bureauLabel: "CRIF",
+        message,
+        name: fullName,
+        mobile: mobileNumber,
+        pan: panNumber,
+      });
+
     if (
       !fullName ||
       String(fullName).trim() === "" ||
       !mobileNumber ||
       String(mobileNumber).trim() === ""
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name and mobile number are required",
-      });
+      return crifReject("Full name and mobile number are required");
     }
 
     const name = String(fullName).trim();
@@ -963,10 +964,7 @@ const CrifReport = async (req, res) => {
     // ============================================================
 
     if (!/^[6-9]\d{9}$/.test(mobile)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid 10 digit mobile number",
-      });
+      return crifReject("Please provide a valid 10 digit mobile number");
     }
 
     // ============================================================
@@ -1031,6 +1029,15 @@ const CrifReport = async (req, res) => {
           documentType: "bureau-verification-crif",
           name,
           mobile,
+          // Identity fields — provider needs them to render PAN/DOB/email
+          // in its PDF and echo them in bureauData. Sent only when provided.
+          ...(panNumber && String(panNumber).trim()
+            ? { pan: String(panNumber).trim().toUpperCase() }
+            : {}),
+          ...(dob ? { dob } : {}),
+          ...(email && String(email).trim()
+            ? { email: String(email).trim().toLowerCase() }
+            : {}),
         },
       },
     };
@@ -1351,80 +1358,207 @@ const CrifReport = async (req, res) => {
     console.log("[CRIF] Report ID:", crifReportId);
 
     // ============================================================
+    // DEBUG: BUREAU DATA SHAPE (to find PDF URL key)
+    // ============================================================
+    console.log("[CRIF] bureauData type:", typeof bureauData);
+    console.log(
+      "[CRIF] bureauData keys:",
+      bureauData && typeof bureauData === "object"
+        ? Object.keys(bureauData)
+        : bureauData,
+    );
+    console.log(
+      "[CRIF] result keys:",
+      result && typeof result === "object" ? Object.keys(result) : result,
+    );
+
+    // ============================================================
     // STEP 22: EXTRACT REPORT URL
     // ============================================================
 
-    const reportUrl =
+    let reportUrl =
       bureauData?.reportUrl ||
       bureauData?.reportURL ||
       bureauData?.pdfUrl ||
       bureauData?.pdfURL ||
       bureauData?.["credit_report_link"] ||
+      bureauData?.report_link ||
+      bureauData?.reportLink ||
+      bureauData?.pdf_link ||
+      bureauData?.fileUrl ||
+      bureauData?.downloadUrl ||
       result?.reportUrl ||
       result?.reportURL ||
       result?.pdfUrl ||
       result?.pdfURL ||
       result?.credit_report_link ||
+      result?.report_link ||
+      result?.fileUrl ||
+      result?.downloadUrl ||
       null;
 
     console.log("[CRIF] Report URL:", reportUrl);
 
     // ============================================================
-    // STEP 23: GENERATE LOCAL PDF
-    // ============================================================
-
-    // ============================================================
-    // STEP 23: DOWNLOAD PROVIDER PDF TO LOCAL STORAGE
+    // STEP 23: SAVE PDF LOCALLY (provider download + local fallback)
     // ============================================================
 
     let localPath = null;
 
-    try {
-      if (!reportUrl) {
-        throw new Error("CRIF provider PDF URL not found");
-      }
+    // Fast path: provider gave us a PDF URL — download it.
+    if (reportUrl) {
+      try {
+        // Physical folder:
+        // backend/uploads/credit-reports/crif
+        const crifUploadDir = path.join(
+          __dirname,
+          "../uploads/credit-reports/crif",
+        );
 
-      // Physical folder:
-      // backend/uploads/credit-reports/crif
-      const crifUploadDir = path.join(
-        __dirname,
-        "../uploads/credit-reports/crif",
-      );
+        // Create folder if it does not exist
+        if (!fs.existsSync(crifUploadDir)) {
+          fs.mkdirSync(crifUploadDir, {
+            recursive: true,
+          });
+        }
 
-      // Create folder if it does not exist
-      if (!fs.existsSync(crifUploadDir)) {
-        fs.mkdirSync(crifUploadDir, {
-          recursive: true,
+        // Use transaction ID for unique filename
+        const fileName = `crif-${transactionId || creditReport._id}.pdf`;
+
+        // Physical file path
+        const physicalFilePath = path.join(crifUploadDir, fileName);
+
+        console.log("[CRIF] Downloading provider PDF...");
+        console.log("[CRIF] Provider PDF URL:", reportUrl);
+        console.log("[CRIF] Local file path:", physicalFilePath);
+
+        const pdfResponse = await axios.get(reportUrl, {
+          responseType: "arraybuffer",
+          timeout: 60000,
         });
+
+        fs.writeFileSync(physicalFilePath, pdfResponse.data);
+
+        // Path to store in MongoDB
+        localPath = `/uploads/credit-reports/crif/${fileName}`;
+
+        console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
+
+        console.log("[CRIF] DB localPath:", localPath);
+      } catch (pdfError) {
+        console.error("[CRIF] Provider PDF download failed:", pdfError.message);
+
+        localPath = null;
       }
+    } else {
+      console.log("[CRIF] No provider PDF URL — will generate PDF locally.");
+    }
 
-      // Use transaction ID for unique filename
-      const fileName = `crif-${transactionId || creditReport._id}.pdf`;
+    // Fallback: generate PDF locally from bureau JSON (same as CIBIL/Experian).
+    if (!localPath) {
+      try {
+        console.log(
+          "[CRIF] Generating local PDF via generateCrifPdf template...",
+        );
 
-      // Physical file path
-      const physicalFilePath = path.join(crifUploadDir, fileName);
+        // Template searches for B2C-REPORT, but live IndiConnect payload
+        // nests the report as bureauData.credit_report — adapt it.
+        let templateInput = apiData;
+        const apiStr = (() => {
+          try {
+            return JSON.stringify(apiData);
+          } catch {
+            return "";
+          }
+        })();
+        if (!apiStr.includes("B2C-REPORT")) {
+          const creditReportJson =
+            bureauData?.credit_report || bureauData || null;
+          if (creditReportJson) {
+            // REQUEST carries the input identity (PAN/DOB/EMAIL/GENDER) —
+            // provider only receives name+mobile, so inject stored values
+            // otherwise PDF shows "-" for PAN/DOB/email.
+            const requestFromDb = {
+              PAN: creditReport.pan || undefined,
+              "PAN-NUMBER": creditReport.pan || undefined,
+              DOB: creditReport.dob || undefined,
+              "DATE-OF-BIRTH": creditReport.dob || undefined,
+              "EMAIL-1": creditReport.email || undefined,
+              EMAIL: creditReport.email || undefined,
+              GENDER: creditReport.gender || undefined,
+              SEX: creditReport.gender || undefined,
+              NAME: name || undefined,
+              "PHONE-1": mobile || undefined,
+              MOBILE: mobile || undefined,
+            };
+            const mergedReport =
+              creditReportJson && typeof creditReportJson === "object"
+                ? { ...creditReportJson }
+                : creditReportJson;
+            if (mergedReport && typeof mergedReport === "object") {
+              // Provider echoes REQUEST with only name+mobile (or empty
+              // DOB/PAN keys) — fill each gap with stored values, preferring
+              // whichever side is non-empty.
+              const providerReq =
+                mergedReport.REQUEST &&
+                typeof mergedReport.REQUEST === "object"
+                  ? mergedReport.REQUEST
+                  : {};
+              const nonEmpty = (v) =>
+                v !== undefined && v !== null && String(v).trim() !== ""
+                  ? v
+                  : undefined;
+              const mergedReq = {};
+              for (const k of new Set([
+                ...Object.keys(requestFromDb),
+                ...Object.keys(providerReq),
+              ])) {
+                mergedReq[k] =
+                  nonEmpty(providerReq[k]) ?? nonEmpty(requestFromDb[k]);
+              }
+              mergedReport.REQUEST = mergedReq;
+              console.log("[CRIF] Stored identity:", {
+                pan: creditReport.pan || null,
+                dob: creditReport.dob || null,
+                email: creditReport.email || null,
+              });
+              console.log("[CRIF] Template REQUEST:", {
+                PAN: mergedReq.PAN || null,
+                DOB: mergedReq.DOB || null,
+                "EMAIL-1": mergedReq["EMAIL-1"] || null,
+              });
+            }
+            templateInput = { "B2C-REPORT": mergedReport };
+            console.log(
+              "[CRIF] Adapted credit_report -> B2C-REPORT for template.",
+            );
+          }
+        }
 
-      console.log("[CRIF] Downloading provider PDF...");
-      console.log("[CRIF] Provider PDF URL:", reportUrl);
-      console.log("[CRIF] Local file path:", physicalFilePath);
+        const generatedAbsPath = await generateCrifPdf(
+          templateInput,
+          creditReport._id.toString(),
+        );
 
-      const pdfResponse = await axios.get(reportUrl, {
-        responseType: "arraybuffer",
-        timeout: 60000,
-      });
+        const generatedFileName = path.basename(generatedAbsPath);
 
-      fs.writeFileSync(physicalFilePath, pdfResponse.data);
+        localPath = `/uploads/credit-reports/crif/${generatedFileName}`;
 
-      // Path to store in MongoDB
-      localPath = `/uploads/credit-reports/crif/${fileName}`;
+        // No provider link — point reportUrl at our own file so history
+        // buttons open the generated PDF (CIBIL pattern).
+        if (!reportUrl) {
+          reportUrl = localPath;
+        }
 
-      console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
-
-      console.log("[CRIF] DB localPath:", localPath);
-    } catch (pdfError) {
-      console.error("[CRIF] Provider PDF download failed:", pdfError.message);
-
-      localPath = null;
+        console.log("[CRIF] Local PDF generated successfully:", generatedAbsPath);
+        console.log("[CRIF] DB localPath:", localPath);
+      } catch (genError) {
+        console.error(
+          "[CRIF] Local PDF generation failed:",
+          genError.message,
+          genError.stack ? genError.stack.split("\n").slice(0, 4).join(" | ") : "",
+        );
+      }
     }
 
     // ============================================================
@@ -1481,6 +1615,10 @@ const CrifReport = async (req, res) => {
       transactionId,
 
       score: creditReport.score,
+
+      pan: creditReport.pan,
+      email: creditReport.email,
+      dob: creditReport.dob,
 
       reportUrl: creditReport.reportUrl,
 
@@ -1556,6 +1694,9 @@ const CrifReport = async (req, res) => {
     // ============================================================
 
     if (error.request) {
+      const crifTimeoutCharge = creditReport
+        ? await debitFailedPull(creditReport, "crif", "CRIF")
+        : { ok: false, total: 0 };
       return res.status(504).json({
         success: false,
         status: "failed",
@@ -1563,12 +1704,18 @@ const CrifReport = async (req, res) => {
         message: "CRIF API did not respond",
 
         creditReportId: creditReport?._id || null,
+
+        failureCharge: crifTimeoutCharge.ok ? crifTimeoutCharge.total : 0,
       });
     }
 
     // ============================================================
     // INTERNAL ERROR
     // ============================================================
+
+    const crifInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "crif", "CRIF")
+      : { ok: false, total: 0 };
 
     return res.status(500).json({
       success: false,
@@ -1579,6 +1726,8 @@ const CrifReport = async (req, res) => {
       creditReportId: creditReport?._id || null,
 
       error: error.message,
+
+      failureCharge: crifInternalCharge.ok ? crifInternalCharge.total : 0,
     });
   }
 };
@@ -1640,12 +1789,20 @@ const ExperianReport = async (req, res) => {
       )
       .map(([key]) => key);
 
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Required fields are missing",
-        missingFields,
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const experianReject = (message, extra = {}) =>
+      failValidationPull(req, res, {
+        productKey: "experian",
+        bureauLabel: "EXPERIAN",
+        message,
+        body: extra,
+        name: fullName,
+        mobile: mobileNumber,
+        pan: panNumber,
       });
+
+    if (missingFields.length > 0) {
+      return experianReject("Required fields are missing", { missingFields });
     }
 
     // ============================================================
@@ -1653,10 +1810,7 @@ const ExperianReport = async (req, res) => {
     // ============================================================
 
     if (String(customerConsent).trim().toUpperCase() !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent must be Y",
-      });
+      return experianReject("Customer consent must be Y");
     }
 
     // ============================================================
@@ -1674,10 +1828,7 @@ const ExperianReport = async (req, res) => {
     const dateOfBirth = String(dob).trim();
 
     if (!dobRegex.test(dateOfBirth)) {
-      return res.status(400).json({
-        success: false,
-        message: "DOB must be in YYYY-MM-DD format",
-      });
+      return experianReject("DOB must be in YYYY-MM-DD format");
     }
 
     // ============================================================
@@ -1687,10 +1838,9 @@ const ExperianReport = async (req, res) => {
     const nameParts = String(fullName).trim().split(/\s+/);
 
     if (nameParts.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "Full name must contain first name and last name",
-      });
+      return experianReject(
+        "Full name must contain first name and last name",
+      );
     }
 
     const firstName = nameParts.shift();
@@ -2274,6 +2424,9 @@ const ExperianReport = async (req, res) => {
     // ============================================================
 
     if (error.request) {
+      const expTimeoutCharge = creditReport
+        ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
+        : { ok: false, total: 0 };
       return res.status(504).json({
         success: false,
 
@@ -2284,12 +2437,18 @@ const ExperianReport = async (req, res) => {
         creditReportId: creditReport?._id || null,
 
         userId: creditReport?.userId || null,
+
+        failureCharge: expTimeoutCharge.ok ? expTimeoutCharge.total : 0,
       });
     }
 
     // ============================================================
     // INTERNAL ERROR
     // ============================================================
+
+    const expInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
+      : { ok: false, total: 0 };
 
     return res.status(500).json({
       success: false,
@@ -2303,6 +2462,8 @@ const ExperianReport = async (req, res) => {
       userId: creditReport?.userId || null,
 
       error: error.message,
+
+      failureCharge: expInternalCharge.ok ? expInternalCharge.total : 0,
     });
   }
 };
@@ -2498,10 +2659,20 @@ const EquifaxReport = async (req, res) => {
       )
       .map(([key]) => key);
 
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const equifaxReject = (message, extra = {}) =>
+      failValidationPull(req, res, {
+        productKey: "equifax",
+        bureauLabel: "EQUIFAX",
+        message,
+        body: extra,
+        name,
+        mobile,
+        pan: panNumber,
+      });
+
     if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Required Equifax fields are missing",
+      return equifaxReject("Required Equifax fields are missing", {
         missingFields,
       });
     }
@@ -2513,10 +2684,7 @@ const EquifaxReport = async (req, res) => {
     const normalizedConsent = String(consent).trim().toUpperCase();
 
     if (normalizedConsent !== "Y") {
-      return res.status(400).json({
-        success: false,
-        message: "Customer consent must be Y",
-      });
+      return equifaxReject("Customer consent must be Y");
     }
 
     // ========================================================
@@ -2538,10 +2706,7 @@ const EquifaxReport = async (req, res) => {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 
     if (!panRegex.test(cleanPan)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid PAN number",
-      });
+      return equifaxReject("Invalid PAN number");
     }
 
     // ========================================================
@@ -2551,10 +2716,7 @@ const EquifaxReport = async (req, res) => {
     const mobileRegex = /^[6-9][0-9]{9}$/;
 
     if (!mobileRegex.test(cleanMobile)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid mobile number",
-      });
+      return equifaxReject("Invalid mobile number");
     }
 
     // Wallet gate: 0/insufficient balance par Surepass API hit hi nahi hogi —
@@ -2946,6 +3108,9 @@ const EquifaxReport = async (req, res) => {
       // ======================================================
 
       if (error.response.status === 401 || error.response.status === 403) {
+        const eqAuthCharge = creditReport
+          ? await debitFailedPull(creditReport, "equifax", "EQUIFAX")
+          : { ok: false, total: 0 };
         return res.status(error.response.status).json({
           success: false,
 
@@ -2959,6 +3124,8 @@ const EquifaxReport = async (req, res) => {
           userId: creditReport?.userId || null,
 
           error: error.response.data,
+
+          failureCharge: eqAuthCharge.ok ? eqAuthCharge.total : 0,
         });
       }
 
@@ -3038,6 +3205,10 @@ const EquifaxReport = async (req, res) => {
     // INTERNAL ERROR
     // ========================================================
 
+    const eqInternalCharge = creditReport
+      ? await debitFailedPull(creditReport, "equifax", "EQUIFAX")
+      : { ok: false, total: 0 };
+
     return res.status(500).json({
       success: false,
 
@@ -3050,6 +3221,8 @@ const EquifaxReport = async (req, res) => {
       userId: creditReport?.userId || null,
 
       error: error.message,
+
+      failureCharge: eqInternalCharge.ok ? eqInternalCharge.total : 0,
     });
   }
 };

@@ -6,6 +6,16 @@ const Ticket = require('../models/Ticket');
 const Pricing = require('../models/Pricing');
 const { PLAN_KEYS, quoteForProduct, DEFAULT_RECHARGE_PLANS } = require('../models/Pricing');
 const { getBannerConfig } = require('./bannerController');
+const {
+  DAY_MS,
+  startOfIstDay,
+  endOfIstDay,
+  startOfIstMonth,
+  endOfIstMonth,
+  istDayKey,
+  istDayLabel,
+  istDateRange,
+} = require('../utils/istTime');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
@@ -16,17 +26,17 @@ const pctChange = (curr, prev) => {
 exports.getSummary = async (req, res) => {
   try {
     const userId = req.user._id;
-    const now = new Date();
 
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-    const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const yesterdayEnd = new Date(todayEnd); yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
+    // All boundaries are IST (Asia/Kolkata) business days/months — see utils/istTime.js.
+    const todayStart = startOfIstDay();
+    const todayEnd = endOfIstDay();
+    const yesterdayStart = startOfIstDay(Date.now(), -1);
+    const yesterdayEnd = endOfIstDay(Date.now(), -1);
+    const monthStart = startOfIstMonth();
+    const monthEnd = endOfIstMonth();
+    const prevMonthStart = startOfIstMonth(Date.now(), -1);
+    const prevMonthEnd = endOfIstMonth(Date.now(), -1);
+    const weekStart = startOfIstDay(Date.now(), -6);
 
     const [
       aiToday, crToday,
@@ -107,25 +117,9 @@ exports.getTimeseries = async (req, res) => {
     const userId = req.user._id;
     const days = Math.min(parseInt(req.query.days || '14', 10), 90);
 
-    // Business day = Asia/Kolkata, computed explicitly — never from the
-    // server clock. The old code mixed UTC keys (toISOString / $dateToString
-    // default) with server-local labels, so today's pulls landed in a bucket
-    // key the series didn't contain and the chart showed 0 for today.
-    // IST has no DST (+05:30 fixed), so plain arithmetic is exact.
-    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-    const istParts = (t) => {
-      const d = new Date(t + IST_OFFSET_MS);
-      return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate() };
-    };
-    const pad2 = (n) => String(n).padStart(2, '0');
-    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const nowP = istParts(Date.now());
-    const todayIstMidnight = Date.UTC(nowP.y, nowP.m, nowP.day) - IST_OFFSET_MS;
-    const start = new Date(todayIstMidnight - (days - 1) * 86400000);
-    const dayKey = (t) => {
-      const p = istParts(t);
-      return `${p.y}-${pad2(p.m + 1)}-${pad2(p.day)}`;
-    };
+    // Business day = Asia/Kolkata, computed via the shared helper so the
+    // window and the $dateToString buckets always agree (see utils/istTime.js).
+    const start = startOfIstDay(Date.now(), -(days - 1));
 
     const [aiRows, crRows, spendRows] = await Promise.all([
       AIAnalysis.aggregate([
@@ -148,10 +142,9 @@ exports.getTimeseries = async (req, res) => {
 
     const series = [];
     for (let i = 0; i < days; i++) {
-      const t = start.getTime() + i * 86400000;
-      const p = istParts(t);
-      const key = dayKey(t);
-      const label = `${p.day} ${MONTHS[p.m]}`;
+      const t = start.getTime() + i * DAY_MS;
+      const key = istDayKey(t);
+      const label = istDayLabel(t);
       const ai = aiMap[key] || 0, cr = crMap[key] || 0;
       series.push({ date: key, label, reports: ai + cr, spend: spendMap[key] || 0 });
     }
@@ -325,9 +318,8 @@ exports.getMyTransactions = async (req, res) => {
 
     const query = { userId };
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
     if (type && type !== "All") query.type = String(type).toUpperCase();
     if (status && status !== "All") query.status = String(status).toUpperCase();

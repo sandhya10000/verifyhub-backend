@@ -9,6 +9,7 @@ const {
   payWithWallet,
   createOrder,
   verifyPayment,
+  cancelCustomBrandedOrder,
   submitBrandAssets,
   requestRevision,
   uploadBrandedReport,
@@ -39,6 +40,9 @@ router.post('/order', auth, createOrder);
 
 // POST /api/partner/custom-branded-report/verify  — verify Razorpay payment
 router.post('/verify', auth, verifyPayment);
+
+// POST /api/partner/custom-branded-report/cancel  — mark attempt failed (+WhatsApp retry link)
+router.post('/cancel', auth, cancelCustomBrandedOrder);
 
 // POST /api/partner/custom-branded-report/assets  — submit brand assets (logo, colors, details)
 router.post('/assets', auth, submitBrandAssets);

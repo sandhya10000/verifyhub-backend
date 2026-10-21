@@ -111,6 +111,27 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Payment-retry link (sent over WhatsApp after a genuine gateway failure).
+    // retryLinkSentAt doubles as the once-per-order send guard.
+    retryLinkId: {
+      type: String,
+      default: null,
+    },
+    retryLinkUrl: {
+      type: String,
+      default: null,
+    },
+    // When the stored Razorpay payment link expires; the retry page creates a
+    // fresh one once this passes.
+    retryLinkExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    retryLinkSentAt: {
+      type: Date,
+      default: null,
+    },
+
     description: {
       type: String,
       default: null,

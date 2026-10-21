@@ -5,39 +5,40 @@ const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
+const {
+  DAY_MS,
+  startOfIstDay,
+  endOfIstDay,
+  startOfIstMonth,
+  endOfIstMonth,
+  istDayKey,
+  istDayLabel,
+  istDateRange,
+} = require('../utils/istTime');
 
 const pctChange = (curr, prev) => {
   if (!prev) return curr > 0 ? 100 : 0;
   return Math.round(((curr - prev) / prev) * 100);
 };
 
-// IST day key (YYYY-MM-DD) for a Date — matches $dateToString + Asia/Kolkata
-const istDayKey = (d) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(d);
-  return parts; // en-CA yields YYYY-MM-DD
-};
-
 exports.getOverviewSummary = async (req, res) => {
   try {
-    const now = new Date();
-
-    // Today: midnight → now
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const todayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    // All boundaries are IST (Asia/Kolkata) business days/months, independent
+    // of the server clock — see utils/istTime.js.
+    const todayStart = startOfIstDay();
+    const todayEnd   = endOfIstDay();
 
     // Yesterday (trend deltas)
-    const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    const yesterdayEnd = new Date(todayEnd); yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+    const yesterdayStart = startOfIstDay(Date.now(), -1);
+    const yesterdayEnd   = endOfIstDay(Date.now(), -1);
 
     // This month / last month
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const monthStart     = startOfIstMonth();
+    const monthEnd       = endOfIstMonth();
+    const prevMonthStart = startOfIstMonth(Date.now(), -1);
+    const prevMonthEnd   = endOfIstMonth(Date.now(), -1);
 
-    const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
+    const weekStart = startOfIstDay(Date.now(), -6);
 
     const [
       aiToday, crToday,
@@ -178,9 +179,8 @@ exports.getAllAiAnalyses = async (req, res) => {
     }
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (partnerSearch) {
@@ -190,7 +190,7 @@ exports.getAllAiAnalyses = async (req, res) => {
 
     const total = await AIAnalysis.countDocuments(query);
     const analyses = await AIAnalysis.find(query)
-      .populate('userId', 'name email')
+      .populate('userId', 'name email partner_id')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
@@ -217,9 +217,8 @@ exports.getAllCreditReports = async (req, res) => {
     let query = { status: 'Success' };
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (bureau && bureau !== 'All') {
@@ -233,7 +232,7 @@ exports.getAllCreditReports = async (req, res) => {
 
     const total = await CreditReport.countDocuments(query);
     const reports = await CreditReport.find(query)
-      .populate('userId', 'name email')
+      .populate('userId', 'name email partner_id')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
@@ -263,9 +262,8 @@ exports.getFailedCreditReports = async (req, res) => {
     const query = { status: 'Failed' };
 
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     if (bureau && bureau !== 'All') {
@@ -316,6 +314,12 @@ exports.getAllPartners = async (req, res) => {
   try {
     const { page = 1, limit = 50, search } = req.query;
 
+    // all=1 returns every matching partner (used by the CSV export). The
+    // per-partner stats are bulk-aggregated below, so a full export stays
+    // a fixed number of queries instead of 4 per partner.
+    const wantsAll = String(req.query.all || '') === '1';
+    const perPage = Math.min(parseInt(limit, 10) || 50, 200);
+
     let query = { role: { $ne: 'admin' } };
 
     if (search) {
@@ -327,50 +331,83 @@ exports.getAllPartners = async (req, res) => {
     }
 
     const total = await User.countDocuments(query);
-    const users = await User.find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
-      .select('-password')
-      .lean();
 
-    // Fetch stats for the paginated users concurrently
-    const partnersWithStats = await Promise.all(
-      users.map(async (user) => {
-        const [crCount, aiCount, lastCr, lastAi] = await Promise.all([
-          CreditReport.countDocuments({ userId: user._id, status: 'Success' }),
-          AIAnalysis.countDocuments({ userId: user._id, status: 'completed' }),
-          CreditReport.findOne({ userId: user._id }).sort({ createdAt: -1 }).select('createdAt').lean(),
-          AIAnalysis.findOne({ userId: user._id }).sort({ createdAt: -1 }).select('createdAt').lean()
-        ]);
+    let userQuery = User.find(query).sort({ createdAt: -1 }).select('-password');
 
-        const totalReports = crCount + aiCount;
-        
-        // Find most recent date
-        let lastReportDate = null;
-        const crDate = lastCr ? new Date(lastCr.createdAt) : null;
-        const aiDate = lastAi ? new Date(lastAi.createdAt) : null;
-        
-        if (crDate && aiDate) {
-          lastReportDate = crDate > aiDate ? crDate : aiDate;
-        } else {
-          lastReportDate = crDate || aiDate || null;
-        }
+    if (wantsAll) {
+      userQuery = userQuery.limit(0);
+    } else {
+      userQuery = userQuery.skip((page - 1) * perPage).limit(perPage);
+    }
 
-        return {
-          ...user,
-          totalReports,
-          lastReportDate
-        };
-      })
-    );
+    const users = await userQuery.lean();
+
+    // Bulk stats for the returned partners: 4 aggregate queries for the whole
+    // page instead of 4 queries per partner.
+    const userIds = users.map((u) => u._id);
+
+    const [crCounts, aiCounts, lastCrRows, lastAiRows] = await Promise.all([
+      CreditReport.aggregate([
+        { $match: { userId: { $in: userIds }, status: 'Success' } },
+        { $group: { _id: '$userId', n: { $sum: 1 } } },
+      ]),
+      AIAnalysis.aggregate([
+        { $match: { userId: { $in: userIds }, status: 'completed' } },
+        { $group: { _id: '$userId', n: { $sum: 1 } } },
+      ]),
+      CreditReport.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$userId', d: { $first: '$createdAt' } } },
+      ]),
+      AIAnalysis.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$userId', d: { $first: '$createdAt' } } },
+      ]),
+    ]);
+
+    const toMap = (rows) => {
+      const map = {};
+      rows.forEach((r) => { map[String(r._id)] = r; });
+      return map;
+    };
+
+    const crCountMap = toMap(crCounts);
+    const aiCountMap = toMap(aiCounts);
+    const lastCrMap = toMap(lastCrRows);
+    const lastAiMap = toMap(lastAiRows);
+
+    const partnersWithStats = users.map((user) => {
+      const key = String(user._id);
+
+      const crCount = crCountMap[key] ? crCountMap[key].n : 0;
+      const aiCount = aiCountMap[key] ? aiCountMap[key].n : 0;
+
+      const crDate = lastCrMap[key] && lastCrMap[key].d ? new Date(lastCrMap[key].d) : null;
+      const aiDate = lastAiMap[key] && lastAiMap[key].d ? new Date(lastAiMap[key].d) : null;
+
+      // Find most recent date
+      let lastReportDate = null;
+      if (crDate && aiDate) {
+        lastReportDate = crDate > aiDate ? crDate : aiDate;
+      } else {
+        lastReportDate = crDate || aiDate || null;
+      }
+
+      return {
+        ...user,
+        totalReports: crCount + aiCount,
+        lastReportDate
+      };
+    });
 
     res.json({
       success: true,
       data: partnersWithStats,
       total,
       page: parseInt(page),
-      pages: Math.ceil(total / limit)
+      pages: wantsAll ? 1 : Math.ceil(total / perPage)
     });
   } catch (err) {
     console.error('getAllPartners Admin Error:', err);
@@ -925,7 +962,7 @@ exports.updatePricing = async (req, res) => {
 exports.getMoneyTimeseries = async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days || "14", 10), 90);
-    const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1));
+    const start = startOfIstDay(Date.now(), -(days - 1));
 
     const [inRows, outRows, aiRows, crRows] = await Promise.all([
       Transaction.aggregate([
@@ -953,11 +990,11 @@ exports.getMoneyTimeseries = async (req, res) => {
 
     const series = [];
     for (let i = 0; i < days; i++) {
-      const d = new Date(start); d.setDate(d.getDate() + i);
+      const d = new Date(start.getTime() + i * DAY_MS);
       const key = istDayKey(d);
       series.push({
         date: key,
-        label: d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+        label: istDayLabel(d),
         collected: inMap[key] || 0,
         consumed: outMap[key] || 0,
         reports: (aiMap[key] || 0) + (crMap[key] || 0),
@@ -1053,15 +1090,15 @@ exports.getRecentActivity = async (req, res) => {
   try {
     const pricing = await Pricing.findOne({ key: "default" }).select("lowBalanceThreshold").lean();
     const lowAt = pricing?.lowBalanceThreshold ?? 500;
-    const [recentCr, recentAi, recentTickets, lowWallets, failedCr, failedAi] = await Promise.all([
+    const [recentCr, recentAi, recentTickets, recentTopups, failedCr, failedAi] = await Promise.all([
       CreditReport.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email").select("bureau score status createdAt userId name").lean(),
       AIAnalysis.find({}).sort({ createdAt: -1 }).limit(8)
         .populate("userId", "name email").select("status createdAt userId fileName result.score").lean(),
       Ticket.find({}).sort({ createdAt: -1 }).limit(3)
         .populate("partnerId", "name email").select("category status createdAt partnerId").lean(),
-      User.find({ role: { $ne: "admin" }, walletBalance: { $lt: lowAt } })
-        .sort({ walletBalance: 1 }).limit(5).select("name email walletBalance").lean(),
+      Transaction.find({ type: "CREDIT", status: "SUCCESS" }).sort({ createdAt: -1 }).limit(5)
+        .populate("userId", "name email partner_id").select("amount totalAmount gateway createdAt userId").lean(),
       CreditReport.find({ status: "Failed" }).sort({ createdAt: -1 }).limit(5)
         .populate("userId", "name email").select("bureau status createdAt userId name").lean(),
       AIAnalysis.find({ status: "failed" }).sort({ createdAt: -1 }).limit(5)
@@ -1110,7 +1147,18 @@ exports.getRecentActivity = async (req, res) => {
       })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
 
-    res.json({ success: true, data: { pulls, recentTickets, lowWallets, failedPulls } });
+    // Latest successful wallet top-ups — powers the "Recent recharges" card.
+    const recentRecharges = recentTopups.map((t) => ({
+      id: t._id,
+      partner: t.userId?.name || t.userId?.email || "Unknown",
+      email: t.userId?.email || null,
+      partnerId: t.userId?.partner_id || null,
+      amount: t.totalAmount ?? t.amount ?? 0,
+      gateway: t.gateway || null,
+      createdAt: t.createdAt,
+    }));
+
+    res.json({ success: true, data: { pulls, recentTickets, recentRecharges, failedPulls } });
   } catch (err) {
     console.error("getRecentActivity Error:", err);
     res.status(500).json({ success: false, message: "Could not fetch recent activity" });
@@ -1125,9 +1173,8 @@ exports.getAllTransactions = async (req, res) => {
 
     const query = {};
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
     if (type && type !== "All") query.type = type.toUpperCase();
     if (status && status !== "All") query.status = status.toUpperCase();
@@ -1141,7 +1188,7 @@ exports.getAllTransactions = async (req, res) => {
     const [total, rows, sums] = await Promise.all([
       Transaction.countDocuments(query),
       Transaction.find(query)
-        .populate("userId", "name email")
+        .populate("userId", "name email partner_id")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit))

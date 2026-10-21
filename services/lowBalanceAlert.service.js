@@ -41,7 +41,11 @@ async function runLowBalanceAlerts() {
             console.error("[low-balance] whatsapp failed for", u.phone, ":", waErr.message);
           }
         }
-        if (r?.skipped) continue;
+        // Only stamp the dedup timestamp when a mail actually went out.
+        // `skipped` = no recipient, `mocked` = SMTP not configured (nothing
+        // was sent). Stamping either case would silence this partner for a
+        // whole interval even though they were never notified.
+        if (r?.skipped || r?.mocked) continue;
         await User.updateOne({ _id: u._id }, { $set: { lowBalanceLastAlertAt: new Date() } });
         sent++;
       } catch (err) {

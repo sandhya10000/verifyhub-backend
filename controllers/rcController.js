@@ -1,7 +1,8 @@
 const axios = require("axios");
 const RcVerification = require("../models/RcVerification");
 const User = require("../models/User");
-const { canAfford, chargeForReport } = require("../utils/wallet");
+const { canAfford, chargeForReport, chargeFailedReport } = require("../utils/wallet");
+const { istDateRange } = require("../utils/istTime");
 const { generateRcPdf } = require("../services/rcPdf.service");
 
 const RC_DETAIL_PROJECTION =
@@ -48,6 +49,56 @@ const affordOr402 = async (req, res, productKey) => {
   }
 };
 
+// Reject a request that failed backend input validation and bill it.
+// Policy: every backend-hit failure is billed, regardless of status code —
+// including missing/invalid input and missing consent. A Failed
+// RcVerification is persisted first (placeholder for a missing
+// vehicleNumber) so the ledger has a unique reportId, then the RC fail price
+// is charged. Never throws.
+const failValidationRc = async (req, res, options) => {
+  const {
+    statusCode = 400,
+    message,
+    body = {},
+    vehicleNumber = "",
+    consent = "N",
+  } = options || {};
+
+  const userId = req.user?._id;
+  let verification = null;
+  let charge = { ok: false, total: 0 };
+
+  if (userId) {
+    try {
+      verification = await RcVerification.create({
+        userId,
+        vehicleNumber:
+          String(vehicleNumber || "").trim().toUpperCase() || "(invalid)",
+        consent: consent === "Y" ? "Y" : "N",
+        status: "Failed",
+        rcData: { error: { message } },
+      });
+      charge = await chargeFailedReport(
+        userId,
+        verification._id,
+        "rc",
+        "RC",
+        true,
+      );
+    } catch (err) {
+      console.error(`[wallet] validation fail-charge error (rc):`, err.message);
+    }
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    ...body,
+    verificationId: verification?._id || null,
+    failureCharge: charge.ok ? charge.total : 0,
+  });
+};
+
 const buildRcQuery = (vehicleNumber, documentType) =>
   `mutation {\n  verify(\n    input: {\n      vehicleNumber: "${vehicleNumber}",\n      documentType: "${documentType}"\n    }\n  ) {\n    ok\n    message\n    result {\n      ... on DTVehicleRcResult {\n          reg_no\n          class\n          chassis\n          engine\n          vehicle_manufacturer_name\n          model\n          vehicle_colour\n          type\n          norms_type\n          body_type\n          owner_count\n          owner_name\n          owner_father_name\n          mobile_number\n          status\n          status_as_on\n          reg_authority\n          reg_date\n          vehicle_manufacturing_month_year\n          rc_expiry_date\n          vehicle_tax_upto\n          vehicle_insurance_company_name\n          vehicle_insurance_upto\n          vehicle_insurance_policy_number\n          rc_financer\n          present_address\n          permanent_address\n          vehicle_cubic_capacity\n          gross_vehicle_weight\n          unladen_weight\n          vehicle_category\n          vehicle_cylinders_no\n          vehicle_seat_capacity\n          wheelbase\n          pucc_number\n          pucc_upto\n          blacklist_status\n          permit_issue_date\n          permit_number\n          permit_type\n          permit_valid_from\n          permit_valid_upto\n          national_permit_upto\n          is_commercial\n          financed\n          rto_code\n      }\n    }\n    error {\n      status\n      message\n      decryptedError\n    }\n  }\n}`;
 
@@ -68,17 +119,26 @@ const verifyRc = async (req, res) => {
       .replace(/[\s-]/g, "");
     const consent = req.body?.consent;
 
+    // Every backend-hit validation failure is billed (see failValidationRc).
+    const rcReject = (message, extra = {}) =>
+      failValidationRc(req, res, {
+        message,
+        body: extra,
+        vehicleNumber,
+        consent,
+      });
+
     const missingFields = [];
     if (!vehicleNumber) missingFields.push("vehicleNumber");
     if (!consent) missingFields.push("consent");
     if (missingFields.length > 0) {
-      return res.status(400).json({ success: false, message: "Missing required fields", missingFields });
+      return rcReject("Missing required fields", { missingFields });
     }
     if (consent !== "Y") {
-      return res.status(400).json({ success: false, message: "Customer consent (Y) is required" });
+      return rcReject("Customer consent (Y) is required");
     }
     if (!VEHICLE_RE.test(vehicleNumber)) {
-      return res.status(400).json({ success: false, message: "Invalid vehicle number format (e.g. MH12AB1234)" });
+      return rcReject("Invalid vehicle number format (e.g. MH12AB1234)");
     }
 
     const baseUrl = process.env.INDICONNECT_BASE_URL?.trim();
@@ -128,12 +188,18 @@ const verifyRc = async (req, res) => {
       verification.status = "Failed";
       verification.rcData = { error: verify?.error || apiData || "Empty RC response" };
       await verification.save(); // pre-save fills failureReason
-      // RC bills only on success — failed pulls are always free.
+      // Every backend-hit failure is billed, regardless of status code.
+      let failCharge = { ok: false, total: 0 };
+      try {
+        failCharge = await chargeFailedReport(userId, verification._id, "rc", "RC", true);
+      } catch (err) {
+        console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, err.message);
+      }
       return res.status(400).json({
         success: false,
         status: "failed",
         verificationId: verification._id,
-        failureCharge: 0,
+        failureCharge: failCharge.ok ? failCharge.total : 0,
         message: verify?.error?.message || verify?.message || "RC verification failed",
         error: verify?.error || null,
       });
@@ -177,14 +243,28 @@ const verifyRc = async (req, res) => {
         await verification.save();
       } catch { /* ignore */ }
     }
-    // RC bills only on success — provider errors/timeouts on an existing doc
-    // are recorded as Failed but never debited.
+    // Every backend-hit failure is billed, regardless of status code —
+    // including provider errors, timeouts and internal errors.
+    let catchCharge = { ok: false, total: 0 };
+    if (verification?._id) {
+      try {
+        catchCharge = await chargeFailedReport(
+          verification.userId,
+          verification._id,
+          "rc",
+          "RC",
+          true,
+        );
+      } catch (e) {
+        console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, e.message);
+      }
+    }
     if (err.response) {
       return res.status(err.response.status || 500).json({
         success: false,
         status: "failed",
         verificationId: verification?._id || null,
-        failureCharge: 0,
+        failureCharge: catchCharge.ok ? catchCharge.total : 0,
         error: err.response.data,
       });
     }
@@ -194,13 +274,14 @@ const verifyRc = async (req, res) => {
         status: "failed",
         message: "RC API did not respond",
         verificationId: verification?._id || null,
-        failureCharge: 0,
+        failureCharge: catchCharge.ok ? catchCharge.total : 0,
       });
     }
     return res.status(500).json({
       success: false,
       message: "Internal server error",
       verificationId: verification?._id || null,
+      failureCharge: catchCharge.ok ? catchCharge.total : 0,
     });
   }
 };
@@ -275,9 +356,11 @@ const getAllRcVerifications = async (req, res) => {
       query.status = status;
     }
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      // IST day boundaries: `new Date("2026-01-15")` is UTC midnight (05:30
+      // IST), so an inclusive "to 15 Jan" filter used to drop every row
+      // later on the 15th.
+      const range = istDateRange(startDate, endDate);
+      if (range) query.createdAt = range;
     }
 
     const [total, rows] = await Promise.all([
