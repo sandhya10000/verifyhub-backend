@@ -795,6 +795,204 @@ async function getRequest(req, res) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/partner/custom-branded-report/profile
+// Returns the active brand profile's firmName, tagline, and logo dataUri only
+// ---------------------------------------------------------------------------
+async function getActiveBrandProfile(req, res) {
+  try {
+    const BrandProfile = require('../models/BrandProfile');
+    const profile = await BrandProfile.findOne({
+      partnerId: req.user._id,
+      isActive: true,
+    })
+      .sort({ version: -1 })
+      .lean();
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active brand profile found for this partner.',
+      });
+    }
+
+    const { resolveBrandLogo } = require('../utils/reportRenderer');
+    resolveBrandLogo(profile);
+
+    return res.json({
+      success: true,
+      data: {
+        firmName: profile.firmName,
+        tagline: profile.tagline || '',
+        logo: {
+          dataUri: profile.logo?.dataUri,
+          mimeType: profile.logo?.mimeType,
+          width: profile.logo?.width,
+          height: profile.logo?.height,
+        },
+        colors: profile.colors,
+      },
+    });
+  } catch (err) {
+    console.error('[customBrandedReport] getActiveBrandProfile error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch brand profile.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/partner/custom-branded-report/analyze
+// Branded AI report upload & analysis endpoint
+// ---------------------------------------------------------------------------
+async function uploadBrandedReport(req, res) {
+  const fs = require('fs');
+  const path = require('path');
+  const { PDFDocument } = require('pdf-lib');
+  const AIAnalysis = require('../models/AIAnalysis');
+  const BrandProfile = require('../models/BrandProfile');
+  const { validateBrand } = require('../utils/reportRenderer');
+  const { processAnalysisInBackground } = require('../utils/claudeService');
+  const { logStep } = require('../utils/logger');
+
+  const ALLOWED_LANGUAGE_CODES = new Set(['en','hi','ta','te','kn','mr','bn','gu','pa','ml','or','as','ur']);
+
+  console.log('[uploadBrandedReport] Request received — userId:', req.user?._id, '| file:', req.file?.originalname);
+
+  try {
+    if (!req.file) {
+      console.warn('[uploadBrandedReport] Rejected: no file in request');
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+
+    // --- STRICT GATE ---
+    // 1. Feature toggle check
+    const isBrandedEnabled = process.env.BRANDED_REPORTS_ENABLED !== 'false';
+    // 2. User brandingStatus check
+    const isUserActive = req.user.brandingStatus === 'active';
+    // 3. Active BrandProfile check
+    const activeProfile = await BrandProfile.findOne({
+      partnerId: req.user._id,
+      isActive: true,
+    }).sort({ version: -1 });
+
+    // 4. Render-time validation check
+    let passesValidation = false;
+    if (activeProfile) {
+      try {
+        passesValidation = validateBrand(activeProfile);
+      } catch (valErr) {
+        console.warn('[uploadBrandedReport] BrandProfile failed validation:', valErr.message);
+      }
+    }
+
+    if (!isBrandedEnabled || !isUserActive || !activeProfile || !passesValidation) {
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      console.warn(`[uploadBrandedReport] Gate failed: enabled=${isBrandedEnabled}, userStatus=${req.user.brandingStatus}, hasProfile=${Boolean(activeProfile)}, valid=${passesValidation}`);
+      return res.status(403).json({
+        success: false,
+        message: 'Branded report is not active for this account. No funds were charged.',
+      });
+    }
+
+    // --- FILE CHECKS ---
+    if (path.extname(req.file.originalname).toLowerCase() === '.pdf') {
+      let isEncrypted = false;
+      try {
+        const bytes = fs.readFileSync(req.file.path);
+        await PDFDocument.load(bytes);
+      } catch (pdfErr) {
+        isEncrypted = true;
+      }
+
+      if (isEncrypted) {
+        fs.unlinkSync(req.file.path);
+        console.warn('[uploadBrandedReport] Rejected: PDF is password-protected');
+        return res.status(400).json({
+          success: false,
+          message: 'This PDF is password-protected. Please remove the password and re-upload.',
+        });
+      }
+
+      // Page-count check (2000 page cap)
+      try {
+        const bytes = fs.readFileSync(req.file.path);
+        const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+        const pageCount = doc.getPageCount();
+        console.log(`[uploadBrandedReport] PDF page count: ${pageCount}`);
+        if (pageCount > 2000) {
+          fs.unlinkSync(req.file.path);
+          console.warn(`[uploadBrandedReport] Rejected: PDF has ${pageCount} pages (limit 2000)`);
+          return res.status(400).json({
+            success: false,
+            message: `This report is too large to analyze (${pageCount} pages; maximum supported: 2000 pages). Please upload a shorter version of the report, or contact support.`,
+          });
+        }
+      } catch (pageErr) {
+        console.warn('[uploadBrandedReport] Could not determine page count:', pageErr.message);
+      }
+    }
+
+    // Output language validation
+    const rawLang = (req.body.language || '').trim().toLowerCase();
+    const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
+
+    // Wallet affordability check (₹100 + GST)
+    try {
+      const { canAfford } = require('../utils/wallet');
+      const gate = await canAfford(req.user?._id, 'ai');
+      if (!gate.ok) {
+        fs.unlinkSync(req.file.path);
+        return res.status(402).json({
+          success: false,
+          message: gate.reason === 'user-not-found'
+            ? 'User authentication required'
+            : `Insufficient wallet balance. ${gate.total} required — please recharge.`,
+          required: gate.total,
+          balance: gate.balance,
+        });
+      }
+    } catch (gateErr) {
+      console.error('[wallet] AI affordability check failed:', gateErr.message);
+    }
+
+    // Create AIAnalysis record with isBranded and brandProfileId
+    const analysis = await AIAnalysis.create({
+      userId: req.user._id,
+      fileName: req.file.originalname,
+      storedFileName: path.basename(req.file.path),
+      filePath: req.file.path,
+      fileType: path.extname(req.file.originalname).replace('.', ''),
+      language,
+      status: 'uploaded',
+      isBranded: true,
+      brandProfileId: activeProfile._id,
+    });
+
+    logStep(analysis._id, 'Upload Received (Branded)', {
+      fileName: req.file.originalname,
+      sizeBytes: req.file.size,
+      brandProfileId: activeProfile._id,
+      firmName: activeProfile.firmName,
+    });
+    logStep(analysis._id, 'DB Record Created (Branded)', { analysisId: analysis._id });
+
+    console.log('[uploadBrandedReport] DB record created, analysisId:', analysis._id, '| brandProfileId:', activeProfile._id);
+    res.status(201).json({ success: true, analysisId: analysis._id, status: analysis.status });
+
+    // Kick off background processing passing the active brand
+    console.log('[uploadBrandedReport] Kicking off background Claude processing with brand for analysisId:', analysis._id);
+    logStep(analysis._id, 'Trigger Background Processing (Branded)');
+    processAnalysisInBackground(analysis._id, language, activeProfile);
+  } catch (err) {
+    console.error('[uploadBrandedReport] Unhandled error:', err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+    }
+    res.status(500).json({ success: false, message: 'Upload failed. Please try again.' });
+  }
+}
+
 module.exports = {
   createRequest,
   getRequest,
@@ -807,4 +1005,6 @@ module.exports = {
   activateCustomBrandedReport,
   submitBrandAssets,
   requestRevision,
+  uploadBrandedReport,
+  getActiveBrandProfile,
 };

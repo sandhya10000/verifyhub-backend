@@ -24,6 +24,120 @@ const charts = require('./chartBuilder');
 const { LOGO_DATA_URI } = require('./brandAssets');
 
 const TEMPLATE_PATH = path.join(__dirname, '../views/creditReport.ejs');
+const BRANDED_TEMPLATE_PATH = path.join(__dirname, '../views/creditReportBranded.ejs');
+
+// ── Dynamic Brand Logo Resolution (Disk-backed with mtime cache) ─────────────
+const logoCache = new Map();
+
+/**
+ * resolveBrandLogo — checks if an updated logo exists on disk in brand-assets/<partnerCode>/
+ * Uses file mtime to invalidate cache whenever the file on disk changes.
+ * Preserves or updates mimeType and dataUri cleanly.
+ */
+function resolveBrandLogo(brand) {
+  if (!brand || typeof brand !== 'object') return brand;
+  const partnerCode = (brand.partnerCode || '').toLowerCase().trim();
+  if (!partnerCode) return brand;
+
+  const brandAssetsDir = path.join(__dirname, '../brand-assets', partnerCode);
+  const candidateFiles = ['logo.png', 'logo.jpg', 'logo.jpeg'];
+  let foundFile = null;
+
+  for (const f of candidateFiles) {
+    const fullPath = path.join(brandAssetsDir, f);
+    if (fs.existsSync(fullPath)) {
+      foundFile = fullPath;
+      break;
+    }
+  }
+
+  if (foundFile) {
+    try {
+      const stat = fs.statSync(foundFile);
+      const cached = logoCache.get(foundFile);
+
+      if (cached && cached.mtimeMs === stat.mtimeMs) {
+        brand.logo = { ...brand.logo, ...cached.logoData };
+      } else {
+        const ext = path.extname(foundFile).toLowerCase();
+        const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+        const bytes = fs.readFileSync(foundFile);
+        if (!bytes || bytes.length === 0) {
+          throw new Error(`File is empty: ${foundFile}`);
+        }
+        const dataUri = `data:${mimeType};base64,${bytes.toString('base64')}`;
+        const logoData = { dataUri, mimeType };
+        logoCache.set(foundFile, { mtimeMs: stat.mtimeMs, logoData });
+        brand.logo = { ...brand.logo, ...logoData };
+        console.log(`[resolveBrandLogo] Loaded latest logo from disk for ${partnerCode}: ${foundFile} (${bytes.length} bytes, ${mimeType})`);
+      }
+    } catch (err) {
+      console.error(`[resolveBrandLogo] Failed to read logo from disk at ${foundFile}:`, err.message);
+    }
+  } else {
+    // If brand-assets directory was expected for this partnerCode, log a warning
+    if (fs.existsSync(brandAssetsDir)) {
+      console.warn(`[resolveBrandLogo] Directory exists for ${partnerCode} but no logo.png/jpg found in ${brandAssetsDir}`);
+    }
+  }
+
+  return brand;
+}
+
+/**
+ * Validate brand profile before rendering
+ * Checks hex colors, https website, email format, logo dataUri
+ */
+function validateBrand(brand) {
+  if (!brand || typeof brand !== 'object') {
+    throw new Error('Invalid brand: brand must be an object');
+  }
+
+  // Always resolve latest logo from disk before validation
+  resolveBrandLogo(brand);
+
+  if (!brand.firmName || typeof brand.firmName !== 'string' || !brand.firmName.trim()) {
+    throw new Error('Invalid brand: firmName is required');
+  }
+
+  // Validate logo
+  if (!brand.logo || typeof brand.logo.dataUri !== 'string') {
+    throw new Error('Invalid brand: logo.dataUri is required');
+  }
+
+  const validDataUri =
+    brand.logo.dataUri.startsWith('data:image/png;base64,') ||
+    brand.logo.dataUri.startsWith('data:image/jpeg;base64,');
+  if (!validDataUri) {
+    throw new Error('Invalid brand: logo.dataUri must start with data:image/png;base64, or data:image/jpeg;base64,');
+  }
+
+  // Validate website
+  if (!brand.website || typeof brand.website !== 'string' || !brand.website.startsWith('https://')) {
+    throw new Error(`Invalid brand: website must start with https:// (got: ${brand.website})`);
+  }
+
+  // Validate email
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!brand.email || typeof brand.email !== 'string' || !emailRegex.test(brand.email)) {
+    throw new Error(`Invalid brand: invalid email format (${brand.email})`);
+  }
+
+  // Validate colors
+  if (!brand.colors || typeof brand.colors !== 'object') {
+    throw new Error('Invalid brand: colors object is required');
+  }
+
+  const hexRegex = /^#[0-9A-Fa-f]{6}$/;
+  const requiredColors = ['primary', 'secondary', 'accent'];
+  for (const c of requiredColors) {
+    if (!brand.colors[c] || !hexRegex.test(brand.colors[c])) {
+      throw new Error(`Invalid brand: color '${c}' must be a 6-digit hex code matching ^#[0-9A-Fa-f]{6}$ (got: ${brand.colors[c]})`);
+    }
+  }
+
+  return true;
+}
 
 // ── Load locales ─────────────────────────────────────────────────────────────
 const locales = {};
@@ -56,7 +170,7 @@ function getTranslator(lang) {
         if (cur == null || typeof cur !== 'object') return undefined;
         cur = cur[p];
       }
-      return (typeof cur === 'string') ? cur : undefined;
+      return (cur !== undefined && cur !== null) ? cur : undefined;
     }
 
     let str = resolve(dict, key);
@@ -67,6 +181,7 @@ function getTranslator(lang) {
       str = resolve(enDict, key);
     }
     if (str === undefined) return key; // last-resort: return the key itself
+    if (Array.isArray(str) || (str && typeof str === 'object')) return str;
 
     // Interpolation: replace {varName} with vars.varName
     for (const [k, v] of Object.entries(vars)) {
@@ -341,9 +456,16 @@ function formatMonthLabel(raw, langCode) {
 /**
  * renderCreditReport
  * @param {object} data — raw output from the expanded ANALYSIS_TOOL
+ * @param {object} [options] — optional rendering options (e.g. { brand })
  * @returns {Promise<string>} — complete, self-contained HTML string
  */
-async function renderCreditReport(data) {
+async function renderCreditReport(data, options = {}) {
+  const brand = options.brand || null;
+  if (brand) {
+    resolveBrandLogo(brand);
+    validateBrand(brand);
+  }
+
   const lang = data.language || 'en';
   const t    = getTranslator(lang);
   const isRTL = lang === 'ur';
@@ -455,10 +577,13 @@ async function renderCreditReport(data) {
   };
 
   // ── 8. Render the EJS template ────────────────────────────────────────────
+  const templateToUse = brand ? BRANDED_TEMPLATE_PATH : TEMPLATE_PATH;
+
   const html = await ejs.renderFile(
-    TEMPLATE_PATH,
+    templateToUse,
     {
       data,
+      brand,
       accounts,
       enquiries:       data.enquiries    || [],
       riskFactors,
@@ -469,7 +594,7 @@ async function renderCreditReport(data) {
       projectedScores,
       dpdCodeToColor,
       formatINR,
-      logoDataUri:     LOGO_DATA_URI,
+      logoDataUri:     brand?.logo?.dataUri || LOGO_DATA_URI,
       // i18n helpers
       t,
       lang,
@@ -488,4 +613,4 @@ async function renderCreditReport(data) {
   return html;
 }
 
-module.exports = { renderCreditReport };
+module.exports = { renderCreditReport, validateBrand, resolveBrandLogo };

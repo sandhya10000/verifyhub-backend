@@ -62,6 +62,14 @@ const AIAnalysisSchema = new mongoose.Schema(
     mergedData: { type: mongoose.Schema.Types.Mixed, default: null },
     // Google Sheets export watermark (set by the scheduled sync job).
     sheetSyncedAt: { type: Date, default: null, index: true },
+
+    // Custom Branded AI Credit Report fields
+    isBranded: { type: Boolean, default: false, index: true },
+    brandProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BrandProfile',
+      default: null,
+    },
   },
   { timestamps: true }
 );
