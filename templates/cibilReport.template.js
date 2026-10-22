@@ -1,10 +1,5 @@
-// ============================================================
-// CIBIL REPORT HTML TEMPLATE
-// File: templates/cibilReport.template.js
-// ============================================================
-
 const escapeHtml = (value) => {
-  if (value === null || value === undefined) return "-";
+  if (value === null || value === undefined || value === "") return "-";
 
   return String(value)
     .replace(/&/g, "&amp;")
@@ -14,2102 +9,1134 @@ const escapeHtml = (value) => {
     .replace(/'/g, "&#039;");
 };
 
-// ============================================================
-// FORMAT HELPERS
-// ============================================================
+const hasValue = (v) => v !== null && v !== undefined && v !== "" && v !== "-";
+
+const safe = (v) => escapeHtml(hasValue(v) ? v : "-");
+
+const first = (...values) => values.find(hasValue) ?? "-";
 
 const formatDate = (value) => {
-  if (!value || value === "-") return "-";
+  if (!hasValue(value)) return "-";
 
-  const clean = String(value).split("+")[0];
+  const raw = String(value).trim();
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
 
-  const parts = clean.split("-");
-
-  if (parts.length !== 3) {
-    return escapeHtml(value);
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
   }
 
-  const [year, month, day] = parts;
+  m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
 
-  return `${day}-${month}-${year}`;
+  if (m) {
+    return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+
+  return escapeHtml(raw);
 };
 
 const formatAmount = (value) => {
-  if (
-    value === null ||
-    value === undefined ||
-    value === "" ||
-    value === "-" ||
-    value === "-1"
-  ) {
-    return "-";
+  if (!hasValue(value) || String(value) === "-1") return "-";
+
+  const n = Number(value);
+
+  return Number.isFinite(n)
+    ? n.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+    : escapeHtml(value);
+};
+
+const formatDateTime = (value) => {
+  if (!hasValue(value)) return "-";
+
+  const raw = String(value);
+  const d = new Date(raw);
+
+  if (!Number.isNaN(d.getTime()) && raw.includes("T")) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
-  const number = Number(value);
+  return formatDate(value);
+};
 
-  if (Number.isNaN(number)) {
-    return escapeHtml(value);
+const sectionTitle = (title, extraClass = "") =>
+  `<div class="section-title ${extraClass}">${safe(title)}</div>`;
+
+const field = (label, value) =>
+  `<div class="field">
+    <span class="field-label">${safe(label)}:</span>
+    <span class="field-value">${value === undefined || value === null || value === "" ? "-" : value}</span>
+  </div>`;
+
+const table = (headers, rows, emptyMessage = "Not reported") => {
+  if (!rows.length) {
+    return `<div class="empty">${safe(emptyMessage)}</div>`;
   }
 
-  return `₹ ${number.toLocaleString("en-IN")}`;
-};
-
-const safe = (value) => escapeHtml(value ?? "-");
-
-// ============================================================
-// COMMON UI COMPONENTS
-// ============================================================
-
-const sectionTitle = (title, subtitle = "") => {
   return `
-    <div class="section-header">
-      <div class="section-title">${safe(title)}</div>
-      ${subtitle ? `<div class="section-subtitle">${safe(subtitle)}</div>` : ""}
-    </div>
-  `;
+    <table class="data-table">
+      <thead>
+        <tr>${headers.map((h) => `<th>${safe(h)}</th>`).join("")}</tr>
+      </thead>
+      <tbody>${rows.join("")}</tbody>
+    </table>`;
 };
 
-const infoItem = (label, value) => {
-  return `
-    <div class="info-item">
-      <div class="info-label">${safe(label)}</div>
-      <div class="info-value">${safe(value)}</div>
-    </div>
-  `;
-};
-
-// ============================================================
+// --------------------------------------------------
 // HEADER
-// ============================================================
+// --------------------------------------------------
 
 const renderHeader = (data) => {
+  const meta = data.reportMeta || {};
+  const borrower = data.borrower || {};
+  const now = new Date();
+
+  const generated = first(
+    meta.generatedAt,
+    data.generatedAt,
+    now.toISOString(),
+  );
+
+  const dateText = first(meta.reportDate, data.reportDate, generated);
+  const timeText = first(meta.reportTime, data.reportTime, "-");
+
   return `
-    <div class="report-header">
-
-      <div class="header-left">
-        <div class="report-title">
-          CREDIT INFORMATION REPORT
-        </div>
-
-        <div class="report-subtitle">
-          CIBIL Credit Report
-        </div>
+    <div class="brand-row">
+      <div class="brand-logo">
+        <span class="tu">TransUnion</span>
+        <span class="cibil">CIBIL</span><sup>®</sup>
       </div>
-
-      <div class="header-right">
-        <div class="header-label">
-          Control Number
-        </div>
-
-        <div class="header-value">
-       ${safe(data.referenceKey)}
-        </div>
-
-        <div class="header-label report-version-label">
-          Report Version
-        </div>
-
-        <div class="header-value">
-          ${safe(data.reportVersion)}
-        </div>
-      </div>
-
     </div>
 
-    <div class="generated-row">
-      <span>Generated On</span>
-      <strong>${safe(data.generatedAt)}</strong>
-    </div>
-  `;
+    <div class="yellow-band">CONSUMER CIR</div>
+
+    <div class="meta-grid">
+      <div><em>CONSUMER:</em>
+        <strong>${safe(first(meta.consumerName, borrower.fullName, borrower.name))}</strong>
+      </div>
+
+      <div><em>DATE:</em>
+        <strong>${safe(formatDateTime(dateText))}</strong>
+      </div>
+
+      <div><em>MEMBER ID:</em>
+        <strong>${safe(first(meta.memberId, data.memberId))}</strong>
+      </div>
+
+      <div><em>TIME:</em>
+        <strong>${safe(timeText)}</strong>
+      </div>
+
+      <div><em>MEMBER REFERENCE NUMBER:</em>
+        <strong>${safe(first(meta.memberReferenceNumber, data.memberReferenceNumber))}</strong>
+      </div>
+
+      <div><em>CONTROL NUMBER:</em>
+        <strong>${safe(first(meta.controlNumber, data.controlNumber, data.referenceKey))}</strong>
+      </div>
+    </div>`;
 };
 
-// ============================================================
-// PERSONAL INFORMATION
-// ============================================================
+// --------------------------------------------------
+// CONSUMER INFORMATION
+// --------------------------------------------------
 
 const renderPersonalInformation = (data) => {
-  const borrower = data.borrower || {};
-
-  const emails = borrower.emails || [];
-  const phones = borrower.phones || [];
+  const b = data.borrower || {};
 
   return `
-    ${sectionTitle("Personal Information")}
+    ${sectionTitle("CONSUMER INFORMATION")}
 
-    <!-- Personal Information -->
-    <div class="info-grid">
-
-      ${infoItem("Full Name", borrower.fullName)}
-
-      ${infoItem("Date of Birth", formatDate(borrower.dob))}
-
-      ${infoItem("Gender", borrower.gender)}
-
-    </div>
-
-
-    <!-- Mobile Numbers -->
-    <div class="contact-section">
-
-      <div class="contact-title">
-        Mobile Number
-      </div>
-
-      <div class="contact-grid">
-
-        ${
-          phones.length
-            ? phones
-                .map(
-                  (phone, index) => `
-                    <div class="contact-box">
-
-                      <div class="contact-label">
-                        Mobile ${index + 1}
-                      </div>
-
-                      <div class="contact-value">
-                        ${safe(phone)}
-                      </div>
-
-                    </div>
-                  `,
-                )
-                .join("")
-            : `
-                <div class="contact-box">
-
-                  <div class="contact-label">
-                    Mobile Number
-                  </div>
-
-                  <div class="contact-value">
-                    -
-                  </div>
-
-                </div>
-              `
-        }
-
-      </div>
-
-    </div>
-
-
-    <!-- Email IDs -->
-    <div class="contact-section">
-
-      <div class="contact-title">
-        Email ID
-      </div>
-
-      <div class="contact-grid">
-
-        ${
-          emails.length
-            ? emails
-                .map(
-                  (email, index) => `
-                    <div class="contact-box">
-
-                      <div class="contact-label">
-                        Email ${index + 1}
-                      </div>
-
-                      <div class="contact-value">
-                        ${safe(email)}
-                      </div>
-
-                    </div>
-                  `,
-                )
-                .join("")
-            : `
-                <div class="contact-box">
-
-                  <div class="contact-label">
-                    Email ID
-                  </div>
-
-                  <div class="contact-value">
-                    -
-                  </div>
-
-                </div>
-              `
-        }
-
-      </div>
-
-    </div>
-  `;
+    <div class="consumer-row">
+      <div>${field("NAME", safe(first(b.fullName, b.name)))}</div>
+      <div>${field("GENDER", safe(b.gender))}</div>
+      <div>${field("DATE OF BIRTH", safe(formatDate(first(b.dob, b.dateOfBirth))))}</div>
+    </div>`;
 };
 
-// ============================================================
-// CREDIT SCORE
-// ============================================================
+// --------------------------------------------------
+// CIBIL SCORE
+// --------------------------------------------------
 
 const renderCreditScore = (data) => {
   const score = data.score || {};
-  const hasScore =
-    score.value !== null &&
-    score.value !== undefined &&
-    score.value !== "" &&
-    score.value !== "-";
+
+  const factors = Array.isArray(score.scoringFactors)
+    ? score.scoringFactors
+    : Array.isArray(data.scoringFactors)
+      ? data.scoringFactors
+      : [];
+
+  const factorsHtml = factors.length
+    ? factors
+        .map(
+          (x, i) =>
+            `<div>${i + 1}. ${safe(typeof x === "object" ? first(x.description, x.name, x.value) : x)}</div>`,
+        )
+        .join("")
+    : "<div>-</div>";
 
   return `
-    ${sectionTitle("CIBIL Score")}
+    ${sectionTitle("CIBIL TRANSUNION SCORE(S)")}
 
-    <div class="score-container">
+    <table class="score-table">
+      <thead>
+        <tr>
+          <th>SCORE NAME</th>
+          <th>SCORE</th>
+          <th>SCORING FACTORS</th>
+        </tr>
+      </thead>
 
-      <div class="score-box">
+      <tbody>
+        <tr>
+          <td class="score-name">
+            ${safe(first(score.scoreName, score.model, "CIBILTRANSUNIONSCORE3"))}
+          </td>
 
-        <div class="score-label">
-          CIBIL SCORE
-        </div>
+          <td class="score-number">${safe(score.value)}</td>
 
-        <div class="score-value">
-          ${hasScore ? safe(score.value) : "Not available"}
-        </div>
+          <td class="score-factors">${factorsHtml}</td>
+        </tr>
+      </tbody>
+    </table>
 
+    <div class="range-box">
+      <strong>POSSIBLE RANGE FOR CREDITVISION® SCORE</strong>
+
+      <div>
+        Consumer with at least one trade on the bureau in last 36 months
+        <span>: 300 (high risk) to 900 (low risk)</span>
       </div>
 
-      <div class="score-details">
-
-        ${infoItem("Score Model", score.model)}
-
-        ${infoItem("Score Name", score.scoreName)}
-
-        ${infoItem("Population Rank", score.populationRank)}
-
+      <div>
+        Consumer not in CIBIL database or history older than 36 months
+        <span>: -1</span>
       </div>
 
-    </div>
-    ${
-      hasScore
-        ? ""
-        : `<div class="data-note">Score unavailable — the bureau did not return a credit score for this profile.</div>`
-    }
-  `;
+      <div>* At least one tradeline with information updated in last 36 months is required.</div>
+    </div>`;
 };
 
-// ============================================================
-// BUREAU STATUS INDICATORS
-// Safety-check / frozen / deceased / fraud flags are bureau-reported
-// file-level states. Shown explicitly so a suppressed file can never
-// look identical to a clean one.
-// ============================================================
-
-const formatBureauFlag = (value) => {
-  if (value === true || value === "true" || value === "Y" || value === 1) {
-    return { text: "Yes", className: "flag-yes" };
-  }
-
-  if (
-    value === false ||
-    value === "false" ||
-    value === "N" ||
-    value === 0 ||
-    value === "Passed" ||
-    value === "PASS"
-  ) {
-    return { text: "No", className: "flag-no" };
-  }
-
-  return { text: "Not reported", className: "flag-na" };
-};
-
-const renderBureauStatus = (data) => {
-  const status = data.bureauStatus || {};
-
-  const flags = [
-    { label: "Safety Check Passed", value: status.safetyCheckPassed },
-    { label: "File Frozen", value: status.frozen },
-    { label: "Deceased Indicator", value: status.deceased },
-    { label: "Fraud Indicator", value: status.fraud },
-  ];
-
-  return `
-    ${sectionTitle("Bureau File Status", "As reported by the bureau")}
-
-    <div class="flag-strip">
-
-      ${flags
-        .map((flag) => {
-          const formatted = formatBureauFlag(flag.value);
-
-          return `
-            <div class="flag-item">
-              <div class="flag-label">${safe(flag.label)}</div>
-              <div class="flag-value ${formatted.className}">${formatted.text}</div>
-            </div>
-          `;
-        })
-        .join("")}
-
-    </div>
-  `;
-};
-
-// ============================================================
-// BUREAU CREDIT SUMMARY (as-reported aggregates)
-// Values are displayed verbatim from the bureau — never recomputed.
-// The whole section is skipped when the bureau did not send it.
-// ============================================================
-
-const renderBureauCreditSummary = (data) => {
-  const summary = data.creditSummary;
-
-  if (!summary) {
-    return "";
-  }
-
-  return `
-    ${sectionTitle("Bureau Credit Summary", "Aggregates as reported by the bureau")}
-
-    <div class="info-grid">
-
-      ${infoItem("Oldest Credit Account (months)", summary.oldestCreditAccountPeriod)}
-
-      ${infoItem("Enquiries", summary.inquiries)}
-
-      ${infoItem("On-Time Payment History (%)", summary.onTimePaymentHistory)}
-
-      ${infoItem("Credit Card Utilization (%)", summary.creditCardUtilization)}
-
-      ${infoItem("Credit Mix", summary.creditMix)}
-
-    </div>
-  `;
-};
-
-
-
-// ============================================================
-// ACCOUNT SUMMARY
-// ============================================================
-
-const renderAccountSummary = (data) => {
-  const summary = data.summary || {};
-
-  return `
-    ${sectionTitle("Account Summary")}
-
-    <div class="summary-grid">
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Total Accounts
-        </div>
-
-        <div class="summary-value">
-          ${safe(summary.totalAccounts)}
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Active Accounts
-        </div>
-
-        <div class="summary-value">
-          ${safe(summary.activeAccounts)}
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Closed Accounts
-        </div>
-
-        <div class="summary-value">
-          ${safe(summary.closedAccounts)}
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Total Current Balance
-        </div>
-
-        <div class="summary-value">
-          ${formatAmount(summary.totalCurrentBalance)}
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Total High Balance
-        </div>
-
-        <div class="summary-value">
-          ${formatAmount(summary.totalHighBalance)}
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-label">
-          Total Amount Past Due
-        </div>
-
-        <div class="summary-value">
-          ${formatAmount(summary.totalPastDue)}
-        </div>
-      </div>
-
-    </div>
-  `;
-};
-
-// ============================================================
-// ADDRESS
-// ============================================================
-
-const renderAddresses = (data) => {
-  const addresses = data.borrower?.addresses || [];
-
-  if (!addresses.length) {
-    return `
-      ${sectionTitle("Address Information")}
-
-      <div class="empty-box">
-        Address information not reported by bureau.
-      </div>
-    `;
-  }
-
-  return `
-    ${sectionTitle("Address Information")}
-
-    <div class="table-wrapper">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Address</th>
-            <th>City</th>
-            <th>State</th>
-            <th>PIN Code</th>
-            <th>Reported Date</th>
-            <th>Source</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          ${addresses
-            .map(
-              (item, index) => `
-                <tr>
-                  <td>${index + 1}</td>
-                  <td>${safe(item.address)}</td>
-                  <td>${safe(item.city)}</td>
-                  <td>${safe(item.state)}</td>
-                  <td>${safe(item.pincode)}</td>
-                  <td>${formatDate(item.reportedDate)}</td>
-                  <td>${safe(item.origin)}</td>
-                </tr>
-              `,
-            )
-            .join("")}
-
-        </tbody>
-
-      </table>
-
-    </div>
-  `;
-};
-
-// ============================================================
-// IDENTIFIERS
-// ============================================================
+// --------------------------------------------------
+// IDENTIFICATION
+// --------------------------------------------------
 
 const renderIdentifiers = (data) => {
-  const identifiers = data.borrower?.identifiers || [];
+  const items = data.borrower?.identifiers || data.identifiers || [];
 
-  if (!identifiers.length) {
-    return "";
-  }
+  const rows = items.map(
+    (x) => `
+    <tr>
+      <td>${safe(first(x.type, x.identifierType))}</td>
+      <td>${safe(first(x.value, x.number, x.identifierNumber))}</td>
+      <td>${safe(formatDate(x.issueDate))}</td>
+      <td>${safe(formatDate(x.expirationDate))}</td>
+    </tr>`,
+  );
 
   return `
-    ${sectionTitle("Identifiers")}
+    ${sectionTitle("IDENTIFICATION(S)")}
 
-    <div class="table-wrapper">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Identifier Type</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          ${identifiers
-            .map(
-              (item, index) => `
-                <tr>
-                  <td>${index + 1}</td>
-                  <td>${safe(item.type)}</td>
-
-                  <td>${safe(item.value)}</td>
-                </tr>
-              `,
-            )
-            .join("")}
-
-        </tbody>
-
-      </table>
-
-    </div>
-  `;
+    ${table(
+      [
+        "IDENTIFICATION TYPE",
+        "IDENTIFICATION NUMBER",
+        "ISSUE DATE",
+        "EXPIRATION DATE",
+      ],
+      rows,
+      "Identification details not reported by bureau.",
+    )}`;
 };
 
-// ============================================================
+// --------------------------------------------------
+// TELEPHONE NUMBERS
+// --------------------------------------------------
+
+const renderPhones = (data) => {
+  const phones = data.borrower?.phones || data.phones || [];
+
+  const rows = phones.map((x) => {
+    const p = typeof x === "object" ? x : { number: x };
+
+    return `
+      <tr>
+        <td>${safe(first(p.type, p.telephoneType, "Not Classified"))}</td>
+        <td>${safe(first(p.number, p.value, p.phone, p.telephoneNumber))}</td>
+        <td>${safe(first(p.extension, p.telephoneExtension))}</td>
+      </tr>`;
+  });
+
+  return `
+    ${sectionTitle("TELEPHONE(S)")}
+
+    ${table(
+      ["TELEPHONE TYPE", "TELEPHONE NUMBER", "TELEPHONE EXTENSION"],
+      rows,
+      "Telephone numbers not reported by bureau.",
+    )}`;
+};
+
+// --------------------------------------------------
+// EMAILS
+// --------------------------------------------------
+
+const renderEmails = (data) => {
+  const emails = data.borrower?.emails || data.emails || [];
+
+  const rows = emails.map(
+    (x) => `
+    <tr>
+      <td>${safe(typeof x === "object" ? first(x.email, x.address, x.value) : x)}</td>
+    </tr>`,
+  );
+
+  return `
+    ${sectionTitle("EMAIL CONTACT(S)")}
+
+    ${table(
+      ["EMAIL ADDRESS"],
+      rows,
+      "Email addresses not reported by bureau.",
+    )}`;
+};
+
+// --------------------------------------------------
+// ADDRESSES
+// --------------------------------------------------
+
+const renderAddresses = (data) => {
+  const addresses = data.borrower?.addresses || data.addresses || [];
+
+  const rows = addresses.map((x) => {
+    const address = first(
+      x.address,
+      x.fullAddress,
+      [
+        x.addressLine1,
+        x.addressLine2,
+        x.addressLine3,
+        x.city,
+        x.state,
+        x.pincode,
+      ]
+        .filter(hasValue)
+        .join(", "),
+    );
+
+    return `
+      <tr>
+        <td>
+          <b>ADDRESS:</b> ${safe(address)}<br/>
+          <b>CATEGORY:</b> ${safe(first(x.category, x.type))}
+
+          <span class="address-gap">
+            <b>RESIDENCE CODE:</b> ${safe(x.residenceCode)}
+          </span>
+
+          <span class="address-gap">
+            <b>DATE REPORTED:</b> ${safe(formatDate(x.reportedDate))}
+          </span>
+        </td>
+      </tr>`;
+  });
+
+  return `
+    ${sectionTitle("ADDRESS(ES)")}
+
+    ${table(
+      ["ADDRESS DETAILS"],
+      rows,
+      "Address information not reported by bureau.",
+    )}`;
+};
+
+// --------------------------------------------------
 // EMPLOYMENT
-// ============================================================
+// --------------------------------------------------
 
 const renderEmployment = (data) => {
-  const employment = data.employment || {};
-  const allEmployments =
-    Array.isArray(employment.all) && employment.all.length
-      ? employment.all
-      : [employment];
+  const e = data.employment || {};
+
+  const records =
+    Array.isArray(e.all) && e.all.length
+      ? e.all
+      : Array.isArray(data.employments)
+        ? data.employments
+        : Object.keys(e).length
+          ? [e]
+          : [];
+
+  const rows = records.map(
+    (x) => `
+    <tr>
+      <td>${safe(first(x.accountType))}</td>
+      <td>${safe(first(x.employer, x.employerName))}</td>
+      <td>${safe(formatDate(x.dateReported))}</td>
+      <td>${safe(first(x.occupationCode, x.occupation))}</td>
+      <td>${safe(formatAmount(x.income))}</td>
+      <td>${safe(first(x.incomeIndicator, x.netGrossIndicator))}</td>
+      <td>${safe(first(x.incomeFrequency, x.monthlyAnnualIndicator))}</td>
+    </tr>`,
+  );
 
   return `
-    ${sectionTitle(
-      "Employment Information",
-      allEmployments.length > 1
-        ? `${allEmployments.length} records reported`
-        : "",
-    )}
+    ${sectionTitle("EMPLOYMENT INFORMATION")}
 
-    ${allEmployments
-      .map(
-        (entry, index) => `
-      <div class="info-grid">
-
-        ${infoItem(
-          allEmployments.length > 1 ? `Employer ${index + 1}` : "Employer",
-          entry.employer,
-        )}
-
-        ${infoItem("Occupation", entry.occupation)}
-
-        ${infoItem("Date Reported", formatDate(entry.dateReported))}
-
-      </div>
-    `,
-      )
-      .join("")}
-  `;
+    ${table(
+      [
+        "ACCOUNT TYPE",
+        "EMPLOYER NAME",
+        "DATE REPORTED",
+        "OCCUPATION CODE",
+        "INCOME",
+        "NET / GROSS INCOME INDICATOR",
+        "MONTHLY / ANNUAL INCOME INDICATOR",
+      ],
+      rows,
+      "Employment information not reported by bureau.",
+    )}`;
 };
-// ============================================================
-// PAYMENT HISTORY HELPERS
-// ============================================================
 
-const PAYMENT_MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+// --------------------------------------------------
+// SUMMARY
+// --------------------------------------------------
 
-// ============================================================
-// PAYMENT HISTORY HELPERS
-// ============================================================
+const renderSummary = (data) => {
+  const s = data.summary || {};
+  const enq = data.enquirySummary || {};
 
-// Get year/month from different possible date formats
-const getPaymentYearMonth = (value) => {
-  if (!value) return null;
+  return `
+    ${sectionTitle("SUMMARY")}
 
-  const raw = String(value).trim();
+    <div class="subheading">ACCOUNT(S)</div>
 
-  // YYYY-MM-DD
-  let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>ACCOUNT TYPE</th>
+          <th>ACCOUNTS</th>
+          <th>ADVANCES</th>
+          <th>BALANCES</th>
+          <th>DATE OPENED</th>
+        </tr>
+      </thead>
 
-  if (match) {
-    return {
-      year: Number(match[1]),
-      month: Number(match[2]),
-    };
+      <tbody>
+        <tr>
+          <td>All Accounts</td>
+
+          <td>
+            <i>TOTAL:</i> ${safe(first(s.totalAccounts, data.accounts?.length))}<br/>
+            <i>OVERDUE:</i> ${safe(s.overdueAccounts)}<br/>
+            <i>ZERO-BALANCE:</i> ${safe(s.zeroBalanceAccounts)}
+          </td>
+
+          <td>
+            <i>HIGH CR/SANC. AMT:</i>
+            ${safe(formatAmount(first(s.totalHighBalance, s.highCreditAmount)))}
+          </td>
+
+          <td>
+            <i>CURRENT:</i> ${safe(formatAmount(s.totalCurrentBalance))}<br/>
+            <i>OVERDUE:</i> ${safe(formatAmount(s.totalPastDue))}
+          </td>
+
+          <td>
+            <i>RECENT:</i>
+            ${safe(formatDate(first(s.recentAccountOpened, s.recentDateOpened)))}<br/>
+
+            <i>OLDEST:</i>
+            ${safe(formatDate(first(s.oldestAccountOpened, s.oldestDateOpened)))}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="subheading">ENQUIRIES</div>
+
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>ENQUIRY PURPOSE</th>
+          <th>TOTAL</th>
+          <th>PAST 30 DAYS</th>
+          <th>PAST 12 MONTHS</th>
+          <th>PAST 24 MONTHS</th>
+          <th>RECENT</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr>
+          <td>All Enquiries</td>
+          <td>${safe(first(enq.total, data.inquiries?.length))}</td>
+          <td>${safe(enq.past30Days)}</td>
+          <td>${safe(enq.past12Months)}</td>
+          <td>${safe(enq.past24Months)}</td>
+          <td>${safe(formatDate(enq.recentDate))}</td>
+        </tr>
+      </tbody>
+    </table>`;
+};
+
+// --------------------------------------------------
+// PAYMENT HISTORY
+// --------------------------------------------------
+
+const parsePaymentDate = (item) => {
+  const raw = first(
+    item?.date,
+    item?.paymentDate,
+    item?.month,
+    item?.reportDate,
+    item?.dateReported,
+  );
+
+  if (!hasValue(raw)) return null;
+
+  let m = String(raw).match(/^(\d{4})[-/](\d{1,2})/);
+
+  if (m) {
+    return { year: Number(m[1]), month: Number(m[2]) };
   }
 
-  // DD-MM-YYYY
-  match = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  m = String(raw).match(/^(\d{1,2})[-/](\d{4})$/);
 
-  if (match) {
-    return {
-      year: Number(match[3]),
-      month: Number(match[2]),
-    };
+  if (m) {
+    return { year: Number(m[2]), month: Number(m[1]) };
   }
 
-  // YYYY/MM/DD
-  match = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  m = String(raw).match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
 
-  if (match) {
-    return {
-      year: Number(match[1]),
-      month: Number(match[2]),
-    };
-  }
-
-  // DD/MM/YYYY
-  match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-
-  if (match) {
-    return {
-      year: Number(match[3]),
-      month: Number(match[2]),
-    };
-  }
-
-  // YYYY-MM
-  match = raw.match(/^(\d{4})-(\d{1,2})$/);
-
-  if (match) {
-    return {
-      year: Number(match[1]),
-      month: Number(match[2]),
-    };
+  if (m) {
+    return { year: Number(m[3]), month: Number(m[2]) };
   }
 
   return null;
 };
 
-// ============================================================
-// GET PAYMENT STATUS
-// ============================================================
+const paymentStatus = (item) => {
+  if (item === null || item === undefined) return "-";
+  if (typeof item !== "object") return String(item);
 
-const getPaymentDisplayStatus = (item) => {
-  if (!item) return "-";
-
-  // Prefer asset classification if API provides it
-  const status =
-    item.status ??
-    item.paymentStatus ??
-    item.assetClassification ??
-    item.assetClass ??
-    "-";
-
-  if (status === null || status === undefined || String(status).trim() === "") {
-    return "-";
-  }
-
-  return String(status);
+  return String(
+    first(
+      item.status,
+      item.paymentStatus,
+      item.assetClassification,
+      item.assetClass,
+      item.value,
+    ),
+  );
 };
 
-// ============================================================
-// LATEST MONTHS FIRST
-// Dec → Nov → Oct → ... → Jan
-// ============================================================
+const renderPaymentHistory = (account) => {
+  let history =
+    account.paymentHistory ||
+    account.paymentHistoryDetails ||
+    account.paymentHistoryList ||
+    [];
 
-const PAYMENT_MONTH_NUMBERS = Array.from(
-  { length: 12 },
-  (_, index) => 12 - index,
-);
-
-// ============================================================
-// PAYMENT STATUS CLASS
-// ============================================================
-
-const getPaymentStatusClass = (status) => {
-  if (
-    status === null ||
-    status === undefined ||
-    status === "-" ||
-    status === ""
-  ) {
-    return "";
+  if (!Array.isArray(history) && history && typeof history === "object") {
+    history = Object.entries(history).map(([date, status]) => ({
+      date,
+      status,
+    }));
   }
 
-  const value = String(status).trim().toUpperCase();
+  const heading =
+    "DAYS PAST DUE/ASSET CLASSIFICATION (UP TO 36 MONTHS; LEFT TO RIGHT)";
 
-  // Good / Standard
-  if (
-    value === "0" ||
-    value === "000" ||
-    value === "STD" ||
-    value === "000/STD"
-  ) {
-    return "status-good";
-  }
-
-  // Unknown / Not Reported
-  if (value === "XXX" || value === "NA" || value === "N/A") {
-    return "status-unknown";
-  }
-
-  // Asset Classification / Overdue
-  if (value.includes("SUB") || value.includes("DBT") || value.includes("LSS")) {
-    return "status-warning";
-  }
-
-  // Numeric DPD
-  const numeric = Number(value);
-
-  if (!Number.isNaN(numeric) && numeric > 0) {
-    return "status-warning";
-  }
-
-  return "";
-};
-
-// ============================================================
-// PAYMENT HISTORY
-// YEAR WISE / MONTH WISE
-// LATEST YEAR FIRST
-// LATEST MONTH FIRST
-// ============================================================
-
-const renderPaymentHistory = (history) => {
-  if (!history || !history.length) {
+  if (!Array.isArray(history) || !history.length) {
     return `
-      <div class="payment-history">
-        <div class="payment-title">
-          Payment History / Asset Classification
-        </div>
-
-        <div class="empty-box">
-          No payment history available.
-        </div>
-      </div>
-    `;
+      <div class="payment-block">
+        <div class="payment-heading">${heading}</div>
+        <div class="payment-empty">No payment history reported.</div>
+      </div>`;
   }
 
-  // ============================================================
-  // GROUP PAYMENT HISTORY BY YEAR
-  // ============================================================
+  const entries = history
+    .map((item) => ({
+      date: parsePaymentDate(item),
+      status: paymentStatus(item),
+    }))
+    .filter((x) => x.date && x.date.month >= 1 && x.date.month <= 12)
+    .sort((a, b) => b.date.year - a.date.year || b.date.month - a.date.month);
 
-  const yearlyData = {};
-
-  history.forEach((item) => {
-    const dateInfo = getPaymentYearMonth(
-      item?.date || item?.paymentDate || item?.month || item?.reportDate,
-    );
-
-    if (!dateInfo) {
-      return;
-    }
-
-    const { year, month } = dateInfo;
-
-    // Ignore invalid months
-    if (month < 1 || month > 12) {
-      return;
-    }
-
-    if (!yearlyData[year]) {
-      yearlyData[year] = {};
-    }
-
-    // Month number 1-12
-    yearlyData[year][month] = getPaymentDisplayStatus(item);
-  });
-
-  // ============================================================
-  // SORT YEARS
-  // LATEST YEAR FIRST
-  //
-  // Example:
-  // 2026
-  // 2025
-  // 2024
-  // 2023
-  // ============================================================
-
-  const years = Object.keys(yearlyData)
-    .map(Number)
-    .sort((a, b) => b - a);
-
-  // ============================================================
-  // NO VALID DATA
-  // ============================================================
-
-  if (!years.length) {
+  if (!entries.length) {
     return `
-      <div class="payment-history">
-        <div class="payment-title">
-          Payment History / Asset Classification
-        </div>
-
-        <div class="empty-box">
-          Payment history dates could not be processed.
-        </div>
-      </div>
-    `;
+      <div class="payment-block">
+        <div class="payment-heading">${heading}</div>
+        <div class="payment-empty">Payment history dates could not be processed.</div>
+      </div>`;
   }
 
-  // ============================================================
-  // BUILD YEAR ROWS
-  //
-  // Latest month first:
-  //
-  // Dec | Nov | Oct | Sep | ... | Jan
-  // ============================================================
-
-  const yearRows = years
-    .map((year) => {
-      const months = yearlyData[year];
-
-      return `
-        <tr>
-
-          <td class="payment-year">
-            ${safe(year)}
-          </td>
-
-          ${PAYMENT_MONTH_NUMBERS.map((monthNumber) => {
-            const status = months[monthNumber] ?? "-";
-
-            return `
-              <td class="${getPaymentStatusClass(status)}">
-                ${safe(status)}
-              </td>
-            `;
-          }).join("")}
-
-        </tr>
-      `;
-    })
-    .join("");
-
-  // ============================================================
-  // BUILD MONTH HEADERS
-  //
-  // Dec | Nov | Oct | Sep | ... | Jan
-  // ============================================================
-
-  const monthHeaders = PAYMENT_MONTH_NUMBERS.map((monthNumber) => {
-    return `
-        <th>
-          ${PAYMENT_MONTHS[monthNumber - 1]}
-        </th>
-      `;
-  }).join("");
-
-  // ============================================================
-  // FINAL PAYMENT HISTORY UI
-  // ============================================================
+  const dates = entries.map(
+    (x) =>
+      `${String(x.date.month).padStart(2, "0")}-${String(x.date.year).slice(-2)}`,
+  );
 
   return `
-    <div class="payment-history">
+    <div class="payment-block">
+      <div class="payment-heading">${heading}</div>
 
-      <div class="payment-title">
-        Payment History
-      </div>
-
-      <div class="payment-classification-title">
-        Payment History/Asset Classification:
-      </div>
-
-      <div class="payment-table-wrapper">
-
-        <table class="payment-table">
-
-          <thead>
-
-            <tr>
-
-              <th class="year-column">
-                Year
-              </th>
-
-              ${monthHeaders}
-
-            </tr>
-
-          </thead>
-
-          <tbody>
-
-            ${yearRows}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-      <div class="payment-note">
-
-        Payment status is displayed based on the bureau response.
-        Values such as 000/STD, XXX, SUB, DBT, LSS, etc.
-        are displayed as received wherever available.
-
-      </div>
-
-    </div>
-  `;
-};
-
-// ============================================================
-// ACCOUNT
-// ============================================================
-
-const renderAccount = (account, index) => {
-  return `
-    <div class="account-card">
-
-      <div class="account-header">
-
-        <div>
-          <div class="account-number">
-            Account ${index + 1}
-          </div>
-
-          <div class="creditor-name">
-            ${safe(account.creditorName)}
-          </div>
-        </div>
-
-        <div class="account-status">
-          ${safe(account.status)}
-        </div>
-
-      </div>
-
-      <div class="account-info-grid">
-
-        ${infoItem("Account Number", account.accountNumber)}
-
-        ${infoItem("Account Type", account.accountType)}
-
-        ${infoItem("Account Type Code", account.accountTypeCode)}
-
-        ${infoItem("Date Opened", formatDate(account.dateOpened))}
-
-        ${infoItem("Date Closed", formatDate(account.dateClosed))}
-
-        ${infoItem("Date Reported", formatDate(account.dateReported))}
-
-        ${infoItem("Current Balance", formatAmount(account.currentBalance))}
-
-        ${infoItem("High Balance", formatAmount(account.highBalance))}
-
-        ${infoItem("Credit Limit", formatAmount(account.creditLimit))}
-
-        ${infoItem("Cash Limit", formatAmount(account.cashLimit))}
-
-        ${infoItem("Amount Past Due", formatAmount(account.amountPastDue))}
-
-        ${infoItem(
-          "Interest Rate",
-          account.interestRate === "-1" ? "-" : account.interestRate,
-        )}
-
-        ${infoItem("EMI Amount", formatAmount(account.emi))}
-
-        ${infoItem(
-          "Tenure",
-          account.repaymentTenure === "-1" ? "-" : account.repaymentTenure,
-        )}
-
-        ${infoItem("Last Payment Date", formatDate(account.dateLastPayment))}
-
-        ${infoItem("Written Off Amount", formatAmount(account.writtenOff))}
-
-        ${infoItem("Settlement Amount", formatAmount(account.settlementAmount))}
-
-      </div>
-
-      ${renderPaymentHistory(account.paymentHistory)}
-
-    </div>
-  `;
-};
-
-// ============================================================
-// ACCOUNTS
-// ============================================================
-
-const renderAccounts = (data) => {
-  const accounts = data.accounts || [];
-
-  if (!accounts.length) {
-    return `
-      ${sectionTitle("Credit Accounts")}
-
-      <div class="empty-box">
-        Credit accounts not reported by bureau.
-      </div>
-    `;
-  }
-
-  return `
-    ${sectionTitle("Credit Accounts", `${accounts.length} account(s) found`)}
-
-    ${accounts.map((account, index) => renderAccount(account, index)).join("")}
-  `;
-};
-
-// ============================================================
-// ENQUIRIES
-// ============================================================
-
-const renderEnquiries = (data) => {
-  const inquiries = data.inquiries || [];
-
-  if (!inquiries.length) {
-    return `
-      ${sectionTitle("Credit Enquiries")}
-
-      <div class="empty-box">
-        Credit enquiries not reported by bureau.
-      </div>
-    `;
-  }
-
-  return `
-    ${sectionTitle("Credit Enquiries", `${inquiries.length} enquiry/enquiries`)}
-
-    <div class="table-wrapper">
-
-      <table>
-
-        <thead>
-
+      <table class="payment-table">
+        <tbody>
           <tr>
-            <th>#</th>
-            <th>Subscriber</th>
-            <th>Inquiry Date</th>
-            <th>Inquiry Type</th>
-            <th>Amount</th>
-            <th>Control Number</th>
+            ${entries.map((x) => `<td>${safe(x.status)}</td>`).join("")}
           </tr>
 
-        </thead>
-
-        <tbody>
-
-          ${inquiries
-            .map(
-              (item, index) => `
-                <tr>
-
-                  <td>${index + 1}</td>
-
-                  <td>
-                    ${safe(item.subscriberName)}
-                  </td>
-
-                  <td>
-                    ${formatDate(item.inquiryDate)}
-                  </td>
-
-                  <td>
-                    ${safe(item.inquiryType)}
-                  </td>
-
-                  <td>
-                    ${formatAmount(item.amount)}
-                  </td>
-
-                  <td>
-                    ${safe(item.controlNumber)}
-                  </td>
-
-                </tr>
-              `,
-            )
-            .join("")}
-
+          <tr>
+            ${dates.map((d) => `<td>${safe(d)}</td>`).join("")}
+          </tr>
         </tbody>
-
       </table>
-
-    </div>
-  `;
+    </div>`;
 };
 
-// ============================================================
-// MAIN TEMPLATE
-// ============================================================
+// --------------------------------------------------
+// CREDIT ACCOUNTS
+// --------------------------------------------------
 
-const buildCibilReportHtml = (data) => {
+const renderAccount = (account) => {
+  const status = first(account.status, account.creditFacilityStatus, "-");
+
+  const cols = [
+    [
+      "MEMBER NAME",
+      first(account.creditorName, account.memberName),
+      "ACCOUNT NUMBER",
+      first(account.accountNumber),
+      "TYPE",
+      first(account.accountType),
+      "OWNERSHIP",
+      first(account.ownership),
+      "Amount Overdue",
+      formatAmount(account.amountPastDue),
+      "INTEREST RATE",
+      first(account.interestRate, "-"),
+    ],
+    [
+      "OPENED",
+      formatDate(first(account.dateOpened, account.openedDate)),
+      "REPORTED AND CERTIFIED",
+      formatDate(first(account.reportedAndCertified, account.dateReported)),
+      "PMT HIST START",
+      formatDate(account.paymentHistoryStart),
+      "PMT HIST END",
+      formatDate(account.paymentHistoryEnd),
+      "LAST PAYMENT",
+      formatDate(account.dateLastPayment),
+      "COLLATERAL TYPE",
+      first(account.collateralType),
+    ],
+    [
+      "HIGH CREDIT AMOUNT",
+      formatAmount(first(account.highBalance, account.highCreditAmount)),
+      "CURRENT BALANCE",
+      formatAmount(account.currentBalance),
+      "EMI",
+      formatAmount(account.emi),
+      "PAYMENT FREQUENCY",
+      first(account.paymentFrequency),
+      "REPAYMENT TENURE",
+      first(account.repaymentTenure),
+      "COLLATERAL VALUE",
+      formatAmount(account.collateralValue),
+    ],
+    [
+      "CREDIT FACILITY STATUS",
+      status,
+      "ACCOUNT CLOSED",
+      formatDate(account.dateClosed),
+      "WRITTEN-OFF AMOUNT (PRINCIPAL)",
+      formatAmount(account.writtenOffPrincipal),
+      "WRITTEN-OFF AMOUNT (TOTAL)",
+      formatAmount(account.writtenOff),
+      "SETTLEMENT AMOUNT",
+      formatAmount(account.settlementAmount),
+      "SUIT - FILED / WILFUL DEFAULT",
+      first(account.suitFiledWilfulDefault),
+      "CASH LIMIT",
+      formatAmount(account.cashLimit),
+    ],
+  ];
+
   return `
-<!DOCTYPE html>
+    <div class="account-record">
+      <div class="account-columns">
+        ${cols
+          .map(
+            (list) => `
+          <div class="account-col">
+            ${Array.from({ length: list.length / 2 }, (_, i) =>
+              field(list[i * 2], safe(list[i * 2 + 1])),
+            ).join("")}
+          </div>
+        `,
+          )
+          .join("")}
+      </div>
 
-<html>
+      ${renderPaymentHistory(account)}
+    </div>`;
+};
 
+const renderAccounts = (data) => {
+  const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+
+  return `
+    ${sectionTitle("ACCOUNT(S)")}
+
+    ${
+      accounts.length
+        ? accounts.map(renderAccount).join("")
+        : `<div class="empty">Credit accounts not reported by bureau.</div>`
+    }`;
+};
+
+// --------------------------------------------------
+// ENQUIRIES
+// --------------------------------------------------
+
+const renderEnquiries = (data) => {
+  const items = Array.isArray(data.inquiries) ? data.inquiries : [];
+
+  const rows = items.map(
+    (x) => `
+    <tr>
+      <td>${safe(first(x.subscriberName, x.memberName, x.member))}</td>
+      <td>${safe(formatDate(first(x.inquiryDate, x.date)))}</td>
+      <td>${safe(first(x.inquiryType, x.purpose))}</td>
+      <td>${safe(formatAmount(first(x.amount, x.inquiryAmount)))}</td>
+    </tr>`,
+  );
+
+  return `
+    ${sectionTitle("ENQUIRIES")}
+
+    ${table(
+      ["MEMBER", "ENQUIRY DATE", "ENQUIRY PURPOSE", "ENQUIRY AMOUNT"],
+      rows,
+      "Credit enquiries not reported by bureau.",
+    )}`;
+};
+
+// --------------------------------------------------
+// MAIN HTML TEMPLATE
+// --------------------------------------------------
+
+const buildCibilReportHtml = (data = {}) => `<!DOCTYPE html>
+<html lang="en">
 <head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Consumer CIR - TransUnion CIBIL</title>
 
-<meta charset="UTF-8" />
-
-<title>CIBIL Credit Information Report</title>
 <style>
-  /* ============================================================
-     GLOBAL
-  ============================================================ */
-
-  * {
-    box-sizing: border-box;
-  }
-
-  html,
-  body {
-    margin: 0;
-    padding: 0;
-  }
-
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 10px;
-    line-height: 1.45;
-    color: #1f2937;
-    background: #ffffff;
-  }
-
-  /* ============================================================
-     REPORT HEADER
-  ============================================================ */
-
-  .report-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-
-    padding: 22px 24px;
-
-    background: linear-gradient(135deg, #0f2f5f 0%, #174f91 100%);
-    border-radius: 0 0 10px 10px;
-
-    color: #ffffff;
-  }
-
-  .header-left {
-    flex: 1;
-  }
-
-  .report-title {
-    font-size: 21px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: #ffffff;
-  }
-
-  .report-subtitle {
-    margin-top: 6px;
-
-    font-size: 11px;
-    font-weight: 400;
-
-    color: #dbeafe;
-  }
-
-  .header-right {
-    min-width: 190px;
-    padding-left: 20px;
-
-    text-align: right;
-
-    border-left: 1px solid rgba(255, 255, 255, 0.25);
-  }
-
-  .header-label {
-    font-size: 7px;
-    font-weight: 700;
-
-    color: #bfdbfe;
-
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-  }
-
-  .header-value {
-    margin-top: 3px;
-
-    font-size: 10px;
-    font-weight: 700;
-
-    color: #ffffff;
-
-    word-break: break-word;
-  }
-
-  .report-version-label {
-    margin-top: 12px;
-  }
-
-  /* ============================================================
-     GENERATED ROW
-  ============================================================ */
-
-  .generated-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-
-    padding: 8px 24px;
-
-    background: #f1f5f9;
-
-    border-bottom: 1px solid #dbe3ec;
-
-    color: #64748b;
-
-    font-size: 8px;
-  }
-
-  .generated-row strong {
-    color: #1e293b;
-    font-size: 9px;
-  }
-
-  /* ============================================================
-     SECTION HEADER
-  ============================================================ */
-
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-
-    margin-top: 20px;
-    margin-bottom: 10px;
-
-    padding-bottom: 7px;
-
-    border-bottom: 2px solid #e2e8f0;
-  }
-
-  .section-title {
-    position: relative;
-
-    padding-left: 9px;
-
-    font-size: 13px;
-    font-weight: 800;
-
-    color: #123d70;
-  }
-
-  .section-title::before {
-    content: "";
-
-    position: absolute;
-    left: 0;
-    top: 1px;
-
-    width: 3px;
-    height: 15px;
-
-    background: #2563eb;
-
-    border-radius: 4px;
-  }
-
-  .section-subtitle {
-    font-size: 8px;
-    font-weight: 600;
-
-    color: #64748b;
-  }
-
-  /* ============================================================
-   PERSONAL INFORMATION
-============================================================ */
-/* ============================================================
-   KEY / VALUE COMMON STYLE
-============================================================ */
-
-.info-item {
-  min-height: 55px;
-  padding: 11px 12px;
-  background: #ffffff;
-  border-right: 1px solid #d9e1ec;
-  border-bottom: 1px solid #d9e1ec;
-}
-
-.info-label {
-  color: #94a3b8;
-  font-size: 7.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  line-height: 1.3;
-}
-
-.info-value {
-  margin-top: 4px;
-  color: #172033;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border: 1px solid #d9e1ec;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-
-.info-grid > .info-item {
-  min-height: 70px;
-  padding: 12px 16px;
-}
-
-.info-grid > .info-item:last-child {
-  border-right: none;
-}
-
-
-/* ============================================================
-   MOBILE / EMAIL SECTION
-============================================================ */
-
-.contact-section {
-  margin-top: 12px;
-}
-
-.contact-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1d4f91;
-  margin-bottom: 7px;
-}
-
-.contact-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.contact-box {
-  border: 1px solid #d9e1ec;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 10px 14px;
-  min-height: 55px;
+* {
   box-sizing: border-box;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
-.contact-label {
-  font-size: 7.5px;
-  font-weight: 700;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 5px;
+@page {
+  size: A4;
+  margin: 7mm 7mm 8mm;
 }
 
-.contact-value {
-  font-size: 10px;
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  background: #fff;
+  color: #222;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8px;
+  line-height: 1.25;
+}
+
+.brand-row {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 2px 8px 5px;
+}
+
+.brand-logo {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.tu, .cibil {
+  font-size: 25px;
+  color: #16a4bd;
   font-weight: 500;
-  color: #172033;
-  word-break: break-word;
-}
-   
-  /* ============================================================
-     CREDIT SCORE
-  ============================================================ */
-
-  .score-container {
-    display: flex;
-    gap: 12px;
-
-    align-items: stretch;
-  }
-
-  .score-box {
-    position: relative;
-
-    width: 185px;
-
-    padding: 16px 12px;
-
-    text-align: center;
-
-    border: 1px solid #cbd5e1;
-    border-radius: 9px;
-
-    background: linear-gradient(
-      145deg,
-      #f8fbff 0%,
-      #edf5ff 100%
-    );
-
-    box-shadow: 0 3px 10px rgba(15, 47, 95, 0.08);
-
-    overflow: hidden;
-  }
-
-  .score-box::before {
-    content: "";
-
-    position: absolute;
-
-    left: 0;
-    right: 0;
-    top: 0;
-
-    height: 4px;
-
-    background: linear-gradient(
-      90deg,
-      #1d4ed8,
-      #3b82f6
-    );
-  }
-
-  .score-label {
-    margin-top: 2px;
-
-    font-size: 8px;
-    font-weight: 800;
-
-    color: #64748b;
-
-    letter-spacing: 1px;
-  }
-
-  .score-value {
-    margin-top: 7px;
-
-    font-size: 36px;
-    line-height: 1;
-
-    font-weight: 700;
-
-    color: #123d70;
-  }
-
-  .score-details {
-    flex: 1;
-
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-
-    overflow: hidden;
-
-    border: 1px solid #dbe3ec;
-    border-radius: 8px;
-
-    background: #ffffff;
-  }
-
-  .score-details .info-item {
-    min-height: 72px;
-  }
-
-  /* ============================================================
-     SUMMARY CARDS
-  ============================================================ */
-
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-
-    gap: 9px;
-  }
-
-  .summary-card {
-    position: relative;
-
-    min-height: 75px;
-
-    padding: 11px 12px;
-
-    border: 1px solid #dbe3ec;
-    border-radius: 8px;
-
-    background: #ffffff;
-
-    box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
-
-    overflow: hidden;
-  }
-
-  .summary-card::before {
-    content: "";
-
-    position: absolute;
-
-    left: 0;
-    top: 0;
-    bottom: 0;
-
-    width: 3px;
-
-    background: #2563eb;
-  }
-
-  .summary-label {
-    padding-left: 3px;
-
-    font-size: 7px;
-    font-weight: 700;
-
-    color: #64748b;
-
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
- .summary-value {
-  margin-top: 7px;
-  padding-left: 3px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #172033;
-  word-break: break-word;
+  letter-spacing: -1px;
 }
 
-  /* ============================================================
-     TABLES
-  ============================================================ */
-
-  .table-wrapper {
-    width: 100%;
-
-    overflow: hidden;
-
-    border: 1px solid #dbe3ec;
-    border-radius: 7px;
-  }
-
-  table {
-    width: 100%;
-
-    border-collapse: collapse;
-
-    table-layout: fixed;
-
-    font-size: 8px;
-
-    background: #ffffff;
-  }
-
-th {
-  color: #64748B;
-  background: #F1F6FB;
-  font-size: 7.5px;
-  font-weight: 700;
-  text-transform: uppercase;
+.brand-logo sup {
+  font-size: 7px;
+  color: #16a4bd;
 }
 
-td {
-  color: #172033;
-  font-size: 8.5px;
+.yellow-band {
+  background: #ffdc00;
+  color: #111;
+  font-size: 12px;
+  padding: 4px 6px;
+  margin: 0 0 5px;
   font-weight: 400;
 }
 
-  th:last-child {
-    border-right: none;
-  }
-
- 
-
-  tbody tr:nth-child(even) td {
-    background: #fafcff;
-  }
-
-  tbody tr:last-child td {
-    border-bottom: none;
-  }
-
-  tr {
-    page-break-inside: avoid;
-  }
-
-  /* ============================================================
-     ACCOUNT CARD
-  ============================================================ */
-
-  .account-card {
-    margin-bottom: 18px;
-
-    border: 1px solid #cfd9e5;
-
-    border-radius: 9px;
-
-    background: #ffffff;
-
-    overflow: hidden;
-
-    box-shadow: 0 3px 9px rgba(15, 23, 42, 0.06);
-
-    page-break-inside: auto;
-  }
-
-  .account-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-
-    padding: 11px 13px;
-
-    background: linear-gradient(
-      135deg,
-      #edf4fc 0%,
-      #f7faff 100%
-    );
-
-    border-bottom: 1px solid #d7e0eb;
-  }
-
-  .account-number {
-    font-size: 7px;
-    font-weight: 700;
-
-    color: #64748b;
-
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .creditor-name {
-    margin-top: 3px;
-
-    font-size: 12px;
-    font-weight: 800;
-
-    color: #123d70;
-  }
-
-  .account-status {
-    padding: 5px 10px;
-
-    border: 1px solid #bfdbfe;
-
-    border-radius: 20px;
-
-    background: #eff6ff;
-
-    color: #1d4ed8;
-
-    font-size: 7px;
-    font-weight: 800;
-
-    text-transform: uppercase;
-  }
-
-  /* ============================================================
-     ACCOUNT INFORMATION
-  ============================================================ */
-
-  .account-info-grid {
-    display: grid;
-
-    grid-template-columns: repeat(4, 1fr);
-
-    border-bottom: 1px solid #dbe3ec;
-  }
-
-  .account-info-grid .info-item {
-    min-height: 44px;
-  }
-
-/* ============================================================
-   PAYMENT HISTORY
-============================================================ */
-
-.payment-history {
-  padding: 12px 14px 14px;
-
-  background: #ffffff;
-
-  border-top: 1px solid #dbe3ec;
-}
-
-.payment-title {
-  margin-bottom: 9px;
-
-  font-size: 10px;
-  font-weight: 800;
-
-  color: #173f6f;
-}
-
-.payment-title::before {
-  content: "";
-
-  display: inline-block;
-
-  width: 4px;
-  height: 12px;
-
-  margin-right: 6px;
-
-  vertical-align: -2px;
-
-  background: #2563eb;
-
-  border-radius: 3px;
-}
-
-.payment-classification-title {
-  padding: 8px 9px;
-
-  border: 1px solid #cbd5e1;
-  border-bottom: none;
-
-  background: #f8fafc;
-
-  color: #173f6f;
-
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+  padding: 0 2px 4px;
+  border-bottom: 3px solid #18a9c1;
+  margin-bottom: 6px;
   font-size: 8px;
-  font-weight: 800;
 }
 
-.payment-table-wrapper {
+.meta-grid > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta-grid em {
+  font-style: italic;
+  color: #777;
+  font-size: 7px;
+}
+
+.meta-grid strong {
+  font-weight: 700;
+  color: #222;
+}
+
+.section-title {
+  margin: 7px 0 3px;
+  padding: 0 1px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #444;
+  border-bottom: 1px solid #b7b7b7;
+  text-transform: uppercase;
+  break-after: avoid;
+}
+
+.consumer-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2px 12px;
+  padding: 1px 2px 3px;
+}
+
+.consumer-row > div:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.field {
+  margin: 1px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.field-label {
+  color: #31a9bf;
+  font-weight: 700;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.field-value {
+  color: #222;
+  font-weight: 700;
+  font-size: 8px;
+}
+
+.data-table,
+.summary-table,
+.score-table,
+.payment-table {
   width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 2px 0 5px;
+  font-size: 8px;
+}
 
-  overflow: hidden;
+.data-table th,
+.summary-table th,
+.score-table th {
+  color: #32a8bd;
+  background: #e9e9e9;
+  text-align: left;
+  font-size: 7px;
+  font-weight: 700;
+  padding: 4px;
+  vertical-align: top;
+}
 
-  border: 1px solid #cbd5e1;
+.data-table td,
+.summary-table td,
+.score-table td {
+  padding: 3px 4px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.data-table tbody tr:nth-child(odd),
+.summary-table tbody tr:nth-child(odd) {
+  background: #ededed;
+}
+
+.data-table tbody tr:nth-child(even),
+.summary-table tbody tr:nth-child(even) {
+  background: #fff;
+}
+
+.data-table th,
+.data-table td {
+  border: 0;
+}
+
+.data-table tr {
+  break-inside: avoid;
+}
+
+.score-table th:nth-child(1) { width: 25%; }
+.score-table th:nth-child(2) { width: 25%; }
+.score-table th:nth-child(3) { width: 50%; }
+
+.score-name {
+  background: #ededed;
+  color: #39a9bd;
+  font-weight: 700;
+}
+
+.score-number {
+  background: #ededed;
+  font-size: 22px;
+  color: #277b8d;
+  text-align: center;
+  font-weight: 400;
+}
+
+.score-factors {
+  background: #ededed;
+  font-size: 7px;
+}
+
+.range-box {
+  background: #ededed;
+  padding: 5px 7px;
+  margin: 5px 0 7px;
+  font-size: 7px;
+}
+
+.range-box strong {
+  display: block;
+  color: #39a9bd;
+  font-size: 8px;
+  margin-bottom: 2px;
+}
+
+.range-box span {
+  color: #b33;
+}
+
+.range-box div {
+  margin: 1px 0;
+}
+
+.subheading {
+  font-size: 9px;
+  font-weight: 700;
+  color: #36a9be;
+  margin: 5px 0 2px;
+}
+
+.summary-table th {
+  background: #e8e8e8;
+}
+
+.summary-table td {
+  font-size: 7px;
+}
+
+.summary-table i {
+  color: #888;
+  font-style: italic;
+}
+
+.address-gap {
+  margin-left: 12px;
+}
+
+.account-record {
+  padding: 5px 5px 4px;
+  border-bottom: 2px solid #999;
+  break-inside: auto;
+}
+
+.account-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-col {
+  min-width: 0;
+}
+
+.account-col .field {
+  margin: 2px 0;
+}
+
+.account-col .field-label {
+  color: #39a9bd;
+  font-size: 7px;
+}
+
+.account-col .field-value {
+  font-size: 7px;
+}
+
+.payment-block {
+  margin-top: 5px;
+}
+
+.payment-heading {
+  color: #35a9bd;
+  font-size: 8px;
+  font-weight: 700;
+  margin-bottom: 3px;
 }
 
 .payment-table {
-  width: 100%;
-
-  border-collapse: collapse;
-
-  table-layout: fixed;
-
-  background: #ffffff;
-
-  font-size: 7px;
+  margin: 0 0 1px;
+  table-layout: auto;
 }
 
-/* ============================================================
-   PAYMENT HEADER
-============================================================ */
-
-.payment-table thead th {
-  padding: 7px 3px;
-
-  background: #e8eef7;
-
-  border: 1px solid #c4d0df;
-
-  color: #173f6f;
-
-  font-size: 7px;
-  font-weight: 800;
-
+.payment-table td {
+  padding: 2px 1px;
   text-align: center;
-
-  white-space: nowrap;
-}
-
-/* Year column */
-
-.payment-table .year-column {
-  width: 5.5%;
-}
-
-/* Month columns */
-
-.payment-table thead th:not(.year-column) {
-  width: 7.875%;
-}
-
-/* ============================================================
-   PAYMENT BODY
-============================================================ */
-
-.payment-table tbody td {
-  height: 28px;
-
-  padding: 6px 3px;
-
-  border: 1px solid #cbd5e1;
-
-  color: #334155;
-
   font-size: 7px;
-  font-weight: 600;
-
-  text-align: center;
-
-  vertical-align: middle;
-
-  white-space: nowrap;
-}
-
-/* Year */
-
-.payment-table .payment-year {
-  background: #f1f5f9;
-
-  color: #173f6f;
-
-  font-size: 8px;
-
-  font-weight: 800;
-}
-
-/* Alternate year rows */
-
-.payment-table tbody tr:nth-child(even) td {
-  background: #fbfdff;
-}
-
-.payment-table tbody tr:nth-child(even) .payment-year {
-  background: #eef3f8;
-}
-
-/* ============================================================
-   PAYMENT STATUS
-============================================================ */
-
-/* 000 / STD */
-
-.payment-table td.status-good {
-  color: #173f6f;
-
-  font-weight: 800;
-
-  background: #ffffff;
-}
-
-/* Overdue / negative classification */
-
-.payment-table td.status-warning {
-  color: #b45309;
-
-  font-weight: 800;
-
-  background: #fffaf0;
-}
-
-/* XXX / Not reported */
-
-.payment-table td.status-unknown {
-  color: #64748b;
-
   font-weight: 700;
-
-  background: #f8fafc;
+  white-space: nowrap;
 }
 
-/* ============================================================
-   NOTE
-============================================================ */
-
-.payment-note {
-  margin-top: 7px;
-
-  padding: 6px 8px;
-
-  border-left: 3px solid #94a3b8;
-
-  background: #f8fafc;
-
-  color: #64748b;
-
-  font-size: 6.5px;
-
-  line-height: 1.5;
+.payment-table tr:first-child td {
+  background: #fff;
 }
 
-   
-  /* ============================================================
-     EMPTY BOX
-  ============================================================ */
+.payment-table tr:nth-child(2) td {
+  background: #ededed;
+  color: #555;
+  font-size: 7px;
+}
 
-  .empty-box {
-    padding: 15px;
+.payment-empty {
+  font-size: 7px;
+  color: #777;
+  padding: 2px 0;
+}
 
-    border: 1px dashed #cbd5e1;
+.empty {
+  padding: 5px;
+  background: #ededed;
+  color: #555;
+  font-size: 8px;
+  margin: 3px 0;
+}
 
-    border-radius: 7px;
+.footer-note {
+  font-size: 7px;
+  line-height: 1.35;
+  font-weight: 700;
+  margin-top: 8px;
+  padding: 5px 2px 0;
+  border-top: 2px solid #18a9c1;
+  color: #333;
+}
 
-    background: #f8fafc;
+.copyright {
+  text-align: center;
+  font-size: 7px;
+  font-weight: 700;
+  margin: 5px 0;
+  color: #333;
+}
 
-    color: #64748b;
+@media screen {
+  body {
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 5mm;
+    box-shadow: 0 0 5px #ddd;
+  }
+}
 
-    text-align: center;
-
-    font-size: 8px;
+@media print {
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
   }
 
-  /* ============================================================
-     BUREAU STATUS FLAGS
-  ============================================================ */
-
-  .flag-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+  .section-title, .subheading {
+    break-after: avoid;
   }
 
-  .flag-item {
-    flex: 1 1 130px;
-
-    padding: 9px 11px;
-
-    border: 1px solid #dbe3ec;
-    border-radius: 7px;
-
-    background: #f8fafc;
+  .data-table thead,
+  .summary-table thead {
+    display: table-header-group;
   }
 
-  .flag-label {
-    font-size: 7px;
-    font-weight: 700;
-
-    color: #64748b;
-
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
+  .account-record {
+    break-inside: auto;
   }
 
-  .flag-value {
-    margin-top: 4px;
-
-    font-size: 10px;
-    font-weight: 800;
+  .account-columns, .payment-block {
+    break-inside: avoid;
   }
-
-  .flag-yes {
-    color: #b91c1c;
-  }
-
-  .flag-no {
-    color: #15803d;
-  }
-
-  .flag-na {
-    color: #64748b;
-    font-weight: 400;
-  }
-
-  /* ============================================================
-     DATA NOTE
-  ============================================================ */
-
-  .data-note {
-    margin-top: 8px;
-
-    font-size: 8px;
-    font-style: italic;
-
-    color: #64748b;
-  }
-
-  /* ============================================================
-     FOOTER
-  ============================================================ */
-
-  .footer-note {
-    margin-top: 22px;
-
-    padding: 11px 12px;
-
-    border-top: 1px solid #dbe3ec;
-
-    background: #f8fafc;
-
-    color: #64748b;
-
-    font-size: 6.5px;
-
-    line-height: 1.6;
-
-    border-radius: 5px;
-  }
-
-  /* ============================================================
-     PAGE / PDF SETTINGS
-  ============================================================ */
-
-  .page-break {
-    page-break-before: always;
-  }
-
-  @page {
-    size: A4;
-    margin: 10mm;
-  }
-
-  @media print {
-    body {
-      background: #ffffff;
-    }
-
-    .report-header {
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    .generated-row,
-    .summary-card,
-    .score-box,
-    .account-header,
-    th,
-    .payment-note,
-    .footer-note {
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    .account-card {
-      box-shadow: none;
-    }
-  }
+}
 </style>
-
 </head>
 
 <body>
+${renderHeader(data)}
+${renderPersonalInformation(data)}
+${renderCreditScore(data)}
+${renderIdentifiers(data)}
+${renderPhones(data)}
+${renderEmails(data)}
+${renderAddresses(data)}
+${renderEmployment(data)}
+${renderSummary(data)}
+${renderAccounts(data)}
+${renderEnquiries(data)}
 
-  ${renderHeader(data)}
+<div class="footer-note">
+  All information contained in this credit report has been collated by
+  TransUnion CIBIL Limited (TU CIBIL) based on information provided /
+  submitted by its various members (“Members”), as part of periodic data
+  submission. Members are required to ensure accuracy, completeness and
+  veracity of the information submitted. The use of this report is governed
+  by the terms and conditions applicable to TU CIBIL and its Members.
+</div>
 
-  ${renderPersonalInformation(data)}
-
-  ${renderCreditScore(data)}
-
-  ${renderBureauStatus(data)}
-
-  ${renderAccountSummary(data)}
-
-  ${renderBureauCreditSummary(data)}
-
-  ${renderAddresses(data)}
-
-  ${renderIdentifiers(data)}
-
-  ${renderEmployment(data)}
-
-  ${renderAccounts(data)}
-
-  ${renderEnquiries(data)}
-
-  <div class="footer-note">
-    This document is generated from the bureau response received by the
-    application. Bureau-provided values are displayed as received wherever
-    applicable. This generated document is not itself an official bureau
-    certificate unless separately authorized.
-  </div>
+<div class="copyright">
+  © TransUnion CIBIL Limited. All rights reserved.
+</div>
 
 </body>
+</html>`;
 
-</html>
-  `;
-};
-
-module.exports = {
-  buildCibilReportHtml,
-};
+module.exports = { buildCibilReportHtml };
