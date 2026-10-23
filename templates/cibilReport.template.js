@@ -571,26 +571,58 @@ const renderPaymentHistory = (account) => {
       </div>`;
   }
 
-  const dates = entries.map(
-    (x) =>
-      `${String(x.date.month).padStart(2, "0")}-${String(x.date.year).slice(-2)}`,
-  );
+  const groupedByYear = entries.reduce((groups, item) => {
+    const year = item.date.year;
+
+    if (!groups[year]) {
+      groups[year] = [];
+    }
+
+    groups[year].push(item);
+    return groups;
+  }, {});
+
+  const yearWiseHtml = Object.keys(groupedByYear)
+    .sort((a, b) => Number(b) - Number(a))
+    .map((year) => {
+      const yearEntries = groupedByYear[year];
+
+      return `
+        <div class="payment-year-group">
+          <div class="payment-year-heading">${safe(year)}</div>
+
+          <table class="payment-table">
+            <tbody>
+              <tr>
+                ${yearEntries
+                  .map((item) => {
+                    const month = new Date(
+                      item.date.year,
+                      item.date.month - 1,
+                      1,
+                    ).toLocaleString("en", { month: "short" });
+
+                    return `<td>${safe(month)}</td>`;
+                  })
+                  .join("")}
+              </tr>
+
+              <tr>
+                ${yearEntries
+                  .map((item) => `<td>${safe(item.status)}</td>`)
+                  .join("")}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    })
+    .join("");
 
   return `
     <div class="payment-block">
       <div class="payment-heading">${heading}</div>
-
-      <table class="payment-table">
-        <tbody>
-          <tr>
-            ${entries.map((x) => `<td>${safe(x.status)}</td>`).join("")}
-          </tr>
-
-          <tr>
-            ${dates.map((d) => `<td>${safe(d)}</td>`).join("")}
-          </tr>
-        </tbody>
-      </table>
+      ${yearWiseHtml}
     </div>`;
 };
 
@@ -608,7 +640,14 @@ const renderAccount = (account) => {
       "ACCOUNT NUMBER",
       first(account.accountNumber),
       "TYPE",
-      first(account.accountType),
+      first(
+        account.accountType,
+        account.creditAccountType,
+        account.accountTypeDescription,
+        account.accountTypeName,
+        account.type,
+        account.portfolioType,
+      ),
       "OWNERSHIP",
       first(account.ownership),
       "Amount Overdue",
@@ -733,6 +772,7 @@ const buildCibilReportHtml = (data = {}) => `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Consumer CIR - TransUnion CIBIL</title>
 
+
 <style>
 * {
   box-sizing: border-box;
@@ -740,17 +780,24 @@ const buildCibilReportHtml = (data = {}) => `<!DOCTYPE html>
   print-color-adjust: exact;
 }
 
+/* Report text */
+body,
+body * {
+  font-weight: 700 !important;
+}
+
 @page {
   size: A4;
   margin: 7mm 7mm 8mm;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
   background: #fff;
-  color: #222;
+  color: #111;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 8px;
   line-height: 1.25;
@@ -770,16 +817,17 @@ html, body {
   white-space: nowrap;
 }
 
-.tu, .cibil {
+.tu,
+.cibil {
   font-size: 25px;
-  color: #16a4bd;
+  color: #083492;
   font-weight: 500;
   letter-spacing: -1px;
 }
 
 .brand-logo sup {
   font-size: 7px;
-  color: #16a4bd;
+  color: #083492;
 }
 
 .yellow-band {
@@ -788,7 +836,6 @@ html, body {
   font-size: 12px;
   padding: 4px 6px;
   margin: 0 0 5px;
-  font-weight: 400;
 }
 
 .meta-grid {
@@ -813,15 +860,13 @@ html, body {
 }
 
 .meta-grid strong {
-  font-weight: 700;
-  color: #222;
+  color: #111;
 }
 
 .section-title {
   margin: 7px 0 3px;
   padding: 0 1px 2px;
   font-size: 10px;
-  font-weight: 700;
   color: #444;
   border-bottom: 1px solid #b7b7b7;
   text-transform: uppercase;
@@ -846,15 +891,13 @@ html, body {
 }
 
 .field-label {
-  color: #31a9bf;
-  font-weight: 700;
+  color: #083492;
   font-size: 7px;
   text-transform: uppercase;
 }
 
 .field-value {
-  color: #222;
-  font-weight: 700;
+  color: #111;
   font-size: 8px;
 }
 
@@ -872,11 +915,10 @@ html, body {
 .data-table th,
 .summary-table th,
 .score-table th {
-  color: #32a8bd;
+  color: #083492;
   background: #e9e9e9;
   text-align: left;
   font-size: 7px;
-  font-weight: 700;
   padding: 4px;
   vertical-align: top;
 }
@@ -909,22 +951,28 @@ html, body {
   break-inside: avoid;
 }
 
-.score-table th:nth-child(1) { width: 25%; }
-.score-table th:nth-child(2) { width: 25%; }
-.score-table th:nth-child(3) { width: 50%; }
+.score-table th:nth-child(1) {
+  width: 25%;
+}
+
+.score-table th:nth-child(2) {
+  width: 25%;
+}
+
+.score-table th:nth-child(3) {
+  width: 50%;
+}
 
 .score-name {
   background: #ededed;
-  color: #39a9bd;
-  font-weight: 700;
+  color: #083492;
 }
 
 .score-number {
   background: #ededed;
   font-size: 22px;
-  color: #277b8d;
+  color: #083492;
   text-align: center;
-  font-weight: 400;
 }
 
 .score-factors {
@@ -941,7 +989,7 @@ html, body {
 
 .range-box strong {
   display: block;
-  color: #39a9bd;
+  color: #083492;
   font-size: 8px;
   margin-bottom: 2px;
 }
@@ -956,8 +1004,7 @@ html, body {
 
 .subheading {
   font-size: 9px;
-  font-weight: 700;
-  color: #36a9be;
+  color: #083492;
   margin: 5px 0 2px;
 }
 
@@ -978,6 +1025,7 @@ html, body {
   margin-left: 12px;
 }
 
+/* Credit account details */
 .account-record {
   padding: 5px 5px 4px;
   border-bottom: 2px solid #999;
@@ -999,7 +1047,7 @@ html, body {
 }
 
 .account-col .field-label {
-  color: #39a9bd;
+  color: #083492;
   font-size: 7px;
 }
 
@@ -1007,44 +1055,81 @@ html, body {
   font-size: 7px;
 }
 
+/* Payment history heading */
 .payment-block {
-  margin-top: 5px;
+  margin-top: 6px;
+  width: 100%;
 }
 
 .payment-heading {
-  color: #35a9bd;
+  color: #083492;
   font-size: 8px;
-  font-weight: 700;
-  margin-bottom: 3px;
+  margin-bottom: 5px;
 }
 
+/* Separate bordered box for each year */
+.payment-year-group {
+  width: 100%;
+  margin: 0 0 6px;
+  border: 1px solid #777;
+  border-radius: 2px;
+  overflow: hidden;
+  break-inside: avoid;
+}
+
+/* Year title row */
+.payment-year-heading {
+  background: #e9e9e9;
+  color: #083492;
+  font-size: 8px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #777;
+}
+
+/* Month and status grid */
 .payment-table {
-  margin: 0 0 1px;
-  table-layout: auto;
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  border: 0;
 }
 
 .payment-table td {
-  padding: 2px 1px;
+  border: 1px solid #999;
+  padding: 4px 2px;
   text-align: center;
+  vertical-align: middle;
   font-size: 7px;
-  font-weight: 700;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
+/* Remove extra outer edges because year box has its own border */
 .payment-table tr:first-child td {
   background: #fff;
+  color: #111;
+  border-top: 0;
 }
 
-.payment-table tr:nth-child(2) td {
+.payment-table tr:last-child td {
   background: #ededed;
-  color: #555;
-  font-size: 7px;
+  color: #333;
+}
+
+.payment-table td:first-child {
+  border-left: 0;
+}
+
+.payment-table td:last-child {
+  border-right: 0;
 }
 
 .payment-empty {
   font-size: 7px;
   color: #777;
-  padding: 2px 0;
+  padding: 4px;
+  border: 1px solid #999;
 }
 
 .empty {
@@ -1058,17 +1143,15 @@ html, body {
 .footer-note {
   font-size: 7px;
   line-height: 1.35;
-  font-weight: 700;
   margin-top: 8px;
   padding: 5px 2px 0;
-  border-top: 2px solid #18a9c1;
+  border-top: 2px solid #167F91;
   color: #333;
 }
 
 .copyright {
   text-align: center;
   font-size: 7px;
-  font-weight: 700;
   margin: 5px 0;
   color: #333;
 }
@@ -1083,14 +1166,16 @@ html, body {
 }
 
 @media print {
-  html, body {
+  html,
+  body {
     width: 100%;
     margin: 0;
     padding: 0;
     box-shadow: none;
   }
 
-  .section-title, .subheading {
+  .section-title,
+  .subheading {
     break-after: avoid;
   }
 
@@ -1103,11 +1188,12 @@ html, body {
     break-inside: auto;
   }
 
-  .account-columns, .payment-block {
+  .account-columns {
     break-inside: avoid;
   }
 }
 </style>
+
 </head>
 
 <body>
