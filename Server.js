@@ -37,6 +37,23 @@ const gstRoutes = require("./routes/gst");
 // Connect Database
 connectDB();
 
+// ---------------------------------------------------------------------------
+// Boot-time BrandProfile backfill — fire-and-forget, never blocks startup.
+// For every partner with brandingStatus in ['paid','onboarding','active'] that
+// has no active BrandProfile, creates one from their stored brandingDetails.
+// Guarded by BRANDPROFILE_BACKFILL_ON_BOOT (default: 'true').
+// ---------------------------------------------------------------------------
+if (String(process.env.BRANDPROFILE_BACKFILL_ON_BOOT ?? 'true').toLowerCase() !== 'false') {
+  try {
+    const { backfillBrandProfiles } = require('./scripts/backfillBrandProfiles');
+    backfillBrandProfiles().catch((err) =>
+      console.error('[backfillBrandProfiles] boot run failed:', err.message),
+    );
+  } catch (err) {
+    console.error('[backfillBrandProfiles] failed to require/run:', err.message);
+  }
+}
+
 // Seed default pricing (insert-only — never overwrites admin edits)
 // + one-way migration: older docs (e.g. the v1 flat-price shape without
 // `plans`) get the missing sections backfilled, existing values untouched.

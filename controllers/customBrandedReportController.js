@@ -812,6 +812,7 @@ async function getActiveBrandProfile(req, res) {
     if (!profile) {
       return res.status(404).json({
         success: false,
+        code: 'BRAND_PROFILE_NOT_FOUND',
         message: 'No active brand profile found for this partner.',
       });
     }
