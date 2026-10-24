@@ -572,24 +572,33 @@ const generateCrifPdf = async (apiData, creditReportId) => {
   // ----------------------------------------------------------
   // PAYMENT HISTORY
   // ----------------------------------------------------------
+
   const normalizeHistory = (raw) => {
     if (!raw) return [];
 
+    // Handles array-based payment history
     if (Array.isArray(raw)) {
       return raw
         .map((item) => ({
           month: getValue(item, "MONTH", "MONTH-NAME") || "",
           year: String(getValue(item, "YEAR") || ""),
-          amount: String(
-            getValue(item, "AMOUNT", "DAYS-PAST-DUE", "DPD") || "-",
-          ),
+
+          amount:
+            String(getValue(item, "AMOUNT", "DAYS-PAST-DUE", "DPD") || "-")
+              .replace(/XXX/gi, "")
+              .replace(/\s+/g, " ")
+              .trim() || "-",
+
           status: String(
             getValue(item, "STATUS", "ASSET-CLASSIFICATION") || "-",
-          ).toUpperCase(),
+          )
+            .trim()
+            .toUpperCase(),
         }))
         .filter((item) => item.month && item.year);
     }
 
+    // Handles string-based payment history
     const text = String(raw)
       .replace(/\r?\n/g, " ")
       .replace(/\s+/g, " ")
@@ -611,7 +620,9 @@ const generateCrifPdf = async (apiData, creditReportId) => {
       output.push({
         month: match[1],
         year: match[2],
-        amount: match[3].trim(),
+
+        amount: match[3].replace(/XXX/gi, "").trim() || "-",
+
         status: match[4].trim().toUpperCase(),
       });
     }
@@ -654,44 +665,66 @@ const generateCrifPdf = async (apiData, creditReportId) => {
 
     if (!history.length) {
       return `
-        <div class="muted">
-          Payment history is not available in the supplied response.
-        </div>
-      `;
+      <div class="muted">
+        Payment history is not available in the supplied response.
+      </div>
+    `;
     }
 
     const years = {};
 
     history.forEach((item) => {
-      const month = monthMap[item.month] || item.month;
+      const monthKey = String(item.month || "")
+        .slice(0, 3)
+        .toLowerCase();
+
+      const month = {
+        jan: "January",
+        feb: "February",
+        mar: "March",
+        apr: "April",
+        may: "May",
+        jun: "June",
+        jul: "July",
+        aug: "August",
+        sep: "September",
+        oct: "October",
+        nov: "November",
+        dec: "December",
+      }[monthKey];
+
+      if (!month || !item.year) return;
 
       if (!years[item.year]) years[item.year] = {};
 
       years[item.year][month] = {
-        amount: item.amount,
-        status: item.status,
+        amount:
+          String(item.amount || "-")
+            .replace(/\bXXX\b/gi, "")
+            .trim() || "-",
+        status: String(item.status || "-")
+          .trim()
+          .toUpperCase(),
       };
     });
 
     return `
-      <div class="table-wrap">
-        <table class="payment-table">
-          <thead>
-            <tr>
-              <th class="year-col">Year</th>
-              ${months
-                .map((month) => `<th>${esc(month.slice(0, 3))}</th>`)
-                .join("")}
-            </tr>
-          </thead>
+    <div class="table-wrap payment-history-wrap">
+      <table class="payment-table">
+        <thead>
+          <tr>
+            <th class="year-col">Year</th>
+            ${months.map((month) => `<th>${esc(month)}</th>`).join("")}
+          </tr>
+        </thead>
 
-          <tbody>
-            ${Object.keys(years)
-              .sort((a, b) => Number(b) - Number(a))
-              .map(
-                (year) => `
+        <tbody>
+          ${Object.keys(years)
+            .sort((a, b) => Number(b) - Number(a))
+            .map(
+              (year) => `
                 <tr>
-                  <th>${esc(year)}</th>
+                  <th class="year-cell">${esc(year)}</th>
 
                   ${months
                     .map((month) => {
@@ -701,8 +734,7 @@ const generateCrifPdf = async (apiData, creditReportId) => {
                         return `<td class="empty-cell">-</td>`;
                       }
 
-                      const status = String(item.status || "").toUpperCase();
-
+                      const status = item.status;
                       const className =
                         status === "STD"
                           ? "std"
@@ -710,26 +742,28 @@ const generateCrifPdf = async (apiData, creditReportId) => {
                             ? "alert"
                             : "";
 
+                      const amount =
+                        String(item.amount ?? "-")
+                          .replace(/XXX/gi, "")
+                          .trim() || "-";
+
                       return `
-                      <td class="${className}">
-                        <span class="payment-amount">
-                          ${esc(item.amount)}
-                        </span>
-                        <span class="payment-status">
-                          ${esc(status)}
-                        </span>
-                      </td>
-                    `;
+                        <td class="${className}">
+                          <span class="payment-value">
+  ${esc(amount)}
+</span>
+                        </td>
+                      `;
                     })
                     .join("")}
                 </tr>
               `,
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
   };
 
   // ----------------------------------------------------------
@@ -1647,10 +1681,10 @@ b {
 
 .payment-heading {
   display: block;
-  color: var(--key-color) !important;
-  font-size: 9px;
+  margin: 8px 0 12px;
+  color: #111 !important;
+  font-size: 10px;
   font-weight: 800 !important;
-  margin: 8px 0;
 }
 
 .payment-table {
