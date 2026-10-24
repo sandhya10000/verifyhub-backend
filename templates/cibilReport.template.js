@@ -43,6 +43,80 @@ const formatAmount = (value) => {
     ? n.toLocaleString("en-IN", { maximumFractionDigits: 2 })
     : escapeHtml(value);
 };
+const formatAccountType = (account = {}) => {
+  const descriptions = [
+    account.accountTypeDescription,
+    account.accountType?.description,
+    account.creditAccountType?.description,
+    account.accountTypeName,
+  ];
+
+  const description = descriptions.find(
+    (value) => typeof value === "string" && value.trim() !== "",
+  );
+
+  if (description) return description;
+
+  const rawCode = first(
+    account.accountTypeSymbol,
+    account.accountType?.symbol,
+    account.creditAccountType?.symbol,
+    account.accountType,
+    account.creditAccountType,
+    account.type,
+    account.portfolioType,
+    account.Tradeline?.AccountType?.symbol,
+  );
+
+  const code = String(rawCode).trim();
+
+  const accountTypeMap = {
+    "00": "Other",
+    "01": "Auto Loan (Personal)",
+    "02": "Housing Loan",
+    "03": "Property Loan",
+    "04": "Loan Against Shares/Securities",
+    "05": "Personal Loan",
+    "06": "Consumer Loan",
+    "07": "Gold Loan",
+    "08": "Education Loan",
+    "09": "Loan to Professional",
+    10: "Credit Card",
+    11: "Leasing",
+    12: "Overdraft",
+    13: "Two-Wheeler Loan",
+    14: "Non-Funded Credit Facility",
+    15: "Loan Against Bank Deposits",
+    16: "Fleet Card",
+    17: "Commercial Vehicle Loan",
+    31: "Secured Credit Card",
+    32: "Used Car Loan",
+    37: "Loan on Credit Card",
+    40: "Microfinance - Business Loan",
+    41: "Microfinance - Personal Loan",
+    42: "Microfinance - Housing Loan",
+    43: "Microfinance - Other",
+    45: "P2P Personal Loan",
+    46: "P2P Auto Loan",
+    47: "P2P Education Loan",
+    50: "Business Loan - Secured",
+    51: "Business Loan - General",
+    52: "Business Loan - Priority Sector - Small Business",
+    53: "Business Loan - Priority Sector - Agriculture",
+    54: "Business Loan - Priority Sector - Others",
+    55: "Business Non-Funded Credit Facility - General",
+    56: "Business Non-Funded Credit Facility - Priority Sector - Small Business",
+    57: "Business Non-Funded Credit Facility - Priority Sector - Agriculture",
+    58: "Business Non-Funded Credit Facility - Priority Sector - Others",
+    59: "Business Loan Against Bank Deposits",
+    61: "Business Loan - Unsecured",
+  };
+
+  return (
+    accountTypeMap[code] ||
+    (code && code !== "-" ? `Account Type (Code: ${code})` : "-")
+  );
+};
 
 const formatDateTime = (value) => {
   if (!hasValue(value)) return "-";
@@ -640,14 +714,7 @@ const renderAccount = (account) => {
       "ACCOUNT NUMBER",
       first(account.accountNumber),
       "TYPE",
-      first(
-        account.accountType,
-        account.creditAccountType,
-        account.accountTypeDescription,
-        account.accountTypeName,
-        account.type,
-        account.portfolioType,
-      ),
+      formatAccountType(account),
       "OWNERSHIP",
       first(account.ownership),
       "Amount Overdue",

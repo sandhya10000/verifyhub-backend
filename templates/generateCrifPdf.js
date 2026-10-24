@@ -1049,15 +1049,27 @@ const generateCrifPdf = async (apiData, creditReportId) => {
       <title>CRIF High Mark Consumer Credit Report</title>
 
       <style>
-     
+ 
 /* =========================================
    CRIF REFERENCE PDF STYLE
    HORIZONTAL LAYOUT - A4 PDF
+   BOLD KEYS + PAYMENT HISTORY FIX
 ========================================= */
 
 @page {
   size: A4;
   margin: 10mm 9mm 12mm;
+}
+
+:root {
+  --primary: #234f6b;
+  --primary-dark: #173d55;
+  --key-color: #173f59;
+  --value-color: #172630;
+  --border-color: #cbd5db;
+  --light-bg: #f0f3f4;
+  --green-bg: #e7f3e8;
+  --green-text: #245a37;
 }
 
 * {
@@ -1074,8 +1086,8 @@ body {
 body {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9px;
-  color: #263746;
-  line-height: 1.35;
+  color: var(--value-color);
+  line-height: 1.4;
   background: #fff;
   overflow-wrap: anywhere;
 }
@@ -1085,12 +1097,74 @@ img {
 }
 
 /* =========================================
+   GLOBAL TEXT COLORS
+   KEYS / LABELS BOLD
+========================================= */
+
+.label,
+.info-card .label,
+.account-field .label,
+.account-title,
+.section-title,
+.subheading,
+.payment-heading,
+.score-title,
+.data-table th,
+.summary-table th,
+.payment-table th,
+strong,
+b {
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
+}
+
+.value,
+.info-card .value,
+.account-field .value,
+.data-table td,
+.summary-table td,
+.payment-table td {
+  color: var(--value-color) !important;
+  font-weight: 500 !important;
+}
+
+/* Bold labels in common key-value structures */
+.info-card .label,
+.account-field .label {
+  display: block;
+  font-size: 8px;
+  font-weight: 800 !important;
+  margin-bottom: 3px;
+}
+
+.info-card .value,
+.account-field .value {
+  display: block;
+  font-size: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* If the template uses label/value inline pairs */
+.info-card label,
+.account-field label,
+.key,
+.field-label,
+.data-label {
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
+}
+
+/* =========================================
    HEADER - HORIZONTAL
 ========================================= */
 
 .masthead {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) !important;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 1.5fr)
+    minmax(0, 1fr) !important;
   align-items: center !important;
   gap: 8px;
   width: 100%;
@@ -1102,8 +1176,8 @@ img {
 .brand {
   min-width: 0;
   font-size: 17px;
-  font-weight: 800;
-  color: #24516b;
+  font-weight: 800 !important;
+  color: var(--primary-dark);
   letter-spacing: -0.4px;
   text-align: left;
 }
@@ -1111,8 +1185,8 @@ img {
 .brand small {
   display: block !important;
   font-size: 7px;
-  font-weight: 400;
-  color: #526a78;
+  font-weight: 500 !important;
+  color: #435966;
   letter-spacing: 0;
   margin-top: 4px;
 }
@@ -1122,7 +1196,8 @@ img {
   min-width: 0;
   text-align: center !important;
   font-size: 16px;
-  color: #315c78;
+  font-weight: 800 !important;
+  color: var(--primary-dark);
   margin: 0 0 3px;
 }
 
@@ -1131,18 +1206,20 @@ img {
   font-size: 7px;
   line-height: 1.5;
   text-align: right !important;
-  color: #344c5a;
+  color: #263d49;
   overflow-wrap: anywhere;
 }
 
 .masthead::after {
-  content: none;
+  content: none !important;
 }
 
 .prepared {
   display: block;
   text-align: center;
   font-size: 10px;
+  font-weight: 700 !important;
+  color: var(--primary-dark);
   margin-bottom: 12px;
 }
 
@@ -1161,7 +1238,7 @@ img {
   color: #243d2c;
   padding: 8px 12px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800 !important;
   text-transform: none;
   letter-spacing: 0;
   margin: 12px 0 8px;
@@ -1183,9 +1260,9 @@ img {
   background: #c6e5c9;
   border: 0;
   border-radius: 2px;
-  color: #243d2c;
+  color: #203c2a !important;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800 !important;
   padding: 8px 12px;
   margin-bottom: 10px;
   break-after: avoid;
@@ -1193,12 +1270,12 @@ img {
 
 .section-title.orange-title {
   background: #ffdfad;
-  color: #3e3425;
+  color: #3e3425 !important;
 }
 
 /* =========================================
    INQUIRY / PERSONAL INFORMATION
-   3 COLUMNS HORIZONTAL
+   THREE COLUMNS
 ========================================= */
 
 .info-grid {
@@ -1226,8 +1303,9 @@ img {
 
 .label {
   display: block;
-  color: #365c78;
+  color: var(--key-color) !important;
   font-size: 8px;
+  font-weight: 800 !important;
   text-transform: none;
   letter-spacing: 0;
   margin-bottom: 2px;
@@ -1236,14 +1314,14 @@ img {
 .value {
   display: block;
   font-size: 8px;
-  color: #202c33;
-  font-weight: 500;
+  color: var(--value-color) !important;
+  font-weight: 500 !important;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 /* =========================================
-   CREDIT SCORE - HORIZONTAL
+   CREDIT SCORE
 ========================================= */
 
 .score-panel {
@@ -1272,32 +1350,53 @@ img {
 }
 
 .score-title {
-  color: #365c78;
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
   text-transform: uppercase;
   font-size: 10px;
 }
 
 .score-number {
   flex-shrink: 0;
-  color: #315b78;
+  color: var(--primary-dark) !important;
   font-size: 31px;
+  font-weight: 800 !important;
   white-space: nowrap;
 }
 
 .score-number small {
-  color: #315b78;
+  color: var(--primary-dark) !important;
+  font-weight: 700 !important;
+}
+
+/* Circular score badge, if score-number is the circle element */
+.score-number.circle,
+.score-number.score-circle,
+.score-circle {
+  display: inline-flex !important;
+  justify-content: center;
+  align-items: center;
+  width: 76px;
+  height: 76px;
+  border: 3px solid var(--primary);
+  border-radius: 50% !important;
+  text-align: center;
+  padding: 8px;
 }
 
 .score-status {
-  color: #315b78;
+  color: var(--primary-dark) !important;
+  font-weight: 800 !important;
 }
 
 .score-description {
-  color: #4e5e66;
+  color: #334953 !important;
+  font-weight: 500 !important;
 }
 
 .score-range {
   font-size: 8px;
+  font-weight: 700 !important;
 }
 
 /* =========================================
@@ -1308,7 +1407,7 @@ img {
   display: block;
   font-size: 7px;
   font-style: italic;
-  color: #697780;
+  color: #52636d;
   text-align: center;
   margin: 0 0 10px;
 }
@@ -1323,15 +1422,17 @@ img {
 .subheading {
   display: block;
   width: 100%;
-  background: #f1f3f4;
-  color: #365c78;
+  background: var(--light-bg);
+  color: var(--key-color) !important;
   font-size: 8px;
+  font-weight: 800 !important;
   padding: 7px;
   margin-bottom: 0;
 }
 
 /* =========================================
-   TABLES - KEEP COLUMNS HORIZONTAL
+   ALL TABLES
+   HORIZONTAL TABLE LAYOUT
 ========================================= */
 
 .data-table,
@@ -1342,7 +1443,7 @@ img {
   max-width: 100%;
   border-collapse: collapse !important;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: fixed !important;
 }
 
 .data-table thead,
@@ -1362,22 +1463,23 @@ img {
 .payment-table tr {
   display: table-row !important;
   break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .data-table th,
 .summary-table th,
 .payment-table th {
   display: table-cell !important;
-  background: #f1f3f4;
-  color: #365c78;
+  background: var(--light-bg);
+  color: var(--key-color) !important;
   font-size: 7px;
-  font-weight: 700;
+  font-weight: 800 !important;
   text-transform: none;
   letter-spacing: 0;
   text-align: left;
   vertical-align: middle !important;
   padding: 6px 5px;
-  border: 1px solid #d9dfe2;
+  border: 1px solid var(--border-color);
   overflow-wrap: anywhere;
   word-break: normal;
 }
@@ -1387,11 +1489,11 @@ img {
 .payment-table td {
   display: table-cell !important;
   background: #fff;
-  color: #25343c;
+  color: var(--value-color) !important;
   font-size: 8px;
-  font-weight: 400;
+  font-weight: 500 !important;
   padding: 6px 5px;
-  border: 1px solid #d9dfe2;
+  border: 1px solid var(--border-color);
   vertical-align: top !important;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -1399,7 +1501,7 @@ img {
 
 .summary-table td.number {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800 !important;
   text-align: center;
 }
 
@@ -1430,6 +1532,13 @@ img {
 
 .inline-metrics > * {
   min-width: 0;
+}
+
+.inline-metrics strong,
+.inline-metrics b,
+.inline-metrics .label {
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
 }
 
 /* =========================================
@@ -1472,8 +1581,9 @@ img {
   flex-shrink: 0;
   justify-content: center;
   align-items: center;
-  background: #315b78;
-  color: #fff;
+  background: var(--primary);
+  color: #fff !important;
+  font-weight: 800 !important;
 }
 
 .account-title-wrap {
@@ -1483,8 +1593,9 @@ img {
 }
 
 .account-title {
-  color: #315b78;
+  color: var(--primary-dark) !important;
   font-size: 9px;
+  font-weight: 800 !important;
   overflow-wrap: anywhere;
 }
 
@@ -1492,7 +1603,8 @@ img {
   display: inline-block !important;
   flex-shrink: 0;
   background: #d8eadb;
-  color: #285d3a;
+  color: #245a37 !important;
+  font-weight: 800 !important;
   white-space: nowrap;
   padding: 3px 6px;
 }
@@ -1518,35 +1630,109 @@ img {
 
 .account-field .label {
   margin-bottom: 3px;
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
 }
 
 .account-field .value {
   line-height: 1.4;
+  color: var(--value-color) !important;
+  font-weight: 500 !important;
 }
 
 /* =========================================
    PAYMENT HISTORY
+   TABLE FIXES
 ========================================= */
 
 .payment-heading {
   display: block;
-  color: #365c78;
+  color: var(--key-color) !important;
   font-size: 9px;
+  font-weight: 800 !important;
   margin: 8px 0;
 }
 
 .payment-table {
+  display: table !important;
+  width: 100% !important;
+  max-width: 100%;
   table-layout: fixed !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+}
+
+.payment-table thead {
+  display: table-header-group !important;
+}
+
+.payment-table tbody {
+  display: table-row-group !important;
+}
+
+.payment-table tr {
+  display: table-row !important;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.payment-table th,
+.payment-table td {
+  display: table-cell !important;
+  vertical-align: middle !important;
+  text-align: center;
+  border: 1px solid var(--border-color) !important;
+  padding: 5px 3px !important;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
 }
 
 .payment-table th {
-  background: #f0f2f3;
-  color: #365c78;
+  background: var(--light-bg) !important;
+  color: var(--key-color) !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
 }
 
+.payment-table td {
+  background: #fff !important;
+  color: var(--value-color) !important;
+  font-size: 7px !important;
+  font-weight: 600 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Standard / on-time payment indicator */
 .payment-table td.std {
-  background: #e7f3e8;
-  color: #285d3a;
+  background: var(--green-bg) !important;
+  color: var(--green-text) !important;
+  font-weight: 800 !important;
+}
+
+/* Keep payment codes/numbers readable */
+.payment-table td span,
+.payment-table td strong,
+.payment-table td b {
+  color: inherit !important;
+  font-weight: 800 !important;
+}
+
+/* Prevent CSS pseudo-elements from duplicating cell text.
+   This does not remove XXX/numbers present in actual HTML data. */
+.payment-table td::before,
+.payment-table td::after,
+.payment-table th::before,
+.payment-table th::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Don't allow nested elements to create extra layout columns */
+.payment-table td > *,
+.payment-table th > * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* =========================================
@@ -1557,17 +1743,25 @@ img {
   display: block;
   width: 100%;
   border-top: 1px solid #c5cfd4;
-  color: #59666e;
+  color: #43545d;
   font-size: 7px;
+  font-weight: 500 !important;
   line-height: 1.5;
   padding-top: 6px;
+}
+
+.disclaimer strong,
+.disclaimer b {
+  color: var(--key-color) !important;
+  font-weight: 800 !important;
 }
 
 .footer-note {
   display: block;
   width: 100%;
-  color: #6c7a81;
+  color: #52636d;
   font-size: 7px;
+  font-weight: 500 !important;
   text-align: center;
   margin-top: 8px;
 }
@@ -1580,8 +1774,8 @@ img {
   html,
   body {
     width: 100%;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .masthead,
@@ -1589,16 +1783,22 @@ img {
   .score-panel,
   .account-heading {
     break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .section-title,
   .variation-block {
     break-after: avoid;
+    page-break-after: avoid;
   }
 
-  .section-title {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+  .section-title,
+  .subheading,
+  .data-table th,
+  .summary-table th,
+  .payment-table th {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .data-table,
@@ -1613,10 +1813,37 @@ img {
   .summary-table td,
   .payment-table th,
   .payment-table td {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
+
+/* =========================================
+   SMALL SCREEN FALLBACK
+   PDF remains A4 when rendered by Puppeteer
+========================================= */
+
+@media screen and (max-width: 650px) {
+  .masthead {
+    grid-template-columns: minmax(0, 1fr) !important;
+    text-align: center;
+  }
+
+  .brand,
+  .mast-right {
+    text-align: center !important;
+  }
+
+  .info-grid,
+  .account-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .score-panel {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
  
       </style>
     </head>
