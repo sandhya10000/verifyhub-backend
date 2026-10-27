@@ -94,6 +94,29 @@ const normalizeDate = (value) => {
 
   return text || "-";
 };
+// ============================================================
+// FORMAT REPORT TIME
+// ============================================================
+
+const formatTime = (value) => {
+  if (!value) return "-";
+
+  const raw = String(value).trim();
+
+  // Example: 2026-10-27 13:15:08.123521
+  const match = raw.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2}):(\d{2})/);
+
+  if (!match) return raw;
+
+  const hours = Number(match[1]);
+  const minutes = match[2];
+  const seconds = match[3];
+
+  const period = hours >= 12 ? "PM" : "AM";
+  const formattedHours = String(hours % 12 || 12).padStart(2, "0");
+
+  return `${formattedHours}:${minutes}:${seconds} ${period}`;
+};
 
 // ============================================================
 // MASK ACCOUNT NUMBER
@@ -209,13 +232,15 @@ const extractEmails = (borrower) => {
 
   return [
     ...new Set(
-      entries.map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
+      entries
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
 
-        return item?.Email || item?.email || item?.EmailAddress || null;
-      }).filter(Boolean),
+          return item?.Email || item?.email || item?.EmailAddress || null;
+        })
+        .filter(Boolean),
     ),
   ];
 };
@@ -233,19 +258,21 @@ const extractPhones = (borrower) => {
 
   return [
     ...new Set(
-      entries.map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
+      entries
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
 
-        return (
-          item?.PhoneNumber?.Number ||
-          item?.PhoneNumber ||
-          item?.Number ||
-          item?.telephone ||
-          null
-        );
-      }).filter(Boolean),
+          return (
+            item?.PhoneNumber?.Number ||
+            item?.PhoneNumber ||
+            item?.Number ||
+            item?.telephone ||
+            null
+          );
+        })
+        .filter(Boolean),
     ),
   ];
 };
@@ -851,9 +878,19 @@ const prepareCibilPdfData = (apiResponse, creditReportId) => {
 
     reportVersion: report?.currentversion || "-",
 
-    generatedAt: new Date().toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-    }),
+    generatedAt: (() => {
+      const apiDateTime = apiResponse?.data?.verify?.result?.datetime;
+
+      if (!apiDateTime) {
+        return new Date().toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+        });
+      }
+
+      return apiDateTime.split(" ")[0];
+    })(),
+
+    generatedTime: formatTime(apiResponse?.data?.verify?.result?.datetime),
 
     borrower: {
       borrowerKey: borrower?.borrowerKey || "-",
@@ -1041,7 +1078,7 @@ const generateCibilPdf = async (apiResponse, creditReportId) => {
 
       preferCSSPageSize: true,
 
-      displayHeaderFooter: true,
+      displayHeaderFooter: false,
 
       headerTemplate: `
         <div

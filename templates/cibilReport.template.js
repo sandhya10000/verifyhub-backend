@@ -131,6 +131,26 @@ const formatDateTime = (value) => {
   return formatDate(value);
 };
 
+const formatTime = (value) => {
+  if (!hasValue(value)) return "-";
+
+  const raw = String(value).trim();
+
+  // JSON datetime format: 2026-10-24 18:08:07.649392
+  const match = raw.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2}):(\d{2})/);
+
+  if (match) {
+    const hours = Number(match[1]);
+    const minutes = match[2];
+    const seconds = match[3];
+    const period = hours >= 12 ? "PM" : "AM";
+    const formattedHours = String(hours % 12 || 12).padStart(2, "0");
+
+    return `${formattedHours}:${minutes}:${seconds} ${period}`;
+  }
+
+  return escapeHtml(raw);
+};
 const sectionTitle = (title, extraClass = "") =>
   `<div class="section-title ${extraClass}">${safe(title)}</div>`;
 
@@ -170,7 +190,14 @@ const renderHeader = (data) => {
   );
 
   const dateText = first(meta.reportDate, data.reportDate, generated);
-  const timeText = first(meta.reportTime, data.reportTime, "-");
+  const timeText = first(
+    meta.reportTime,
+    data.reportTime,
+    data.generatedTime,
+    data.reportMeta?.datetime,
+    data.datetime,
+    "-",
+  );
 
   return `
     <div class="brand-row">
@@ -196,7 +223,7 @@ const renderHeader = (data) => {
       </div>
 
       <div><em>TIME:</em>
-        <strong>${safe(timeText)}</strong>
+       <strong>${safe(formatTime(timeText))}</strong>
       </div>
 
       <div><em>MEMBER REFERENCE NUMBER:</em>
@@ -618,8 +645,22 @@ const renderPaymentHistory = (account) => {
     }));
   }
 
-  const heading =
-    "DAYS PAST DUE/ASSET CLASSIFICATION (UP TO 36 MONTHS; LEFT TO RIGHT)";
+  const heading = "Payment History/Asset Classification:";
+
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
 
   if (!Array.isArray(history) || !history.length) {
     return `
@@ -634,69 +675,77 @@ const renderPaymentHistory = (account) => {
       date: parsePaymentDate(item),
       status: paymentStatus(item),
     }))
-    .filter((x) => x.date && x.date.month >= 1 && x.date.month <= 12)
-    .sort((a, b) => b.date.year - a.date.year || b.date.month - a.date.month);
+    .filter(
+      (item) => item.date && item.date.month >= 1 && item.date.month <= 12,
+    );
 
   if (!entries.length) {
     return `
       <div class="payment-block">
         <div class="payment-heading">${heading}</div>
-        <div class="payment-empty">Payment history dates could not be processed.</div>
+        <div class="payment-empty">
+          Payment history dates could not be processed.
+        </div>
       </div>`;
   }
 
-  const groupedByYear = entries.reduce((groups, item) => {
-    const year = item.date.year;
+  // Store payment status by year and month.
+  const yearWise = {};
 
-    if (!groups[year]) {
-      groups[year] = [];
+  entries.forEach(({ date, status }) => {
+    const { year, month } = date;
+
+    if (!yearWise[year]) {
+      yearWise[year] = {};
     }
 
-    groups[year].push(item);
-    return groups;
-  }, {});
+    // If duplicate records exist, keep the first one.
+    if (yearWise[year][month] === undefined) {
+      yearWise[year][month] = status;
+    }
+  });
 
-  const yearWiseHtml = Object.keys(groupedByYear)
+  // Generate all 12 month columns for every reported year.
+  const yearWiseHtml = Object.keys(yearWise)
     .sort((a, b) => Number(b) - Number(a))
     .map((year) => {
-      const yearEntries = groupedByYear[year];
+      const monthHeader = monthNames
+        .map((month) => `<th>${month}</th>`)
+        .join("");
+
+      const monthStatuses = monthNames
+        .map((_, index) => {
+          const monthNumber = index + 1;
+          const status = yearWise[year][monthNumber] ?? "-";
+
+          return `<td>${safe(status)}</td>`;
+        })
+        .join("");
 
       return `
-        <div class="payment-year-group">
-          <div class="payment-year-heading">${safe(year)}</div>
-
-          <table class="payment-table">
-            <tbody>
-              <tr>
-                ${yearEntries
-                  .map((item) => {
-                    const month = new Date(
-                      item.date.year,
-                      item.date.month - 1,
-                      1,
-                    ).toLocaleString("en", { month: "short" });
-
-                    return `<td>${safe(month)}</td>`;
-                  })
-                  .join("")}
-              </tr>
-
-              <tr>
-                ${yearEntries
-                  .map((item) => `<td>${safe(item.status)}</td>`)
-                  .join("")}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      `;
+        <tr class="payment-year-row">
+          <th class="payment-year-label">${safe(year)}</th>
+          ${monthStatuses}
+        </tr>`;
     })
     .join("");
 
   return `
     <div class="payment-block">
       <div class="payment-heading">${heading}</div>
-      ${yearWiseHtml}
+
+      <table class="payment-table payment-full-year-table">
+        <thead>
+          <tr>
+            <th class="payment-year-label"></th>
+            ${monthNames.map((month) => `<th>${month}</th>`).join("")}
+          </tr>
+        </thead>
+
+        <tbody>
+          ${yearWiseHtml}
+        </tbody>
+      </table>
     </div>`;
 };
 
@@ -887,14 +936,14 @@ body {
 .tu,
 .cibil {
   font-size: 25px;
-  color: #083492;
+  color: #63C5DA;
   font-weight: 500;
   letter-spacing: -1px;
 }
 
 .brand-logo sup {
   font-size: 7px;
-  color: #083492;
+  color: #63C5DA;
 }
 
 .yellow-band {
@@ -958,7 +1007,7 @@ body {
 }
 
 .field-label {
-  color: #083492;
+  color: #63C5DA;
   font-size: 7px;
   text-transform: uppercase;
 }
@@ -982,7 +1031,7 @@ body {
 .data-table th,
 .summary-table th,
 .score-table th {
-  color: #083492;
+  color: #63C5DA;
   background: #e9e9e9;
   text-align: left;
   font-size: 7px;
@@ -1032,13 +1081,13 @@ body {
 
 .score-name {
   background: #ededed;
-  color: #083492;
+  color: #63C5DA;
 }
 
 .score-number {
   background: #ededed;
   font-size: 22px;
-  color: #083492;
+  color: #63C5DA;
   text-align: center;
 }
 
@@ -1056,7 +1105,7 @@ body {
 
 .range-box strong {
   display: block;
-  color: #083492;
+  color: #63C5DA;
   font-size: 8px;
   margin-bottom: 2px;
 }
@@ -1071,7 +1120,7 @@ body {
 
 .subheading {
   font-size: 9px;
-  color: #083492;
+  color: #63C5DA;
   margin: 5px 0 2px;
 }
 
@@ -1114,12 +1163,16 @@ body {
 }
 
 .account-col .field-label {
-  color: #083492;
+  color: #999 !important;
   font-size: 7px;
+  font-style: italic;
+  text-transform: uppercase;
 }
 
 .account-col .field-value {
+  color: #111 !important;
   font-size: 7px;
+  font-style: normal;
 }
 
 /* Payment history heading */
@@ -1129,7 +1182,7 @@ body {
 }
 
 .payment-heading {
-  color: #083492;
+  color: #63C5DA;
   font-size: 8px;
   margin-bottom: 5px;
 }
@@ -1147,7 +1200,7 @@ body {
 /* Year title row */
 .payment-year-heading {
   background: #e9e9e9;
-  color: #083492;
+  color: #63C5DA;
   font-size: 8px;
   padding: 4px 6px;
   border-bottom: 1px solid #777;
@@ -1259,6 +1312,43 @@ body {
     break-inside: avoid;
   }
 }
+  
+.payment-full-year-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.payment-full-year-table th,
+.payment-full-year-table td {
+  border: 1px solid #ccc;
+  padding: 4px 2px;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 7px;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.payment-full-year-table thead th {
+  background: #e8e8ff;
+  color: #164a91;
+  font-weight: 700;
+}
+
+.payment-full-year-table .payment-year-label {
+  width: 32px;
+  background: #ededed;
+  color: #111;
+  font-weight: 700;
+}
+
+.payment-full-year-table tbody td {
+  background: #fff;
+  color: #111;
+}
+
 </style>
 
 </head>
