@@ -30,13 +30,14 @@ const { generateCibilPdf } = require("../services/cibilPdf.service");
 // NOTE: the old code read cibilData.score / cibilData.cibilScore, keys Digi
 // never sends — every CIBIL row saved score: null because of it.
 const extractCibilScore = (apiData) => {
-  const cibilData = apiData?.data?.cibilData;
-  console.log(cibilData, "CIBIL");
+  const cibilData = apiData?.data?.Asset || apiData?.data?.cibilData;
   if (!cibilData) return null;
   const candidates = [
-    cibilData?.GetCustomerAssetsResponse?.GetCustomerAssetsSuccess?.Asset
-      ?.TrueLinkCreditReport?.Borrower?.CreditScore?.riskScore,
+    // Digi shape: data.Asset.TrueLinkCreditReport
     cibilData?.TrueLinkCreditReport?.Borrower?.CreditScore?.riskScore,
+    // Legacy IndiConnect shape (disabled):
+    // cibilData?.GetCustomerAssetsResponse?.GetCustomerAssetsSuccess?.Asset
+    //   ?.TrueLinkCreditReport?.Borrower?.CreditScore?.riskScore,
     cibilData?.Borrower?.CreditScore?.riskScore,
     cibilData?.score,
     cibilData?.cibilScore,
@@ -272,8 +273,267 @@ const classifyCibilFailure = (status, texts) => {
   }
   return { bill: false, reason: "non-billable-status" };
 };
-//logic for cibil report from indiconnect
+// ============================================================
+// CIBIL via Digi Verification — POST cibil-bureau-report
+// Response: { status, message, status_code, data: { Asset: {
+//   TrueLinkCreditReport, CreditSummaryData, htmlLink } } }
+// Stripped before persisting: the raw bureau payload (Sources) and the
+// token-gated CIBIL web link (htmlLink) — neither is stored or returned.
+// ============================================================
+const stripSensitiveDigiFields = (payload) => {
+  const copy = JSON.parse(JSON.stringify(payload || {}));
+  const asset = copy?.data?.Asset;
+
+  if (asset) {
+    delete asset.htmlLink;
+    if (asset.TrueLinkCreditReport) delete asset.TrueLinkCreditReport.Sources;
+  }
+
+  if (copy?.data) delete copy.data.htmlLink;
+
+  return copy;
+};
+
 const CibilReportFromDigi = async (req, res) => {
+  let creditReport = null;
+
+  try {
+    console.log("[CIBIL] Starting Digi Verification CIBIL report generation...");
+
+    const digiUrl =
+      process.env.DIGI_CIBIL_URL?.trim() ||
+      "https://api.digiverification.com/api/v11/cibil-bureau-report";
+    const digiJwt = process.env.DIGI_JWT_TOKEN?.trim();
+
+    if (!digiJwt) {
+      console.error("[CIBIL] DIGI_JWT_TOKEN is not configured");
+
+      return res.status(500).json({
+        success: false,
+        message: "CIBIL API configuration is missing",
+      });
+    }
+
+    const {
+      fullname,
+      firstName,
+      lastName,
+      mobile,
+      email,
+      pan,
+      gender,
+      dob,
+      address,
+      state,
+      city,
+      pincode,
+      reportType,
+      consent,
+      orderId,
+    } = req.body;
+
+    const customerName =
+      fullname || `${firstName || ""} ${lastName || ""}`.trim();
+
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const cibilReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "cibil",
+        bureauLabel: "CIBIL",
+        message,
+        name: customerName,
+        mobile,
+        pan,
+        consent,
+      });
+
+    // Digi only needs fullname, mobile and pan. The other form fields are
+    // still accepted and stored on the report row.
+    if (!customerName) return cibilReject("Full name is required");
+
+    if (!/^[0-9]{10}$/.test(String(mobile || "").trim()))
+      return cibilReject("Please enter a valid 10-digit mobile number");
+
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(pan || "").trim().toUpperCase()))
+      return cibilReject("Please enter a valid PAN number");
+
+    if (consent !== "Y") return cibilReject("Customer consent is required");
+
+    // Wallet gate before any paid bureau call.
+    if (!(await affordOr402(req, res, "cibil"))) return;
+
+    const digiPayload = {
+      fullname: customerName,
+      mobile: String(mobile).trim(),
+      pan: String(pan).trim().toUpperCase(),
+    };
+
+    console.log("[CIBIL] Calling Digi:", digiUrl, {
+      fullname: customerName,
+      mobile: "********",
+      pan: "********",
+    });
+
+    const response = await axios.post(digiUrl, digiPayload, {
+      headers: {
+        "jwt-token": digiJwt,
+        "Content-Type": "application/json",
+      },
+      timeout: 60000,
+    });
+
+    const apiData = stripSensitiveDigiFields(response.data);
+
+    const isSuccess =
+      apiData?.status === true &&
+      Boolean(apiData?.data?.Asset?.TrueLinkCreditReport);
+
+    const customerFields = {
+      userId: req.user?._id,
+      orderId: orderId || null,
+      name: customerName,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      mobile: mobile?.toString().trim() || null,
+      email: email?.toString().trim().toLowerCase() || null,
+      pan: pan?.toString().trim().toUpperCase() || null,
+      gender: gender || null,
+      dob: dob || null,
+      address: address || null,
+      state: state || null,
+      city: city || null,
+      pincode: pincode?.toString().trim() || null,
+      reportType: reportType || "CIBIL",
+      consent: "Y",
+      bureau: "CIBIL",
+    };
+
+    if (!isSuccess) {
+      creditReport = await CreditReport.create({
+        ...customerFields,
+        status: "Failed",
+        reportUrl: null,
+        localPath: null,
+        reportData: apiData,
+        score: null,
+        isPublic: false,
+      });
+
+      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+
+      return res.status(400).json({
+        success: false,
+        message: apiData?.message || "CIBIL data not found in Bureau",
+        creditReportId: creditReport._id,
+        status: creditReport.status,
+        data: apiData,
+        failureCharge: failCharge.ok ? failCharge.total : 0,
+      });
+    }
+
+    creditReport = await CreditReport.create({
+      ...customerFields,
+      status: "Pending",
+      // No link until our PDF exists.
+      reportUrl: null,
+      localPath: null,
+      reportData: apiData,
+      score: extractCibilScore(apiData),
+      isPublic: false,
+    });
+
+    console.log(
+      "[CIBIL] CreditReport saved:",
+      creditReport._id,
+      "score:",
+      creditReport.score,
+    );
+
+    const pdf = await generateCibilPdf(apiData, creditReport._id.toString());
+
+    if (!pdf || !pdf.filePath) {
+      throw new Error("CIBIL PDF was not generated");
+    }
+
+    creditReport.localPath = pdf.relativePath;
+    creditReport.reportUrl = pdf.relativePath;
+    creditReport.status = "Success";
+
+    await creditReport.save();
+
+    console.log("[CIBIL] CreditReport updated with PDF");
+
+    await debitReportPull(creditReport, "cibil", "CIBIL");
+
+    return res.status(200).json({
+      success: true,
+
+      message: "CIBIL report generated successfully",
+
+      data: {
+        creditReportId: creditReport._id,
+
+        fileName: pdf.fileName,
+
+        pdfUrl: pdf.relativePath,
+
+        filePath: pdf.filePath,
+
+        bureau: "CIBIL",
+
+        score: creditReport.score ?? null,
+
+        status: "Success",
+      },
+    });
+  } catch (error) {
+    console.error("[CIBIL] Digi API/PDF Error:", error.message);
+
+    if (creditReport) {
+      try {
+        creditReport.status = "Failed";
+
+        await creditReport.save();
+
+        console.log("[CIBIL] CreditReport marked as Failed");
+      } catch (dbError) {
+        console.error("[CIBIL] Failed to update DB status:", dbError.message);
+      }
+    }
+
+    // Raw provider body stays in the server log; the UI gets a generic message.
+    const digiStatus = error.response?.status;
+
+    if (error.response) {
+      console.error("[CIBIL] Digi API status:", digiStatus, error.response.data);
+    }
+
+    const isDigiAuthFailure = digiStatus === 401 || digiStatus === 403;
+
+    // Every failed CIBIL pull is billed, including auth failures.
+    const cibilFailCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+
+    return res.status(digiStatus || 500).json({
+      success: false,
+
+      message: isDigiAuthFailure
+        ? "Bureau authentication failed. Please contact support."
+        : "Failed to generate CIBIL report. Please try again.",
+
+      creditReportId: creditReport?._id || null,
+
+      failureCharge: cibilFailCharge.ok ? cibilFailCharge.total : 0,
+    });
+  }
+};
+
+// ============================================================
+// LEGACY IndiConnect CIBIL flow — disabled, kept for reference.
+// Re-enable by removing this comment wrapper and renaming the export.
+// ============================================================
+/*
+//logic for cibil report from indiconnect
+const CibilReportFromIndiConnect = async (req, res) => {
   let creditReport = null;
 
   try {
@@ -874,6 +1134,7 @@ const CibilReportFromDigi = async (req, res) => {
     });
   }
 };
+*/
 //Without OTP
 const CrifReport = async (req, res) => {
   let creditReport = null;

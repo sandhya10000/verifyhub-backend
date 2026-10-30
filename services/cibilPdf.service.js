@@ -8,11 +8,36 @@ const { buildCibilReportHtml } = require("../templates/cibilReport.template");
 // GET TRUE LINK CREDIT REPORT
 // ============================================================
 
+// Digi Verification shape: data.Asset.TrueLinkCreditReport
 const getTrueLinkCreditReport = (apiResponse) => {
-  return (
-    apiResponse?.data?.cibilData?.GetCustomerAssetsResponse
-      ?.GetCustomerAssetsSuccess?.Asset?.TrueLinkCreditReport || null
-  );
+  return apiResponse?.data?.Asset?.TrueLinkCreditReport || null;
+
+  // Legacy IndiConnect shape (disabled):
+  // return (
+  //   apiResponse?.data?.cibilData?.GetCustomerAssetsResponse
+  //     ?.GetCustomerAssetsSuccess?.Asset?.TrueLinkCreditReport || null
+  // );
+};
+
+// ============================================================
+// CODE LABELS
+// Digi returns coded values with an empty description, e.g. account type
+// "10". Only codes confirmed from a real response are listed. Anything else
+// falls back to the raw code, so add entries from the official CIBIL code
+// list rather than guessing.
+// ============================================================
+
+const CODE_LABELS = {
+  accountType: { 10: "Credit Card" },
+  paymentFrequency: { "03": "Monthly" },
+  stateRegion: { "06": "Haryana" },
+};
+
+const labelFor = (table, code) => {
+  if (code === null || code === undefined || code === "" || code === "-") {
+    return "-";
+  }
+  return CODE_LABELS[table]?.[String(code)] || String(code);
 };
 
 // ============================================================
@@ -175,13 +200,14 @@ const normalizePaymentHistory = (history) => {
     }
 
     return {
-      date:
+      date: normalizeDate(
         item?.date ||
-        item?.paymentDate ||
-        item?.month ||
-        item?.reportDate ||
-        item?.Date ||
-        "-",
+          item?.paymentDate ||
+          item?.month ||
+          item?.reportDate ||
+          item?.Date ||
+          "-",
+      ),
       status:
         item?.status ??
         item?.payStatus ??
@@ -206,8 +232,10 @@ const extractBorrowerName = (borrower) => {
 
   const middleName = name.MiddleName || "";
 
+  // Digi can return only Forename (no Surname). Skip the "-" placeholder so
+  // the name does not render as "KARAN SAPRA -".
   const fullName = [firstName, middleName, lastName]
-    .filter(Boolean)
+    .filter((part) => part && part !== "-")
     .join(" ")
     .trim();
 
@@ -316,7 +344,9 @@ const extractAddresses = (borrower) => {
 
       city: address.City || address.city || address.CityName || "-",
 
-      state: address.Region || stateFallback(address) || "-",
+      state: address.Region
+        ? labelFor("stateRegion", address.Region)
+        : stateFallback(address) || "-",
 
       pincode:
         address.PostalCode ||
@@ -482,9 +512,10 @@ const getAccountType = (partition, grantedTrade) => {
   return (
     partition?.accountTypeDescription ||
     grantedTrade?.AccountType?.description ||
-    partition?.accountTypeSymbol ||
-    grantedTrade?.AccountType?.symbol ||
-    "-"
+    labelFor(
+      "accountType",
+      partition?.accountTypeSymbol || grantedTrade?.AccountType?.symbol,
+    )
   );
 };
 
@@ -615,8 +646,7 @@ const extractAccounts = (report) => {
 
       paymentFrequency:
         grantedTrade?.PaymentFrequency?.description ||
-        grantedTrade?.PaymentFrequency?.symbol ||
-        "-",
+        labelFor("paymentFrequency", grantedTrade?.PaymentFrequency?.symbol),
 
       creditType:
         grantedTrade?.CreditType?.description ||
@@ -736,11 +766,21 @@ const calculateSummary = (accounts) => {
 // TrueLink report. Returned as {} when absent — never throws.
 // ============================================================
 
+// Digi returns CreditSummaryData beside Asset (docs show it under data.Asset
+// in the sample); read both locations.
 const getCustomerAssetsSuccess = (apiResponse) => {
-  return (
-    apiResponse?.data?.cibilData?.GetCustomerAssetsResponse
-      ?.GetCustomerAssetsSuccess || {}
-  );
+  const summary =
+    apiResponse?.data?.CreditSummaryData ||
+    apiResponse?.data?.Asset?.CreditSummaryData ||
+    null;
+
+  return summary ? { CreditSummaryData: summary } : {};
+
+  // Legacy IndiConnect shape (disabled):
+  // return (
+  //   apiResponse?.data?.cibilData?.GetCustomerAssetsResponse
+  //     ?.GetCustomerAssetsSuccess || {}
+  // );
 };
 
 // ============================================================
