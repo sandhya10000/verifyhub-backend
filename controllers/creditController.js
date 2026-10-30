@@ -180,7 +180,10 @@ const failValidationPull = async (req, res, options) => {
         userId,
         name: String(name || "").trim() || "(invalid)",
         mobile: String(mobile || "").trim() || "(invalid)",
-        pan: String(pan || "").trim().toUpperCase() || "(invalid)",
+        pan:
+          String(pan || "")
+            .trim()
+            .toUpperCase() || "(invalid)",
         reportType: bureauLabel || "CIBIL",
         bureau: bureauLabel || "CIBIL",
         consent: consent === "Y" ? "Y" : "N",
@@ -756,7 +759,8 @@ const CibilReportFromIndiConnect = async (req, res) => {
       indiResult?.message || verify?.message || "",
     );
     const isNoRecord =
-      Number(indiBureauStatus) === 2 || /no record found/i.test(indiBureauMessage);
+      Number(indiBureauStatus) === 2 ||
+      /no record found/i.test(indiBureauMessage);
     // Failure billing inputs for classifyCibilFailure (see helper above):
     // provider status (verify.status, else result.status) + every message
     // field IndiConnect may use, including verify.error (balance-exhausted
@@ -856,22 +860,24 @@ const CibilReportFromIndiConnect = async (req, res) => {
         );
       }
 
-      return res.status(
-        emptyVerdict.reason === "indiconnect-balance-exhausted" ||
-          emptyVerdict.reason.startsWith("service-down")
-          ? 503
-          : 400,
-      ).json({
-        success: false,
-        message:
-          emptyVerdict.reason === "indiconnect-balance-exhausted"
-            ? "Verification service temporarily unavailable. Please try again later."
-            : indiBureauMessage || "CIBIL data not found in Bureau",
-        creditReportId: creditReport._id,
-        status: creditReport.status,
-        data: apiData,
-        failureCharge: cibilEmptyCharge.ok ? cibilEmptyCharge.total : 0,
-      });
+      return res
+        .status(
+          emptyVerdict.reason === "indiconnect-balance-exhausted" ||
+            emptyVerdict.reason.startsWith("service-down")
+            ? 503
+            : 400,
+        )
+        .json({
+          success: false,
+          message:
+            emptyVerdict.reason === "indiconnect-balance-exhausted"
+              ? "Verification service temporarily unavailable. Please try again later."
+              : indiBureauMessage || "CIBIL data not found in Bureau",
+          creditReportId: creditReport._id,
+          status: creditReport.status,
+          data: apiData,
+          failureCharge: cibilEmptyCharge.ok ? cibilEmptyCharge.total : 0,
+        });
     }
 
     // ============================================================
@@ -1703,7 +1709,10 @@ const CrifReport = async (req, res) => {
         // Path to store in MongoDB
         localPath = `/uploads/credit-reports/crif/${fileName}`;
 
-        console.log("[CRIF] Provider PDF saved successfully:", physicalFilePath);
+        console.log(
+          "[CRIF] Provider PDF saved successfully:",
+          physicalFilePath,
+        );
 
         console.log("[CRIF] DB localPath:", localPath);
       } catch (pdfError) {
@@ -1761,8 +1770,7 @@ const CrifReport = async (req, res) => {
               // DOB/PAN keys) — fill each gap with stored values, preferring
               // whichever side is non-empty.
               const providerReq =
-                mergedReport.REQUEST &&
-                typeof mergedReport.REQUEST === "object"
+                mergedReport.REQUEST && typeof mergedReport.REQUEST === "object"
                   ? mergedReport.REQUEST
                   : {};
               const nonEmpty = (v) =>
@@ -1811,13 +1819,18 @@ const CrifReport = async (req, res) => {
           reportUrl = localPath;
         }
 
-        console.log("[CRIF] Local PDF generated successfully:", generatedAbsPath);
+        console.log(
+          "[CRIF] Local PDF generated successfully:",
+          generatedAbsPath,
+        );
         console.log("[CRIF] DB localPath:", localPath);
       } catch (genError) {
         console.error(
           "[CRIF] Local PDF generation failed:",
           genError.message,
-          genError.stack ? genError.stack.split("\n").slice(0, 4).join(" | ") : "",
+          genError.stack
+            ? genError.stack.split("\n").slice(0, 4).join(" | ")
+            : "",
         );
       }
     }
@@ -2099,9 +2112,7 @@ const ExperianReport = async (req, res) => {
     const nameParts = String(fullName).trim().split(/\s+/);
 
     if (nameParts.length < 2) {
-      return experianReject(
-        "Full name must contain first name and last name",
-      );
+      return experianReject("Full name must contain first name and last name");
     }
 
     const firstName = nameParts.shift();
