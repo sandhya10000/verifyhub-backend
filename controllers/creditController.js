@@ -1,4 +1,5 @@
 const axios = require("axios");
+const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const CreditReport = require("../models/creditReport");
@@ -303,10 +304,26 @@ const CibilReportFromDigi = async (req, res) => {
     const digiUrl =
       process.env.DIGI_CIBIL_URL?.trim() ||
       "https://api.digiverification.com/api/v11/cibil-bureau-report";
-    const digiJwt = process.env.DIGI_JWT_TOKEN?.trim();
+    // Digi tokens are short-lived (timestamp valid <= 5 min), so sign a fresh
+    // one per request from the partner secret. A static DIGI_JWT_TOKEN is
+    // only a fallback and goes stale quickly.
+    const digiSecret = process.env.DIGI_SECRET_KEY?.trim();
+    const digiPartnerId = process.env.DIGI_PARTNER_ID?.trim();
+    const digiJwt =
+      digiSecret && digiPartnerId
+        ? jwt.sign(
+            {
+              timestamp: Math.floor(Date.now() / 1000),
+              partnerId: digiPartnerId,
+              reqid: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+            },
+            digiSecret,
+            { algorithm: "HS256" },
+          )
+        : process.env.DIGI_JWT_TOKEN?.trim();
 
     if (!digiJwt) {
-      console.error("[CIBIL] DIGI_JWT_TOKEN is not configured");
+      console.error("[CIBIL] Digi credentials are not configured");
 
       return res.status(500).json({
         success: false,
