@@ -45,6 +45,13 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Credit points applied to this debit (10 points = Rs 1). Audit only;
+    // the points ledger is in PointsLedger.
+    pointsRedeemed: {
+      type: Number,
+      default: 0,
+    },
+
     // Recharge bonus bookkeeping (single CREDIT row — no separate ledger entry).
     // amount = paid via Razorpay, walletCredit = amount + bonusCredit.
     bonusCredit: {

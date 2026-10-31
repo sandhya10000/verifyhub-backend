@@ -1,0 +1,72 @@
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:20.115Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"equifax-6ae6302aaf76676474c0c156.pdf","sizeBytes":127952}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:20.122Z] STEP="DB Record Created" elapsed_step=7ms elapsed_total=7ms details={"analysisId":"6ae63c68d6889a99d738630e"}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:20.131Z] STEP="Trigger Background Processing" elapsed_step=9ms elapsed_total=16ms
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:23.285Z] STEP="Frontend Polling Status" elapsed_step=3154ms elapsed_total=3170ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:26.278Z] STEP="Frontend Polling Status" elapsed_step=2993ms elapsed_total=6163ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:37.067Z] STEP="Frontend Polling Status" elapsed_step=10789ms elapsed_total=16952ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.180Z] STEP="Frontend Polling Status" elapsed_step=10113ms elapsed_total=27065ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.291Z] STEP="Frontend Polling Status" elapsed_step=111ms elapsed_total=27176ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.407Z] STEP="Frontend Polling Status" elapsed_step=116ms elapsed_total=27292ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.516Z] STEP="Frontend Polling Status" elapsed_step=109ms elapsed_total=27401ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.625Z] STEP="Frontend Polling Status" elapsed_step=109ms elapsed_total=27510ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:47.735Z] STEP="Frontend Polling Status" elapsed_step=110ms elapsed_total=27620ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:50.273Z] STEP="Frontend Polling Status" elapsed_step=2538ms elapsed_total=30158ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63c68d6889a99d738630e] [2026-10-31T19:07:55.219Z] STEP="Frontend Polling Status" elapsed_step=4946ms elapsed_total=35104ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:17:56.552Z] STEP="Upload Received (Branded)" elapsed_step=0ms elapsed_total=0ms details={"fileName":"equifax-6ae6302aaf76676474c0c156.pdf","sizeBytes":127952,"brandProfileId":"6adca0b5839dfb3634321c28","firmName":"Karan Sapra"}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:17:56.557Z] STEP="DB Record Created (Branded)" elapsed_step=5ms elapsed_total=5ms details={"analysisId":"6ae63edbd6889a99d7386314"}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:17:56.560Z] STEP="Trigger Background Processing (Branded)" elapsed_step=3ms elapsed_total=8ms
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:17:59.741Z] STEP="Frontend Polling Status" elapsed_step=3181ms elapsed_total=3189ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:02.742Z] STEP="Frontend Polling Status" elapsed_step=3001ms elapsed_total=6190ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:05.736Z] STEP="Frontend Polling Status" elapsed_step=2994ms elapsed_total=9184ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:08.732Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=12180ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:11.771Z] STEP="Frontend Polling Status" elapsed_step=3039ms elapsed_total=15219ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:32.363Z] STEP="Frontend Polling Status" elapsed_step=20592ms elapsed_total=35811ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:32.487Z] STEP="Frontend Polling Status" elapsed_step=124ms elapsed_total=35935ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:32.642Z] STEP="Frontend Polling Status" elapsed_step=155ms elapsed_total=36090ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:32.769Z] STEP="Frontend Polling Status" elapsed_step=127ms elapsed_total=36217ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:32.891Z] STEP="Frontend Polling Status" elapsed_step=122ms elapsed_total=36339ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:33.017Z] STEP="Frontend Polling Status" elapsed_step=126ms elapsed_total=36465ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63edbd6889a99d7386314] [2026-10-31T19:18:33.132Z] STEP="Frontend Polling Status" elapsed_step=115ms elapsed_total=36580ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:50.043Z] STEP="Upload Received (Branded)" elapsed_step=0ms elapsed_total=0ms details={"fileName":"equifax-6ae6302aaf76676474c0c156.pdf","sizeBytes":127952,"brandProfileId":"6adca0b5839dfb3634321c28","firmName":"Karan Sapra"}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:50.046Z] STEP="DB Record Created (Branded)" elapsed_step=3ms elapsed_total=3ms details={"analysisId":"6ae63f19d6889a99d7386316"}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:50.055Z] STEP="Trigger Background Processing (Branded)" elapsed_step=9ms elapsed_total=12ms
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:53.272Z] STEP="Frontend Polling Status" elapsed_step=3217ms elapsed_total=3229ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:56.271Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=6228ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:18:59.267Z] STEP="Frontend Polling Status" elapsed_step=2996ms elapsed_total=9224ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:02.269Z] STEP="Frontend Polling Status" elapsed_step=3002ms elapsed_total=12226ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:05.272Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=15229ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:08.266Z] STEP="Frontend Polling Status" elapsed_step=2994ms elapsed_total=18223ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:11.269Z] STEP="Frontend Polling Status" elapsed_step=3003ms elapsed_total=21226ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:14.266Z] STEP="Frontend Polling Status" elapsed_step=2997ms elapsed_total=24223ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:17.271Z] STEP="Frontend Polling Status" elapsed_step=3005ms elapsed_total=27228ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:20.272Z] STEP="Frontend Polling Status" elapsed_step=3001ms elapsed_total=30229ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:23.267Z] STEP="Frontend Polling Status" elapsed_step=2995ms elapsed_total=33224ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f19d6889a99d7386316] [2026-10-31T19:19:26.277Z] STEP="Frontend Polling Status" elapsed_step=3010ms elapsed_total=36234ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:19:59.392Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"equifax-6ae6302aaf76676474c0c156.pdf","sizeBytes":127952}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:19:59.394Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6ae63f5fd6889a99d7386318"}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:19:59.398Z] STEP="Trigger Background Processing" elapsed_step=4ms elapsed_total=6ms
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:02.552Z] STEP="Frontend Polling Status" elapsed_step=3154ms elapsed_total=3160ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:05.551Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=6159ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:08.546Z] STEP="Frontend Polling Status" elapsed_step=2995ms elapsed_total=9154ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:11.545Z] STEP="Frontend Polling Status" elapsed_step=2999ms elapsed_total=12153ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:14.547Z] STEP="Frontend Polling Status" elapsed_step=3002ms elapsed_total=15155ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:17.539Z] STEP="Frontend Polling Status" elapsed_step=2992ms elapsed_total=18147ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:20.552Z] STEP="Frontend Polling Status" elapsed_step=3013ms elapsed_total=21160ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:23.542Z] STEP="Frontend Polling Status" elapsed_step=2990ms elapsed_total=24150ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:26.547Z] STEP="Frontend Polling Status" elapsed_step=3005ms elapsed_total=27155ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:29.539Z] STEP="Frontend Polling Status" elapsed_step=2992ms elapsed_total=30147ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63f5fd6889a99d7386318] [2026-10-31T19:20:32.555Z] STEP="Frontend Polling Status" elapsed_step=3016ms elapsed_total=33163ms details={"status":"failed","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:05.813Z] STEP="Upload Received" elapsed_step=0ms elapsed_total=0ms details={"fileName":"equifax-6ae6302aaf76676474c0c156.pdf","sizeBytes":127952}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:05.815Z] STEP="DB Record Created" elapsed_step=2ms elapsed_total=2ms details={"analysisId":"6ae63fa1d6889a99d738631a"}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:05.818Z] STEP="Trigger Background Processing" elapsed_step=3ms elapsed_total=5ms
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:16.736Z] STEP="Frontend Polling Status" elapsed_step=10918ms elapsed_total=10923ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:16.840Z] STEP="Frontend Polling Status" elapsed_step=104ms elapsed_total=11027ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:16.948Z] STEP="Frontend Polling Status" elapsed_step=108ms elapsed_total=11135ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:18.749Z] STEP="Frontend Polling Status" elapsed_step=1801ms elapsed_total=12936ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:21.512Z] STEP="Frontend Polling Status" elapsed_step=2763ms elapsed_total=15699ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:24.000Z] STEP="Frontend Polling Status" elapsed_step=2488ms elapsed_total=18187ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:27.011Z] STEP="Frontend Polling Status" elapsed_step=3011ms elapsed_total=21198ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:30.016Z] STEP="Frontend Polling Status" elapsed_step=3005ms elapsed_total=24203ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:33.009Z] STEP="Frontend Polling Status" elapsed_step=2993ms elapsed_total=27196ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:36.013Z] STEP="Frontend Polling Status" elapsed_step=3004ms elapsed_total=30200ms details={"status":"processing","htmlStatus":null}
+[ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:41.388Z] STEP="Frontend Polling Status" elapsed_step=5375ms elapsed_total=35575ms details={"status":"completed","htmlStatus":"completed"}

@@ -9,6 +9,7 @@ const {
   DEFAULT_RECHARGE_PLANS,
 } = require("../models/Pricing");
 const { sendRechargeSuccessMail } = require("../utils/sendMail");
+const { earnPoints } = require("../utils/points");
 
 // Credit a WALLET_RECHARGE transaction whose payment has been confirmed.
 // The caller is responsible for setting transaction.status = "SUCCESS" (and
@@ -72,6 +73,13 @@ async function creditWalletRecharge(transaction) {
     { new: true },
   );
   if (!updatedUser) throw new Error("User not found");
+
+  // Credit points: Rs paid = points earned (bonus not counted). Idempotent per orderId.
+  try {
+    await earnPoints(transaction.userId, Number(transaction.amount), transaction.orderId);
+  } catch (err) {
+    console.error("[points] earn failed for order", transaction.orderId, err.message);
+  }
 
   // Receipt mail (fire-and-forget).
   if (current.email) {

@@ -23,6 +23,38 @@ const pctChange = (curr, prev) => {
 };
 
 // GET /api/partner/overview/summary — partner-scoped KPIs + live wallet + spend
+// GET /api/partner/points — current credit points balance and recent ledger rows.
+// Rupee value is points / 10 (10 points = Rs 1).
+exports.getPoints = async (req, res) => {
+  try {
+    const PointsLedger = require('../models/PointsLedger');
+    const userId = req.user._id;
+    const [me, entries] = await Promise.all([
+      User.findById(userId).select('creditPoints').lean(),
+      PointsLedger.find({ userId }).sort({ createdAt: -1 }).limit(50).lean(),
+    ]);
+    const points = me?.creditPoints ?? 0;
+    return res.json({
+      success: true,
+      data: {
+        points,
+        rupeeValue: points / 10,
+        entries: entries.map((e) => ({
+          id: e._id,
+          type: e.type,
+          points: e.points,
+          rupeeValue: e.rupeeValue,
+          description: e.description,
+          createdAt: e.createdAt,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('[partner] getPoints error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load credit points.' });
+  }
+};
+
 exports.getSummary = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -60,7 +92,7 @@ exports.getSummary = async (req, res) => {
       CreditReport.countDocuments({ userId, status: 'Success', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
       AIAnalysis.countDocuments({ userId, status: 'failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
       CreditReport.countDocuments({ userId, status: 'Failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
-      User.findById(userId).select('walletBalance activePlan pendingPlanChoice').lean(),
+      User.findById(userId).select('walletBalance creditPoints activePlan pendingPlanChoice').lean(),
       Transaction.aggregate([
         { $match: { userId: userId, type: 'DEBIT', status: 'SUCCESS', createdAt: { $gte: monthStart, $lte: monthEnd } } },
         // Fallback: older rows may store lowercase status
@@ -94,6 +126,7 @@ exports.getSummary = async (req, res) => {
         failedThisMonth,
         successRate: attempts > 0 ? Math.round((reportsThisMonth / attempts) * 100) : 100,
         walletBalance: me?.walletBalance ?? 0,
+        creditPoints: me?.creditPoints ?? 0,
         activePlan: me?.activePlan || null,
         pendingPlanChoice: me?.pendingPlanChoice ?? false,
         spentThisMonth: spentAgg.length > 0 ? spentAgg[0].total : 0,

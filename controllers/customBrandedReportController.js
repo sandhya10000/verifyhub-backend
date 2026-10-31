@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const CustomBrandedRequest = require('../models/CustomBrandedRequest');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const PointsLedger = require('../models/PointsLedger');
 const { CBR_PRICE_INR } = require('../models/Pricing');
 const { sendCbrReceiptMail, sendCbrAdminNotifyMail } = require('../utils/sendMail');
 const { sendRetryLink } = require('../services/paymentRetry.service');
@@ -259,8 +260,11 @@ async function getBrandingStatus(req, res) {
 // ---------------------------------------------------------------------------
 async function getQuote(req, res) {
   try {
-    const me = await User.findById(req.user._id).select('walletBalance').lean();
+    const me = await User.findById(req.user._id).select('walletBalance creditPoints').lean();
     const balance = me?.walletBalance ?? 0;
+    const creditPoints = me?.creditPoints ?? 0;
+    const { clampRedeem, CBR_MAX_POINTS } = require('../utils/points');
+    const maxPoints = clampRedeem(CBR_MAX_POINTS, creditPoints, CBR_MAX_POINTS);
     return res.json({
       success: true,
       data: {
@@ -268,6 +272,10 @@ async function getQuote(req, res) {
         currency: 'INR',
         walletBalance: balance,
         canAffordWallet: balance >= CBR_PRICE_INR,
+        creditPoints,
+        maxPoints,
+        // Rs value of maxPoints (10 points = Rs 1), for the UI discount line.
+        maxPointsValue: maxPoints / 10,
       },
     });
   } catch (err) {
@@ -316,28 +324,43 @@ async function payWithWallet(req, res) {
     }
     const digitsOnly = String(phone).replace(/^\+91/, '').replace(/\D/g, '');
 
-    // ATOMIC GUARD: Debit balance AND set brandingStatus = 'paid' in a single atomic update.
+    // Credit points: optional, up to CBR_MAX_POINTS (1000 = Rs 100 off).
+    // 10 points = Rs 1. Points can't cover more than the fee itself.
+    const { clampRedeem, CBR_MAX_POINTS, POINTS_PER_RUPEE_REDEEM } = require('../utils/points');
+    let points = 0;
+    if (String(req.body.usePoints || '').toLowerCase() === 'true' || Number(req.body.pointsToRedeem) > 0) {
+      const holder = await User.findById(partnerId).select('creditPoints').lean();
+      const requested = Number(req.body.pointsToRedeem) || CBR_MAX_POINTS;
+      points = clampRedeem(requested, holder?.creditPoints, CBR_MAX_POINTS);
+      points = Math.min(points, CBR_PRICE_INR * POINTS_PER_RUPEE_REDEEM);
+    }
+    const net = CBR_PRICE_INR - points / POINTS_PER_RUPEE_REDEEM;
+
+    // ATOMIC GUARD: Debit balance (and points) AND set brandingStatus = 'paid' in a single atomic update.
     // Guarantees balance cannot go negative AND user cannot be double-charged.
     const now = new Date();
-    const debit = await User.updateOne(
-      {
-        _id: partnerId,
-        walletBalance: { $gte: CBR_PRICE_INR },
-        $or: [
-          { brandingStatus: 'not_purchased' },
-          { brandingStatus: { $exists: false } },
-          { brandingStatus: null },
-        ],
+    const filter = {
+      _id: partnerId,
+      walletBalance: { $gte: net },
+      $or: [
+        { brandingStatus: 'not_purchased' },
+        { brandingStatus: { $exists: false } },
+        { brandingStatus: null },
+      ],
+    };
+    const inc = { walletBalance: -net };
+    if (points > 0) {
+      filter.creditPoints = { $gte: points };
+      inc.creditPoints = -points;
+    }
+    const debit = await User.updateOne(filter, {
+      $inc: inc,
+      $set: {
+        brandingStatus: 'paid',
+        brandingPaidAt: now,
+        brandingAmount: net,
       },
-      {
-        $inc: { walletBalance: -CBR_PRICE_INR },
-        $set: {
-          brandingStatus: 'paid',
-          brandingPaidAt: now,
-          brandingAmount: CBR_PRICE_INR,
-        },
-      },
-    );
+    });
 
     if (debit.modifiedCount === 0) {
       const me = await User.findById(partnerId).select('walletBalance brandingStatus').lean();
@@ -364,7 +387,8 @@ async function payWithWallet(req, res) {
         orderId,
         amount: CBR_PRICE_INR,
         gstAmount: 0,
-        totalAmount: CBR_PRICE_INR,
+        totalAmount: net,
+        pointsRedeemed: points,
         currency: 'INR',
         type: 'DEBIT',
         purpose: 'CUSTOM_BRAND_FEE',
@@ -376,11 +400,29 @@ async function payWithWallet(req, res) {
       CustomBrandedRequest.deleteMany({ partnerId, paymentStatus: 'Unpaid' }),
     ]);
 
+    if (points > 0) {
+      try {
+        await PointsLedger.create({
+          userId: partnerId,
+          type: 'REDEEM',
+          points,
+          rupeeValue: points / POINTS_PER_RUPEE_REDEEM,
+          key: `redeem_${orderId}`,
+          refId: orderId,
+          description: 'AI Branded Report one-time fee (wallet)',
+        });
+      } catch (ledgerErr) {
+        console.error('[customBrandedReport] points ledger write failed:', orderId, ledgerErr.message);
+      }
+    }
+
     // Lost a double-submit race (two debits in flight)? Refund this one and
     // return the winner instead of creating a second Active request.
     const raced = await findBlockingRequest(partnerId);
     if (raced) {
-      await User.updateOne({ _id: partnerId }, { $inc: { walletBalance: CBR_PRICE_INR } });
+      const back = { walletBalance: net };
+      if (points > 0) back.creditPoints = points;
+      await User.updateOne({ _id: partnerId }, { $inc: back });
       txn.status = 'REFUNDED';
       txn.description = 'AI Branded Report one-time fee (wallet) — refunded: duplicate request';
       await txn.save();
@@ -390,8 +432,20 @@ async function payWithWallet(req, res) {
         message: 'You already have an active custom branded report request. Duplicate charge refunded.',
         data: raced,
       });
-      await newRequest.save();
     }
+
+    // Create the paid request for this payment (same fields as the heal path).
+    const newRequest = await CustomBrandedRequest.create({
+      partnerId,
+      email: req.user.email,
+      phone: digitsOnly,
+      amount: net,
+      paymentStatus: 'Paid',
+      paymentMethod: 'WALLET',
+      orderId,
+      paymentId: String(txn._id),
+      status: 'Active',
+    });
 
     notifySubscription(newRequest, req.user, txn);
     const me = await User.findById(partnerId).select('walletBalance brandingStatus').lean();
@@ -938,11 +992,21 @@ async function uploadBrandedReport(req, res) {
     const rawLang = (req.body.language || '').trim().toLowerCase();
     const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
 
-    // Wallet affordability check (₹100 + GST)
+    // Credit points: optional, capped at AI_MAX_POINTS (100) and the partner's balance.
+    let pointsToRedeem = 0;
+    if (String(req.body.usePoints || '').toLowerCase() === 'true') {
+      const { clampRedeem, AI_MAX_POINTS } = require('../utils/points');
+      const holder = await User.findById(req.user._id).select('creditPoints').lean();
+      pointsToRedeem = clampRedeem(AI_MAX_POINTS, holder?.creditPoints, AI_MAX_POINTS);
+    }
+
+    // Wallet affordability check (₹100 + GST, less any points applied)
     try {
       const { canAfford } = require('../utils/wallet');
       const gate = await canAfford(req.user?._id, 'ai');
-      if (!gate.ok) {
+      const netRequired = gate.total - pointsToRedeem / 10;
+      const coveredByPoints = pointsToRedeem > 0 && gate.reason === 'insufficient' && gate.balance >= netRequired;
+      if (!gate.ok && !coveredByPoints) {
         fs.unlinkSync(req.file.path);
         return res.status(402).json({
           success: false,
@@ -968,6 +1032,7 @@ async function uploadBrandedReport(req, res) {
       status: 'uploaded',
       isBranded: true,
       brandProfileId: activeProfile._id,
+      pointsToRedeem,
     });
 
     logStep(analysis._id, 'Upload Received (Branded)', {

@@ -60,6 +60,13 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Credit points: earned on wallet recharge, redeemable only on AI and
+    // custom branded reports. Separate from walletBalance.
+    creditPoints: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Pricing tier: startup | starter | growth | pro | enterprise. Set
     // from the recharge slab at payment verification; upgrades and
     // downgrades allowed via explicit plan activation.
