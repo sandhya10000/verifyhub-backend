@@ -6,9 +6,11 @@ const router = express.Router();
 
 const {
   CibilReportFromDigi,
+  CibilReportFromFinpass,
   fetchCibilReport,
   CrifReport,
   EquifaxReport,
+  EquifaxReportFromFinpass,
   ExperianReport,
   getAllCreditReports,
   getCreditBureauDetails,
@@ -18,13 +20,15 @@ const {
 //  /api/credit/generate-cibil-report
 // Single-plan mode: no plan gate — auth only (single plan auto-applies via wallet tier fallback).
 // TODO(multi-plan-restore): re-add requirePlanChosen after auth on all four routes.
-router.post("/generate-cibil-report", auth, CibilReportFromDigi);
+// Provider: Finpass (Digi handler kept above for rollback).
+router.post("/generate-cibil-report", auth, CibilReportFromFinpass);
 
 // CRIF
 router.post("/generate-crif-report", auth, CrifReport);
 
 // EQUIFAX
-router.post("/generate-equifax-report", auth, EquifaxReport);
+// Provider: Finpass (legacy Surepass EquifaxReport kept for rollback).
+router.post("/generate-equifax-report", auth, EquifaxReportFromFinpass);
 
 // EXPERIAN
 router.post("/generate-experian-report", auth, ExperianReport);

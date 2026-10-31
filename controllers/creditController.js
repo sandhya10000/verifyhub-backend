@@ -414,7 +414,7 @@ const CibilReportFromDigi = async (req, res) => {
       mobile: mobile?.toString().trim() || null,
       email: email?.toString().trim().toLowerCase() || null,
       pan: pan?.toString().trim().toUpperCase() || null,
-      gender: gender || null,
+      gender: toGenderEnum(gender),
       dob: dob || null,
       address: address || null,
       state: state || null,
@@ -534,6 +534,301 @@ const CibilReportFromDigi = async (req, res) => {
       success: false,
 
       message: isDigiAuthFailure
+        ? "Bureau authentication failed. Please contact support."
+        : "Failed to generate CIBIL report. Please try again.",
+
+      creditReportId: creditReport?._id || null,
+
+      failureCharge: cibilFailCharge.ok ? cibilFailCharge.total : 0,
+    });
+  }
+};
+
+// ============================================================
+// CIBIL via Finpass — POST {FINPASS_BASE_URL}/api/v1/services/multi-bureau/fetch
+// Auth headers: X-API-Key, X-API-Secret.
+// Response: { success, data: { pan, doc_id, pdf_url, results: { cibil: {
+//   success, credit_report_link, data: { credit_score, credit_report: [...] } } } } }
+// The provider PDF links are presigned and expire (10 min / 1 h), so the PDF
+// is downloaded straight away and served from our own uploads folder. Signed
+// links are stripped before the raw payload is persisted.
+// ============================================================
+const stripFinpassSignedLinks = (payload) => {
+  const copy = JSON.parse(JSON.stringify(payload || {}));
+  if (copy?.data) delete copy.data.pdf_url;
+  const results = copy?.data?.results || {};
+  for (const bureau of Object.values(results)) {
+    if (!bureau || typeof bureau !== "object") continue;
+    delete bureau.credit_report_link;
+    if (bureau.data) delete bureau.data.credit_report_link;
+  }
+  return copy;
+};
+
+// CreditReport.gender only accepts "Male" | "Female" | "Other".
+const toGenderEnum = (value) => {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "male" || v === "m") return "Male";
+  if (v === "female" || v === "f") return "Female";
+  if (v === "other") return "Other";
+  return null;
+};
+
+// Finpass returns credit_score as a string ("753"). Falls back to the first
+// bureau score in credit_report[0].scores when the top-level field is absent.
+const extractFinpassCibilScore = (cibil) => {
+  const candidates = [
+    cibil?.data?.credit_score,
+    cibil?.data?.credit_report?.[0]?.scores?.[0]?.score,
+  ];
+  for (const raw of candidates) {
+    if (raw === null || raw === undefined || raw === "" || raw === "-")
+      continue;
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n >= 300 && n <= 900) return n;
+  }
+  return null;
+};
+
+const CibilReportFromFinpass = async (req, res) => {
+  let creditReport = null;
+
+  try {
+    console.log("[CIBIL] Starting Finpass CIBIL report generation...");
+
+    const finpassBaseUrl = process.env.FINPASS_BASE_URL?.trim();
+    const finpassApiKey = process.env.FINPASS_API_KEY?.trim();
+    const finpassApiSecret = process.env.FINPASS_API_SECRET?.trim();
+
+    if (!finpassBaseUrl || !finpassApiKey || !finpassApiSecret) {
+      console.error("[CIBIL] Finpass credentials are not configured");
+
+      return res.status(500).json({
+        success: false,
+        message: "CIBIL API configuration is missing",
+      });
+    }
+
+    const apiUrl = `${finpassBaseUrl.replace(/\/$/, "")}/api/v1/services/multi-bureau/fetch`;
+
+    const {
+      fullname,
+      firstName,
+      lastName,
+      mobile,
+      email,
+      pan,
+      gender,
+      dob,
+      address,
+      state,
+      city,
+      pincode,
+      reportType,
+      consent,
+      orderId,
+    } = req.body;
+
+    const customerName =
+      fullname || `${firstName || ""} ${lastName || ""}`.trim();
+
+    // Every backend-hit validation failure is billed (see failValidationPull).
+    const cibilReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "cibil",
+        bureauLabel: "CIBIL",
+        message,
+        name: customerName,
+        mobile,
+        pan,
+        consent,
+      });
+
+    if (!customerName) return cibilReject("Full name is required");
+
+    if (!/^[0-9]{10}$/.test(String(mobile || "").trim()))
+      return cibilReject("Please enter a valid 10-digit mobile number");
+
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(pan || "").trim().toUpperCase()))
+      return cibilReject("Please enter a valid PAN number");
+
+    if (consent !== "Y") return cibilReject("Customer consent is required");
+
+    // Wallet gate before any paid bureau call.
+    if (!(await affordOr402(req, res, "cibil"))) return;
+
+    const finpassPayload = {
+      pan: String(pan).trim().toUpperCase(),
+      name: customerName,
+      mobile_number: String(mobile).trim(),
+      consent: "Y",
+      bureaus: ["cibil"],
+      gender: gender,
+    };
+
+    console.log("[CIBIL] Calling Finpass:", apiUrl, {
+      name: customerName,
+      mobile: "********",
+      pan: "********",
+    });
+
+    const response = await axios.post(apiUrl, finpassPayload, {
+      headers: {
+        "X-API-Key": finpassApiKey,
+        "X-API-Secret": finpassApiSecret,
+        "Content-Type": "application/json",
+      },
+      timeout: 60000,
+    });
+
+    const apiData = stripFinpassSignedLinks(response.data);
+    const cibil = response.data?.data?.results?.cibil || null;
+
+    const isSuccess = apiData?.success === true && cibil?.success === true;
+
+    const customerFields = {
+      userId: req.user?._id,
+      orderId: orderId || null,
+      name: customerName,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      mobile: mobile?.toString().trim() || null,
+      email: email?.toString().trim().toLowerCase() || null,
+      pan: pan?.toString().trim().toUpperCase() || null,
+      gender: toGenderEnum(gender),
+      dob: dob || null,
+      address: address || null,
+      state: state || null,
+      city: city || null,
+      pincode: pincode?.toString().trim() || null,
+      reportType: reportType || "CIBIL",
+      consent: "Y",
+      bureau: "CIBIL",
+    };
+
+    if (!isSuccess) {
+      creditReport = await CreditReport.create({
+        ...customerFields,
+        status: "Failed",
+        reportUrl: null,
+        localPath: null,
+        reportData: apiData,
+        score: null,
+        isPublic: false,
+      });
+
+      const failCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+
+      return res.status(400).json({
+        success: false,
+        message: cibil?.message || apiData?.message || "CIBIL data not found in Bureau",
+        creditReportId: creditReport._id,
+        status: creditReport.status,
+        data: apiData,
+        failureCharge: failCharge.ok ? failCharge.total : 0,
+      });
+    }
+
+    creditReport = await CreditReport.create({
+      ...customerFields,
+      status: "Pending",
+      reportUrl: null,
+      localPath: null,
+      reportData: apiData,
+      score: extractFinpassCibilScore(cibil),
+      isPublic: false,
+    });
+
+    console.log(
+      "[CIBIL] CreditReport saved:",
+      creditReport._id,
+      "score:",
+      creditReport.score,
+    );
+
+    // Download the provider PDF now — the presigned URL expires.
+    const providerPdfUrl = cibil?.credit_report_link || null;
+
+    if (!providerPdfUrl) {
+      throw new Error("Finpass returned no CIBIL PDF link");
+    }
+
+    const cibilUploadDir = path.join(__dirname, "../uploads/credit-reports/cibil");
+    if (!fs.existsSync(cibilUploadDir)) {
+      fs.mkdirSync(cibilUploadDir, { recursive: true });
+    }
+
+    const fileName = `cibil-${creditReport._id}.pdf`;
+    const pdfResponse = await axios.get(providerPdfUrl, {
+      responseType: "arraybuffer",
+      timeout: 60000,
+    });
+    fs.writeFileSync(path.join(cibilUploadDir, fileName), pdfResponse.data);
+
+    const relativePath = `/uploads/credit-reports/cibil/${fileName}`;
+
+    creditReport.localPath = relativePath;
+    creditReport.reportUrl = relativePath;
+    creditReport.status = "Success";
+
+    await creditReport.save();
+
+    console.log("[CIBIL] CreditReport updated with PDF");
+
+    await debitReportPull(creditReport, "cibil", "CIBIL");
+
+    return res.status(200).json({
+      success: true,
+
+      message: "CIBIL report generated successfully",
+
+      data: {
+        creditReportId: creditReport._id,
+
+        fileName,
+
+        pdfUrl: relativePath,
+
+        filePath: path.join(cibilUploadDir, fileName),
+
+        bureau: "CIBIL",
+
+        score: creditReport.score ?? null,
+
+        status: "Success",
+      },
+    });
+  } catch (error) {
+    console.error("[CIBIL] Finpass API/PDF Error:", error.message);
+
+    if (creditReport) {
+      try {
+        creditReport.status = "Failed";
+
+        await creditReport.save();
+
+        console.log("[CIBIL] CreditReport marked as Failed");
+      } catch (dbError) {
+        console.error("[CIBIL] Failed to update DB status:", dbError.message);
+      }
+    }
+
+    // Raw provider body stays in the server log; the UI gets a generic message.
+    const finpassStatus = error.response?.status;
+
+    if (error.response) {
+      console.error("[CIBIL] Finpass API status:", finpassStatus, error.response.data);
+    }
+
+    const isFinpassAuthFailure = finpassStatus === 401 || finpassStatus === 403;
+
+    // Every failed CIBIL pull is billed, including auth failures.
+    const cibilFailCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+
+    return res.status(finpassStatus || 500).json({
+      success: false,
+
+      message: isFinpassAuthFailure
         ? "Bureau authentication failed. Please contact support."
         : "Failed to generate CIBIL report. Please try again.",
 
@@ -833,7 +1128,7 @@ const CibilReportFromIndiConnect = async (req, res) => {
         mobile: mobile?.toString().trim() || null,
         email: email?.toString().trim().toLowerCase() || null,
         pan: pan?.toString().trim().toUpperCase() || null,
-        gender: gender || null,
+        gender: toGenderEnum(gender),
         dob: dob || null,
         address: address || null,
         state: state || null,
@@ -922,7 +1217,7 @@ const CibilReportFromIndiConnect = async (req, res) => {
 
       pan: pan?.toString().trim().toUpperCase() || null,
 
-      gender: gender || null,
+      gender: toGenderEnum(gender),
 
       dob: dob || null,
 
@@ -2861,6 +3156,250 @@ const logTokenInfo = (token) => {
  * MAIN EQUIFAX CONTROLLER
  * ============================================================
  */
+// ============================================================
+// EQUIFAX via Finpass — same endpoint as CIBIL, bureaus: ["equifax"].
+// Response: data.results.equifax = { success, credit_report_link, data }.
+// The provider PDF is downloaded from credit_report_link and saved locally.
+// ============================================================
+const EquifaxReportFromFinpass = async (req, res) => {
+  let creditReport = null;
+
+  try {
+    console.log("[EQUIFAX] Starting Finpass Equifax report generation...");
+
+    const finpassBaseUrl = process.env.FINPASS_BASE_URL?.trim();
+    const finpassApiKey = process.env.FINPASS_API_KEY?.trim();
+    const finpassApiSecret = process.env.FINPASS_API_SECRET?.trim();
+
+    if (!finpassBaseUrl || !finpassApiKey || !finpassApiSecret) {
+      console.error("[EQUIFAX] Finpass credentials are not configured");
+
+      return res.status(500).json({
+        success: false,
+        message: "Equifax API configuration is missing",
+      });
+    }
+
+    const apiUrl = `${finpassBaseUrl.replace(/\/$/, "")}/api/v1/services/multi-bureau/fetch`;
+
+    const {
+      name,
+      panNumber,
+      mobile,
+      gender,
+      dob,
+      email,
+      address,
+      state,
+      city,
+      pincode,
+      consent,
+      orderId,
+    } = req.body;
+
+    const equifaxReject = (message) =>
+      failValidationPull(req, res, {
+        productKey: "equifax",
+        bureauLabel: "EQUIFAX",
+        message,
+        name,
+        mobile,
+        pan: panNumber,
+        consent,
+      });
+
+    const requiredFields = {
+      name,
+      panNumber,
+      mobile,
+      gender,
+      dob,
+      email,
+      state,
+      city,
+      pincode,
+      consent,
+    };
+
+    const missingFields = Object.entries(requiredFields)
+      .filter(
+        ([, value]) =>
+          value === undefined || value === null || String(value).trim() === "",
+      )
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      return equifaxReject(`Required fields are missing: ${missingFields.join(", ")}`);
+    }
+
+    if (String(consent).trim().toUpperCase() !== "Y") {
+      return equifaxReject("Customer consent must be Y");
+    }
+
+    const pan = String(panNumber).trim().toUpperCase();
+    const cleanMobile = String(mobile).trim();
+
+    if (!/^[6-9][0-9]{9}$/.test(cleanMobile))
+      return equifaxReject("Invalid mobile number");
+
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan))
+      return equifaxReject("Invalid PAN number");
+
+    // Wallet gate before any paid bureau call.
+    if (!(await affordOr402(req, res, "equifax"))) return;
+
+    const finpassPayload = {
+      pan,
+      name: String(name).trim(),
+      mobile_number: cleanMobile,
+      consent: "Y",
+      gender: String(gender).trim().toLowerCase(),
+      bureaus: ["equifax"],
+    };
+
+    console.log("[EQUIFAX] Calling Finpass:", apiUrl, {
+      name: finpassPayload.name,
+      mobile: "********",
+      pan: "********",
+      bureaus: finpassPayload.bureaus,
+    });
+
+    const response = await axios.post(apiUrl, finpassPayload, {
+      headers: {
+        "X-API-Key": finpassApiKey,
+        "X-API-Secret": finpassApiSecret,
+        "Content-Type": "application/json",
+      },
+      timeout: 60000,
+    });
+
+    const apiData = stripFinpassSignedLinks(response.data);
+    const equifax = response.data?.data?.results?.equifax || null;
+
+    const isSuccess = apiData?.success === true && equifax?.success === true;
+
+    const customerFields = {
+      userId: req.user?._id,
+      orderId: orderId ? String(orderId).trim() : null,
+      name: finpassPayload.name,
+      mobile: cleanMobile,
+      pan,
+      email: email ? String(email).trim().toLowerCase() : null,
+      dob: String(dob).trim(),
+      gender: toGenderEnum(gender),
+      address: address ? String(address).trim() : "",
+      state: String(state).trim(),
+      city: String(city).trim(),
+      pincode: String(pincode).trim(),
+      reportType: "EQUIFAX",
+      consent: "Y",
+      bureau: "EQUIFAX",
+    };
+
+    if (!isSuccess) {
+      creditReport = await CreditReport.create({
+        ...customerFields,
+        status: "Failed",
+        reportUrl: null,
+        localPath: null,
+        reportData: apiData,
+        score: null,
+        isPublic: false,
+      });
+
+      const failCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
+
+      return res.status(400).json({
+        success: false,
+        message: equifax?.message || apiData?.message || "Equifax data not found in Bureau",
+        creditReportId: creditReport._id,
+        status: creditReport.status,
+        data: apiData,
+        failureCharge: failCharge.ok ? failCharge.total : 0,
+      });
+    }
+
+    creditReport = await CreditReport.create({
+      ...customerFields,
+      status: "Pending",
+      reportUrl: null,
+      localPath: null,
+      reportData: apiData,
+      score: extractFinpassCibilScore(equifax),
+      isPublic: false,
+    });
+
+    const providerPdfUrl = equifax?.credit_report_link || null;
+
+    if (!providerPdfUrl) {
+      throw new Error("Finpass returned no Equifax PDF link");
+    }
+
+    const equifaxUploadDir = path.join(__dirname, "../uploads/credit-reports/equifax");
+    if (!fs.existsSync(equifaxUploadDir)) {
+      fs.mkdirSync(equifaxUploadDir, { recursive: true });
+    }
+
+    const fileName = `equifax-${creditReport._id}.pdf`;
+    const pdfResponse = await axios.get(providerPdfUrl, {
+      responseType: "arraybuffer",
+      timeout: 60000,
+    });
+    fs.writeFileSync(path.join(equifaxUploadDir, fileName), pdfResponse.data);
+
+    const relativePath = `/uploads/credit-reports/equifax/${fileName}`;
+
+    creditReport.localPath = relativePath;
+    creditReport.reportUrl = relativePath;
+    creditReport.status = "Success";
+
+    await creditReport.save();
+
+    await debitReportPull(creditReport, "equifax", "EQUIFAX");
+
+    return res.status(200).json({
+      success: true,
+      status: "success",
+      message: "Equifax credit report fetched successfully",
+      creditReportId: creditReport._id,
+      score: creditReport.score ?? null,
+      reportUrl: relativePath,
+      localPath: relativePath,
+      data: creditReport,
+    });
+  } catch (error) {
+    console.error("[EQUIFAX] Finpass API/PDF Error:", error.message);
+
+    if (creditReport) {
+      try {
+        creditReport.status = "Failed";
+        await creditReport.save();
+      } catch (dbError) {
+        console.error("[EQUIFAX] Failed to update DB status:", dbError.message);
+      }
+    }
+
+    const finpassStatus = error.response?.status;
+
+    if (error.response) {
+      console.error("[EQUIFAX] Finpass API status:", finpassStatus, error.response.data);
+    }
+
+    const isFinpassAuthFailure = finpassStatus === 401 || finpassStatus === 403;
+
+    const equifaxFailCharge = await debitFailedPull(creditReport, "equifax", "EQUIFAX");
+
+    return res.status(finpassStatus || 500).json({
+      success: false,
+      message: isFinpassAuthFailure
+        ? "Bureau authentication failed. Please contact support."
+        : "Failed to generate Equifax report. Please try again.",
+      creditReportId: creditReport?._id || null,
+      failureCharge: equifaxFailCharge.ok ? equifaxFailCharge.total : 0,
+    });
+  }
+};
+
 const EquifaxReport = async (req, res) => {
   let creditReport = null;
 
@@ -3650,9 +4189,11 @@ const getCreditBureauDetails = async (req, res) => {
 
 module.exports = {
   CibilReportFromDigi,
+  CibilReportFromFinpass,
   CrifReport,
   ExperianReport,
   EquifaxReport,
+  EquifaxReportFromFinpass,
   getAllCreditReports,
   getCreditBureauDetails,
 };
