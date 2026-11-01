@@ -466,7 +466,31 @@ async function payWithWallet(req, res) {
 // POST /api/partner/custom-branded-report/order
 // Body: { email, phone } — creates a Razorpay order + Pending/Unpaid skeleton.
 // ---------------------------------------------------------------------------
+// Give reserved VeriPoints back to the partner when a Razorpay fee order is
+// cancelled, fails, or cannot be created. The REVERSAL ledger row's unique key
+// (reversal_<orderId>) makes this idempotent: a second call does nothing.
+async function releaseCbrPoints(userId, orderId, points, reason) {
+  if (!points || points <= 0) return;
+  try {
+    await PointsLedger.create({
+      userId,
+      type: 'REVERSAL',
+      points,
+      rupeeValue: points / 10,
+      key: `reversal_${orderId}`,
+      refId: String(orderId),
+      description: reason,
+    });
+  } catch (err) {
+    if (err?.code === 11000) return;
+    throw err;
+  }
+  await User.updateOne({ _id: userId }, { $inc: { creditPoints: points } });
+}
+
 async function createOrder(req, res) {
+  let reservedPoints = 0;
+  let reservedOrderId = null;
   try {
     const partnerId = req.user._id;
     const blocked = await findBlockingRequest(partnerId);
@@ -478,6 +502,18 @@ async function createOrder(req, res) {
         data: blocked,
       });
     }
+
+    // Credit points (optional, up to 1000 = Rs 100 off). Reserved below once the
+    // Razorpay order exists, so a failed order never holds points.
+    const { clampRedeem, CBR_MAX_POINTS, POINTS_PER_RUPEE_REDEEM } = require('../utils/points');
+    let points = 0;
+    if (String(req.body.usePoints || '').toLowerCase() === 'true' || Number(req.body.pointsToRedeem) > 0) {
+      const holder = await User.findById(partnerId).select('creditPoints').lean();
+      const requested = Number(req.body.pointsToRedeem) || CBR_MAX_POINTS;
+      points = clampRedeem(requested, holder?.creditPoints, CBR_MAX_POINTS);
+      points = Math.min(points, CBR_PRICE_INR * POINTS_PER_RUPEE_REDEEM);
+    }
+    const net = CBR_PRICE_INR - points / POINTS_PER_RUPEE_REDEEM;
 
     const { email, phone } = req.body;
     const validationError = validateContact(email, phone);
@@ -492,11 +528,41 @@ async function createOrder(req, res) {
 
     const razorpay = razorpayClient();
     const order = await razorpay.orders.create({
-      amount: Math.round(CBR_PRICE_INR * 100),
+      amount: Math.round(net * 100),
       currency: 'INR',
       receipt: `cbr_${Date.now()}`,
       payment_capture: 1,
     });
+
+    // Reserve the points now so they can't be spent on another order meanwhile.
+    if (points > 0) {
+      const held = await User.updateOne(
+        { _id: partnerId, creditPoints: { $gte: points } },
+        { $inc: { creditPoints: -points } },
+      );
+      if (held.modifiedCount === 0) {
+        return res.status(402).json({
+          success: false,
+          code: 'INSUFFICIENT_POINTS',
+          message: 'Not enough VeriPoints for this order. Refresh the page and try again.',
+        });
+      }
+      reservedPoints = points;
+      reservedOrderId = order.id;
+      try {
+        await PointsLedger.create({
+          userId: partnerId,
+          type: 'REDEEM',
+          points,
+          rupeeValue: points / POINTS_PER_RUPEE_REDEEM,
+          key: `redeem_${order.id}`,
+          refId: order.id,
+          description: 'AI Branded Report one-time fee (Razorpay, reserved)',
+        });
+      } catch (ledgerErr) {
+        console.error('[customBrandedReport] points ledger write failed:', order.id, ledgerErr.message);
+      }
+    }
 
     // One resumable skeleton per partner — reuse the unpaid row if the user
     // retries order creation (back button / modal dismiss) instead of
@@ -528,7 +594,8 @@ async function createOrder(req, res) {
       orderId: order.id,
       amount: CBR_PRICE_INR,
       gstAmount: 0,
-      totalAmount: CBR_PRICE_INR,
+      totalAmount: net,
+      pointsRedeemed: points,
       currency: 'INR',
       type: 'DEBIT',
       purpose: 'CUSTOM_BRAND_FEE',
@@ -536,6 +603,8 @@ async function createOrder(req, res) {
       gateway: 'RAZORPAY',
       description: `AI Branded Report one-time fee (${skeleton.requestId})`,
     });
+    // The pending transaction now owns the reservation; cancel/fail releases it.
+    reservedPoints = 0;
 
     return res.status(200).json({
       success: true,
@@ -543,10 +612,15 @@ async function createOrder(req, res) {
       keyId: process.env.RAZORPAY_KEY_ID,
       amount: order.amount,
       currency: order.currency,
-      price: CBR_PRICE_INR,
+      price: net,
+      pointsRedeemed: points,
       requestId: skeleton.requestId,
     });
   } catch (err) {
+    if (reservedPoints > 0) {
+      await releaseCbrPoints(req.user._id, reservedOrderId, reservedPoints, 'Order creation failed — VeriPoints released').catch((e) =>
+        console.error('[customBrandedReport] points release failed:', e.message));
+    }
     console.error('[customBrandedReport] createOrder error:', err);
     return res.status(500).json({ success: false, message: 'Could not start online payment. Please try again.' });
   }
@@ -584,10 +658,14 @@ async function verifyPayment(req, res) {
       .digest('hex');
 
     if (generatedSignature !== razorpay_signature) {
+      const wasPending = txn.status === 'PENDING';
       txn.status = 'FAILED';
       txn.paymentId = razorpay_payment_id;
       txn.signature = razorpay_signature;
       await txn.save();
+      if (wasPending) {
+        await releaseCbrPoints(txn.userId, txn.orderId, txn.pointsRedeemed, 'Payment failed — VeriPoints released');
+      }
       return res.status(400).json({ success: false, message: 'Payment signature verification failed.' });
     }
 
@@ -639,6 +717,11 @@ async function cancelCustomBrandedOrder(req, res) {
       { $set: { status: 'FAILED' } },
       { new: true },
     );
+
+    // Only the PENDING -> FAILED transition releases reserved points.
+    if (updated && updated.pointsRedeemed > 0) {
+      await releaseCbrPoints(partnerId, updated.orderId, updated.pointsRedeemed, 'Payment cancelled — VeriPoints released');
+    }
 
     if (updated && failed === true && process.env.CBR_RETRY_WHATSAPP_ENABLED === 'true') {
       const [partner, request] = await Promise.all([
