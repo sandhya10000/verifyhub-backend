@@ -65,6 +65,8 @@ const AIAnalysisSchema = new mongoose.Schema(
 
     // Custom Branded AI Credit Report fields
     isBranded: { type: Boolean, default: false, index: true },
+    // Credit points chosen at upload (max 100 = Rs 10 off); applied at debit.
+    pointsToRedeem: { type: Number, default: 0, min: 0 },
     brandProfileId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'BrandProfile',

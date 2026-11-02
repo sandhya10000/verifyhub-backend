@@ -15,7 +15,10 @@ const { parseCibilPdfText, buildCompactContext } = require('../services/cibilPar
 const debitAiPull = async (userId, analysisId) => {
   try {
     const { chargeForReport } = require('./wallet');
-    const charge = await chargeForReport(userId, analysisId, 'ai', 'AI');
+    // Points were chosen and capped at upload time (see uploadReport).
+    const analysis = await AIAnalysis.findById(analysisId).select('pointsToRedeem').lean();
+    const points = analysis?.pointsToRedeem || 0;
+    const charge = await chargeForReport(userId, analysisId, 'ai', 'AI', points);
     if (!charge.ok) {
       console.warn(`[wallet] AI charge skipped (${charge.reason}) for analysis ${analysisId}`);
     } else {

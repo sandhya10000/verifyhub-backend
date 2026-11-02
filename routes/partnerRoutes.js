@@ -4,6 +4,7 @@ const partnerController = require('../controllers/partnerController');
 const auth = require('../middleware/auth');
 
 router.get('/overview/summary', auth, partnerController.getSummary);
+router.get('/points', auth, partnerController.getPoints);
 router.get('/overview/timeseries', auth, partnerController.getTimeseries);
 router.get('/overview/recent', auth, partnerController.getRecent);
 router.get('/profile', auth, partnerController.getProfile);

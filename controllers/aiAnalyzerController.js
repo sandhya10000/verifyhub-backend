@@ -58,12 +58,24 @@ exports.uploadReport = async (req, res) => {
     const rawLang = (req.body.language || '').trim().toLowerCase();
     const language = ALLOWED_LANGUAGE_CODES.has(rawLang) ? rawLang : 'en';
     console.log(`[uploadReport] language: '${language}' (raw: '${rawLang}')`);
+    // Credit points: optional, capped at AI_MAX_POINTS and the partner's balance.
+    // Stored on the analysis now so the background debit uses the same amount.
+    let pointsToRedeem = 0;
+    if (String(req.body.usePoints || '').toLowerCase() === 'true') {
+      const User = require('../models/User');
+      const { clampRedeem, AI_MAX_POINTS } = require('../utils/points');
+      const holder = await User.findById(req.user._id).select('creditPoints').lean();
+      pointsToRedeem = clampRedeem(AI_MAX_POINTS, holder?.creditPoints, AI_MAX_POINTS);
+    }
+
     // Wallet affordability gate (AI analysis = ₹100 + GST) — before
     // accepting the file for background processing
     try {
       const { canAfford } = require('../utils/wallet');
       const gate = await canAfford(req.user?._id, 'ai');
-      if (!gate.ok) {
+      const netRequired = gate.total - pointsToRedeem / 10;
+      const coveredByPoints = pointsToRedeem > 0 && gate.reason === 'insufficient' && gate.balance >= netRequired;
+      if (!gate.ok && !coveredByPoints) {
         fs.unlinkSync(req.file.path);
         return res.status(402).json({
           success: false,
@@ -87,6 +99,7 @@ exports.uploadReport = async (req, res) => {
       fileType: path.extname(req.file.originalname).replace('.', ''),
       language,
       status: 'uploaded',
+      pointsToRedeem,
     });    logStep(analysis._id, 'Upload Received', { fileName: req.file.originalname, sizeBytes: req.file.size });
     logStep(analysis._id, 'DB Record Created', { analysisId: analysis._id });
 

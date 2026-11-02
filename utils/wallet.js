@@ -2,6 +2,8 @@ const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const Pricing = require("../models/Pricing");
 const { PLAN_KEYS, quoteForProduct } = require("../models/Pricing");
+const PointsLedger = require("../models/PointsLedger");
+const { POINTS_PER_RUPEE_REDEEM } = require("./points");
 
 let cachedPricing = null;
 let cachedAt = 0;
@@ -49,7 +51,10 @@ async function canAfford(userId, productKey) {
   return { ok: true, total, balance: user.walletBalance, tier };
 }
 
-async function applyDebit(userId, reportId, productLabel, quote, purpose, tier) {
+// pointsToRedeem (optional): credit points applied to this charge. Each point
+// is worth Rs 0.10 (10 points = Rs 1). Rupees and points are debited in one
+// atomic update, so a charge can never take points without the rupee part.
+async function applyDebit(userId, reportId, productLabel, quote, purpose, tier, pointsToRedeem = 0) {
   const { base, gstAmount, total } = quote;
 
   // Already charged? Treat as success without double-charging.
@@ -59,14 +64,32 @@ async function applyDebit(userId, reportId, productLabel, quote, purpose, tier) 
     return { ok: true, duplicate: true, total, balance: user?.walletBalance ?? null };
   }
 
-  const debit = await User.updateOne(
-    { _id: userId, walletBalance: { $gte: total } },
-    { $inc: { walletBalance: -total } },
-  );
+  // Points can never cover more than the charge itself.
+  const requestedPoints = Math.max(0, Math.floor(Number(pointsToRedeem) || 0));
+  const points = Math.min(requestedPoints, Math.floor(total * POINTS_PER_RUPEE_REDEEM));
+  const net = Math.round((total - points / POINTS_PER_RUPEE_REDEEM) * 100) / 100;
+
+  // Only add the points guard and $inc when points are used. Users created
+  // before creditPoints existed have no such field, so a $gte guard would
+  // block every ordinary debit.
+  const filter = { _id: userId, walletBalance: { $gte: net } };
+  const inc = { walletBalance: -net };
+  if (points > 0) {
+    filter.creditPoints = { $gte: points };
+    inc.creditPoints = -points;
+  }
+
+  const debit = await User.updateOne(filter, { $inc: inc });
   if (debit.modifiedCount === 0) {
     const user = await User.findById(userId).select("walletBalance").lean();
-    return { ok: false, reason: user ? "insufficient" : "user-not-found", total, balance: user?.walletBalance ?? 0 };
+    return { ok: false, reason: user ? "insufficient" : "user-not-found", total: net, balance: user?.walletBalance ?? 0 };
   }
+
+  const refund = async () => {
+    const back = { walletBalance: net };
+    if (points > 0) back.creditPoints = points;
+    await User.updateOne({ _id: userId }, { $inc: back });
+  };
 
   try {
     await Transaction.create({
@@ -75,7 +98,8 @@ async function applyDebit(userId, reportId, productLabel, quote, purpose, tier) 
       reportId,
       amount: base,
       gstAmount,
-      totalAmount: total,
+      totalAmount: net,
+      pointsRedeemed: points,
       currency: "INR",
       type: "DEBIT",
       purpose,
@@ -87,30 +111,54 @@ async function applyDebit(userId, reportId, productLabel, quote, purpose, tier) 
   } catch (err) {
     if (err && err.code === 11000) {
       // Lost a race with a parallel charge for the same report —
-      // refund this second debit.
-      await User.updateOne({ _id: userId }, { $inc: { walletBalance: total } });
+      // refund this second debit (rupees and points).
+      await refund();
       const user = await User.findById(userId).select("walletBalance").lean();
-      return { ok: true, duplicate: true, total, balance: user?.walletBalance ?? null };
+      return { ok: true, duplicate: true, total: net, balance: user?.walletBalance ?? null };
     }
     console.error("[wallet] DEBIT applied but ledger write failed:", {
-      userId: String(userId), reportId: String(reportId), productLabel, total, error: err?.message,
+      userId: String(userId), reportId: String(reportId), productLabel, total: net, error: err?.message,
     });
     throw err;
   }
 
-  const user = await User.findById(userId).select("walletBalance").lean();
-  return { ok: true, total, base, gstAmount, balance: user?.walletBalance ?? null };
+  if (points > 0) {
+    try {
+      await PointsLedger.create({
+        userId,
+        type: "REDEEM",
+        points,
+        rupeeValue: points / POINTS_PER_RUPEE_REDEEM,
+        key: `redeem_${String(reportId)}`,
+        refId: String(reportId),
+        description: productLabel,
+      });
+    } catch (err) {
+      console.error("[points] redeem ledger write failed:", String(reportId), err?.message);
+    }
+  }
+
+  const user = await User.findById(userId).select("walletBalance creditPoints").lean();
+  return {
+    ok: true,
+    total: net,
+    base,
+    gstAmount,
+    pointsRedeemed: points,
+    balance: user?.walletBalance ?? null,
+    creditPoints: user?.creditPoints ?? null,
+  };
 }
 
 // Charge one successful report. Idempotent per reportId; balance can
 // never go negative thanks to the $gte guard.
-async function chargeForReport(userId, reportId, productKey, bureau) {
+async function chargeForReport(userId, reportId, productKey, bureau, pointsToRedeem = 0) {
   const { tier } = await userTier(userId);
   const quote = await quoteFor(productKey, tier, "success");
   return applyDebit(
     userId, reportId,
     `${String(productKey).toUpperCase()} report charge${bureau ? ` (${bureau})` : ""} · ${tier} plan`,
-    quote, "REPORT_CHARGE", tier,
+    quote, "REPORT_CHARGE", tier, pointsToRedeem,
   );
 }
 
