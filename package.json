@@ -29,6 +29,7 @@
     "nodemailer": "^10.0.10",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.4",
+    "pdfjs-dist": "^4.10.38",
     "puppeteer": "^25.9.0",
     "razorpay": "^2.9.8"
   },

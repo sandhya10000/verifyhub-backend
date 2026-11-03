@@ -33,6 +33,7 @@ const partnerRoutes = require("./routes/partnerRoutes");
 const customBrandedReportRoutes = require("./routes/customBrandedReportRoutes");
 const rcRoutes = require("./routes/rc");
 const gstRoutes = require("./routes/gst");
+const bsaRoutes = require("./routes/bsa");
 
 // Connect Database
 connectDB();
@@ -72,6 +73,7 @@ const PRICING_DEFAULTS = {
   aiFail: { base: 100, gstRate: 0 },
   rc: { base: 10, gstRate: 0 },
   gst: { base: 10, gstRate: 0 },
+  bsa: { base: 100, gstRate: 0 },
   otherFailedCharge: { base: 30, gstRate: 0 },
   minRecharge: 1000,
   lowBalanceThreshold: 500,
@@ -106,14 +108,11 @@ Pricing.updateOne({ key: "default" }, { $setOnInsert: PRICING_DEFAULTS }, { upse
       // admin-editable and must survive restarts (it was being reset to
       // 1000 on every boot, ignoring the admin's value on AddFunds).
       // TODO(multi-plan-restore): delete this block.
+      // Plan prices are NOT re-synced on boot: that overwrote admin edits (e.g.
+      // Experian) with the defaults on every restart. Missing rows are still
+      // backfilled above.
       const { SINGLE_PLAN_MODE } = require("./models/Pricing");
       if (SINGLE_PLAN_MODE) {
-        const sync = {};
-        for (const tier of ["startup", "starter", "growth", "pro", "enterprise"]) {
-          sync[`plans.${tier}`] = PRICING_DEFAULTS.plans[tier];
-        }
-        const res = await Pricing.updateOne({ key: "default" }, { $set: sync });
-        if (res.modifiedCount > 0) console.log("[Pricing] single-plan prices force-synced (cibil 60 / exp 40 / crif 50 / eq 40)");
         // AI GST removed per founder (base 100 = charge 100): normalize any
         // pre-existing doc still carrying ai.gstRate 18 to 0.
         const aiFix = await Pricing.updateOne(
@@ -231,6 +230,7 @@ app.use("/api/branding", customBrandedReportRoutes);
 app.use("/api/partner/branding", customBrandedReportRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
+app.use("/api/bsa", bsaRoutes);
 
 // Low-balance mail sweep — DISABLED by default.
 //

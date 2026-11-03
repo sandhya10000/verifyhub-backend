@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const Ticket = require('../models/Ticket');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
+const BankStatementAnalysis = require('../models/BankStatementAnalysis');
 const {
   DAY_MS,
   startOfIstDay,
@@ -745,14 +746,15 @@ exports.getPartnerReports = async (req, res) => {
     const exists = await User.exists({ _id: id, role: { $ne: "admin" } });
     if (!exists) return res.status(404).json({ success: false, message: "Partner not found" });
 
-    const [crTotal, aiTotal, rcTotal, gstTotal] = await Promise.all([
+    const [crTotal, aiTotal, rcTotal, gstTotal, bsaTotal] = await Promise.all([
       CreditReport.countDocuments({ userId: id }),
       AIAnalysis.countDocuments({ userId: id }),
       RcVerification.countDocuments({ userId: id }),
       GstVerification.countDocuments({ userId: id }),
+      BankStatementAnalysis.countDocuments({ userId: id }),
     ]);
     // Over-fetch each side so the merged page is correct without full-collection loads.
-    const [crs, ais, rcs, gsts] = await Promise.all([
+    const [crs, ais, rcs, gsts, bsas] = await Promise.all([
       CreditReport.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
         .select("bureau score status reportType name createdAt localPath reportUrl").lean(),
       AIAnalysis.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
@@ -761,10 +763,14 @@ exports.getPartnerReports = async (req, res) => {
         .select("vehicleNumber ownerName status reportUrl localPath createdAt").lean(),
       GstVerification.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
         .select("gstin legalName status reportUrl localPath createdAt").lean(),
+      BankStatementAnalysis.find({ userId: id }).sort({ createdAt: -1 }).skip(skip).limit(perPage)
+        .select("fileName accountHolderName status localPath createdAt").lean(),
     ]);
-    // RC/GST debits ledger against the verification _id as reportId —
+    // RC/GST/BSA debits ledger against the verification _id as reportId —
     // same as credit reports — so one charge map covers all sides.
-    const allIds = [...crs.map((r) => r._id), ...rcs.map((r) => r._id), ...gsts.map((r) => r._id)];
+    const allIds = [
+      ...crs.map((r) => r._id), ...rcs.map((r) => r._id), ...gsts.map((r) => r._id), ...bsas.map((r) => r._id),
+    ];
     const charges = allIds.length
       ? await Transaction.find({ reportId: { $in: allIds } }).select("reportId totalAmount purpose").lean()
       : [];
@@ -806,9 +812,19 @@ exports.getPartnerReports = async (req, res) => {
         fileUrl: g.localPath || g.reportUrl || null,
         createdAt: g.createdAt,
       })),
+      ...bsas.map((b) => ({
+        id: b._id, kind: "bsa", bureau: null, ref: b.fileName,
+        customer: b.accountHolderName || b.fileName || "—",
+        score: null, status: b.status,
+        charge: chargeMap[String(b._id)]?.totalAmount ?? null,
+        // Served through the admin download endpoint, not a public URL.
+        hasFile: b.status === "Success" && !!b.localPath,
+        fileUrl: null,
+        createdAt: b.createdAt,
+      })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, perPage);
 
-    const total = crTotal + aiTotal + rcTotal + gstTotal;
+    const total = crTotal + aiTotal + rcTotal + gstTotal + bsaTotal;
     res.json({ success: true, data: rows, total, page: parseInt(page, 10), pages: Math.ceil(total / perPage) });
   } catch (err) {
     console.error("getPartnerReports Admin Error:", err);
@@ -883,7 +899,7 @@ exports.updatePricing = async (req, res) => {
         }
       }
     }
-    for (const key of ["ai", "aiFail", "rc", "gst", "otherFailedCharge"]) {
+    for (const key of ["ai", "aiFail", "rc", "gst", "bsa", "otherFailedCharge"]) {
       const obj = req.body?.[key];
       if (obj && typeof obj === "object") {
         for (const field of ["base", "gstRate"]) {
