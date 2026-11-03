@@ -152,6 +152,37 @@ const debitFailedPull = async (
   }
 };
 
+// Bureau call failed before any CreditReport row was written (provider
+// rejected the request outright, timeout, etc.). Persist a Failed row so
+// debitFailedPull has a report to bill against. Never throws.
+const ensureFailedReport = async (req, bureauLabel, message) => {
+  if (!req.user?._id) return null;
+  const body = req.body || {};
+  try {
+    return await CreditReport.create({
+      userId: req.user._id,
+      name:
+        String(
+          body.fullname || `${body.firstName || ""} ${body.lastName || ""}`,
+        ).trim() || "(invalid)",
+      mobile: String(body.mobile || "").trim() || "(invalid)",
+      pan: String(body.pan || "").trim().toUpperCase() || "(invalid)",
+      reportType: bureauLabel,
+      bureau: bureauLabel,
+      consent: body.consent === "Y" ? "Y" : "N",
+      status: "Failed",
+      reportData: { error: { message } },
+      isPublic: false,
+    });
+  } catch (err) {
+    console.error(
+      `[wallet] failed to persist ${bureauLabel} fail report:`,
+      err.message,
+    );
+    return null;
+  }
+};
+
 // Reject a request that failed backend input validation and bill it.
 // Policy (single-plan launch onward): every backend-hit failure is billed,
 // regardless of status code — including missing/invalid input and missing
@@ -312,14 +343,14 @@ const CibilReportFromDigi = async (req, res) => {
     const digiJwt =
       digiSecret && digiPartnerId
         ? jwt.sign(
-            {
-              timestamp: Math.floor(Date.now() / 1000),
-              partnerId: digiPartnerId,
-              reqid: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
-            },
-            digiSecret,
-            { algorithm: "HS256" },
-          )
+          {
+            timestamp: Math.floor(Date.now() / 1000),
+            partnerId: digiPartnerId,
+            reqid: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          },
+          digiSecret,
+          { algorithm: "HS256" },
+        )
         : process.env.DIGI_JWT_TOKEN?.trim();
 
     if (!digiJwt) {
@@ -527,15 +558,25 @@ const CibilReportFromDigi = async (req, res) => {
 
     const isDigiAuthFailure = digiStatus === 401 || digiStatus === 403;
 
-    // Every failed CIBIL pull is billed, including auth failures.
+    // Every failed CIBIL pull is billed, including auth failures. If the Digi
+    // call died before the Pending row was written, create a Failed row first
+    // so the fee has a report to bill against.
+    if (!creditReport) {
+      creditReport = await ensureFailedReport(
+        req,
+        "CIBIL",
+        error.response?.data?.message || error.message,
+      );
+    }
     const cibilFailCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+    console.log("DIGI")
 
     return res.status(digiStatus || 500).json({
       success: false,
 
       message: isDigiAuthFailure
         ? "Bureau authentication failed. Please contact support."
-        : "Failed to generate CIBIL report. Please try again.",
+        : "No Data Found",
 
       creditReportId: creditReport?._id || null,
 
@@ -799,7 +840,6 @@ const CibilReportFromFinpass = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("[CIBIL] Finpass API/PDF Error:", error.message);
 
     if (creditReport) {
       try {
@@ -807,7 +847,6 @@ const CibilReportFromFinpass = async (req, res) => {
 
         await creditReport.save();
 
-        console.log("[CIBIL] CreditReport marked as Failed");
       } catch (dbError) {
         console.error("[CIBIL] Failed to update DB status:", dbError.message);
       }
@@ -816,21 +855,35 @@ const CibilReportFromFinpass = async (req, res) => {
     // Raw provider body stays in the server log; the UI gets a generic message.
     const finpassStatus = error.response?.status;
 
+    // Every failed CIBIL pull is billed, including auth failures. If the call
+    // died before the Pending row was written, create a Failed row first —
+    // otherwise debitFailedPull has no report and silently skips the fee.
+    if (!creditReport) {
+      creditReport = await ensureFailedReport(
+        req,
+        "CIBIL",
+        error.response?.data?.message || error.message,
+      );
+    }
+    const cibilFailCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
+
     if (error.response) {
-      console.error("[CIBIL] Finpass API status:", finpassStatus, error.response.data);
+      return res.status(finpassStatus || 500).json({
+        success: false,
+        message: error.response?.data?.message || "No Data Found",
+        creditReportId: creditReport?._id || null,
+        failureCharge: cibilFailCharge.ok ? cibilFailCharge.total : 0,
+      });
     }
 
     const isFinpassAuthFailure = finpassStatus === 401 || finpassStatus === 403;
-
-    // Every failed CIBIL pull is billed, including auth failures.
-    const cibilFailCharge = await debitFailedPull(creditReport, "cibil", "CIBIL");
 
     return res.status(finpassStatus || 500).json({
       success: false,
 
       message: isFinpassAuthFailure
         ? "Bureau authentication failed. Please contact support."
-        : "Failed to generate CIBIL report. Please try again.",
+        : "No Data Found",
 
       creditReportId: creditReport?._id || null,
 
@@ -2257,9 +2310,9 @@ const CrifReport = async (req, res) => {
       const crifErrCharge = creditReport
         ? await debitFailedPull(creditReport, "crif", "CRIF")
         : {
-            ok: false,
-            total: 0,
-          };
+          ok: false,
+          total: 0,
+        };
 
       return res.status(error.response.status || 500).json({
         success: false,
