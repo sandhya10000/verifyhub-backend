@@ -2321,12 +2321,37 @@ const CrifReport = async (req, res) => {
 const ExperianReport = async (req, res) => {
   let creditReport = null;
 
+  // Prevent charging the same report twice inside this controller.
+  let failureChargeAttempted = false;
+
+  const chargeFailedPull = async () => {
+    if (!creditReport || failureChargeAttempted) {
+      return { ok: false, total: 0 };
+    }
+
+    failureChargeAttempted = true;
+
+    try {
+      return await debitFailedPull(creditReport, "experian", "EXPERIAN");
+    } catch (err) {
+      console.error("[EXPERIAN] Failure charge error:", err.message);
+
+      return { ok: false, total: 0 };
+    }
+  };
+
   try {
+    // ------------------------------------------------------------
+    // 1. READ REQUEST
+    // ------------------------------------------------------------
+
     const {
-      panNumber,
       fullName,
+      name,
       mobileNumber,
+      mobile,
       email,
+      panNumber,
       dob,
       pincode,
       stateName,
@@ -2335,11 +2360,15 @@ const ExperianReport = async (req, res) => {
       addressLine2,
       customerConsent,
       orderId,
-    } = req.body;
+    } = req.body || {};
 
-    // ============================================================
-    // 1. AUTHENTICATED USER
-    // ============================================================
+    // Support both the existing frontend and the supplied cURL.
+    const applicantName = String(fullName || name || "").trim();
+    const applicantMobile = String(mobileNumber || mobile || "").trim();
+
+    // ------------------------------------------------------------
+    // 2. AUTHENTICATION
+    // ------------------------------------------------------------
 
     const userId = req.user?._id;
 
@@ -2350,231 +2379,77 @@ const ExperianReport = async (req, res) => {
       });
     }
 
-    console.log("[EXPERIAN] Authenticated User:", userId);
+    console.log("[EXPERIAN] Authenticated user:", userId);
 
-    // ============================================================
-    // 2. VALIDATION
-    // ============================================================
+    // ------------------------------------------------------------
+    // 3. VALIDATION
+    // ------------------------------------------------------------
 
-    const requiredFields = {
-      panNumber,
-      fullName,
-      mobileNumber,
-      email,
-      dob,
-      pincode,
-      stateName,
-      cityName,
-      customerConsent,
-    };
+    const missingFields = [];
 
-    const missingFields = Object.entries(requiredFields)
-      .filter(
-        ([, value]) =>
-          value === undefined || value === null || String(value).trim() === "",
-      )
-      .map(([key]) => key);
+    if (!applicantName) {
+      missingFields.push("fullName/name");
+    }
 
-    // Every backend-hit validation failure is billed (see failValidationPull).
-    const experianReject = (message, extra = {}) =>
-      failValidationPull(req, res, {
-        productKey: "experian",
-        bureauLabel: "EXPERIAN",
-        message,
-        body: extra,
-        name: fullName,
-        mobile: mobileNumber,
-        pan: panNumber,
+    if (!applicantMobile) {
+      missingFields.push("mobileNumber/mobile");
+    }
+
+    if (missingFields.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Required fields are missing",
+        missingFields,
       });
-
-    if (missingFields.length > 0) {
-      return experianReject("Required fields are missing", { missingFields });
     }
 
-    // ============================================================
-    // 3. CONSENT
-    // ============================================================
-
-    if (String(customerConsent).trim().toUpperCase() !== "Y") {
-      return experianReject("Customer consent must be Y");
+    if (!/^[6-9]\d{9}$/.test(applicantMobile)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid 10-digit Indian mobile number",
+      });
     }
 
-    // ============================================================
-    // 3A. WALLET GATE
-    // ============================================================
-
-    // Wallet gate (Experian = ₹50 + GST)
-    if (!(await affordOr402(req, res, "experian"))) return;
-
-    // ============================================================
-    // 4. DOB VALIDATION
-    // ============================================================
-
-    const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
-    const dateOfBirth = String(dob).trim();
-
-    if (!dobRegex.test(dateOfBirth)) {
-      return experianReject("DOB must be in YYYY-MM-DD format");
+    if (
+      customerConsent !== undefined &&
+      String(customerConsent).trim().toUpperCase() !== "Y"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer consent must be Y",
+      });
     }
 
-    // ============================================================
-    // 5. NAME
-    // ============================================================
+    // ------------------------------------------------------------
+    // 4. WALLET CHECK
+    // ------------------------------------------------------------
 
-    const nameParts = String(fullName).trim().split(/\s+/);
-
-    if (nameParts.length < 2) {
-      return experianReject("Full name must contain first name and last name");
+    if (!(await affordOr402(req, res, "experian"))) {
+      return;
     }
 
-    const firstName = nameParts.shift();
-    const lastName = nameParts.join(" ");
+    // ------------------------------------------------------------
+    // 5. INDICONNECT ENV CONFIGURATION
+    // ------------------------------------------------------------
 
-    // ============================================================
-    // 6. CLEAN DATA
-    // ============================================================
+    const baseUrl =
+      process.env.INDICONNECT_BASE_URL?.trim() ||
+      "https://api.ccs.indiconnect.in";
 
-    const pan = String(panNumber).trim().toUpperCase();
-    const mobile = String(mobileNumber).trim();
-    const pin = String(pincode).trim();
-
-    // ============================================================
-    // 7. CONSENT TIMESTAMP
-    // ============================================================
-
-    const consentTimestamp = Math.floor(Date.now() / 1000);
-
-    // ============================================================
-    // 8. GRAPHQL QUERY
-    // ============================================================
-
-    const query = `
-      mutation {
-        verify(
-          input: {
-            documentType: "Experian Credit Bureau_S"
-            mobile: "${mobile}"
-            panNumber: "${pan}"
-            firstName: "${firstName}"
-            lastName: "${lastName}"
-            dob: "${dateOfBirth}"
-            pincode: "${pin}"
-            consent: {
-              consentFlag: true
-              consentTimestamp: ${consentTimestamp}
-              consentIpAddress: "127.0.0.1"
-              consentMessageId: "CM_1"
-            }
-          }
-        ) {
-          status
-          ok
-          message
-
-          result {
-            __typename
-
-            ... on ExperianCreditReportResult {
-
-              Header {
-                SystemCode
-                MessageText
-                ReportDate
-                ReportTime
-              }
-
-              UserMessage {
-                UserMessageText
-              }
-
-              CreditProfileHeader {
-                ReportDate
-                ReportTime
-                Version
-                ReportNumber
-              }
-
-              Match_result {
-                Exact_match
-              }
-
-              TotalCAPS_Summary {
-                TotalCAPSLast7Days
-                TotalCAPSLast30Days
-                TotalCAPSLast90Days
-                TotalCAPSLast180Days
-              }
-
-              SCORE {
-                FCIREXScore
-                FCIREXScoreConfidLevel
-              }
-
-              CAIS_Account {
-                CAIS_Summary
-                CAIS_Account_DETAILS
-              }
-
-              CAPS {
-                CAPS_Summary
-                CAPS_Application_Details
-              }
-
-              NonCreditCAPS {
-                NonCreditCAPS_Summary
-                CAPS_Application_Details
-              }
-
-              Current_Application {
-                Current_Application_Details
-              }
-
-              excelExperianReport
-            }
-          }
-
-          error {
-            decryptedError
-          }
-        }
-      }
-    `;
-
-    // ============================================================
-    // 9. PAYLOAD
-    // ============================================================
-
-    const payload = {
-      query,
-      variables: {},
-    };
-
-    // ============================================================
-    // 10. ENV CONFIG
-    // ============================================================
-
-    const baseUrl = process.env.INDICONNECT_BASE_URL?.trim();
-    const accessKey = process.env.INDICONNECT_ACCESS_KEY?.trim();
-    const secretKey = process.env.INDICONNECT_SECRET_KEY?.trim();
     const serviceKey = process.env.INDICONNECT_SERVICE_KEY?.trim();
 
-    const myAppId =
-      process.env.INDICONNECT_EXPERIAN_MY_APP_ID?.trim() ||
-      "verification_v5_1_app";
+    const accessKey = process.env.INDICONNECT_ACCESS_KEY?.trim();
 
-    const providerCode =
-      process.env.INDICONNECT_EXPERIAN_PROVIDER_CODE?.trim() || "PGG3GFU7";
+    const secretKey = process.env.INDICONNECT_SECRET_KEY?.trim();
+
+    const providerCode = process.env.INDICONNECT_EXPERIAN_PROVIDER_CODE?.trim();
 
     const endpoint =
       process.env.INDICONNECT_EXPERIAN_ENDPOINT?.trim() ||
       "/idverifygr/verification";
 
-    // ============================================================
-    // 11. ENV VALIDATION
-    // ============================================================
-
-    if (!baseUrl || !accessKey || !secretKey || !serviceKey) {
-      console.error("[EXPERIAN] Missing environment variables");
+    if (!serviceKey || !accessKey || !secretKey || !providerCode) {
+      console.error("[EXPERIAN] Required IndiConnect configuration is missing");
 
       return res.status(500).json({
         success: false,
@@ -2582,86 +2457,112 @@ const ExperianReport = async (req, res) => {
       });
     }
 
-    // ============================================================
-    // 12. HEADERS
-    // ============================================================
+    const apiUrl =
+      `${baseUrl.replace(/\/+$/, "")}/` + endpoint.replace(/^\/+/, "");
 
+    // IMPORTANT:
+    // Match the Authorization order in your supplied cURL:
+    // x-api-access <SECRET_KEY>:<ACCESS_KEY>
     const headers = {
-      myAppId,
       "service-key": serviceKey,
       Authorization: `x-api-access ${secretKey}:${accessKey}`,
       providercode: providerCode,
       "Content-Type": "application/json",
     };
 
-    // ============================================================
-    // 13. API URL
-    // ============================================================
-
-    const apiUrl =
-      `${baseUrl.replace(/\/$/, "")}/` + `${endpoint.replace(/^\//, "")}`;
-
-    console.log("[EXPERIAN] API URL:", apiUrl);
-
-    console.log("[EXPERIAN] ENV CHECK:", {
-      myAppId,
+    console.log("[EXPERIAN] Request configuration:", {
+      endpoint: apiUrl,
       providerCode,
-      baseUrl,
-      endpoint,
-
-      accessKeyPresent: !!accessKey,
-      accessKeyLength: accessKey.length,
-
-      secretKeyPresent: !!secretKey,
-      secretKeyLength: secretKey.length,
-
-      serviceKeyPresent: !!serviceKey,
-      serviceKeyLength: serviceKey.length,
+      serviceKeyPresent: Boolean(serviceKey),
+      accessKeyPresent: Boolean(accessKey),
+      secretKeyPresent: Boolean(secretKey),
     });
 
-    // ============================================================
-    // 14. CREATE PENDING CREDIT REPORT
-    // ============================================================
+    // ------------------------------------------------------------
+    // 6. GRAPHQL MUTATION
+    // ------------------------------------------------------------
+
+    const query = `
+      mutation VerifyBureauA($input: VerifyInput!) {
+        verify(input: $input) {
+          ok
+          message
+          status
+          result {
+            ... on BTBureauAResult {
+              txn_id
+              api_category
+              api_name
+              billable
+              message
+              status
+              datetime
+              inprofileResponse
+              experian_report_link
+            }
+          }
+          error {
+            status
+            message
+            raw
+          }
+        }
+      }
+    `;
+
+    const payload = {
+      query,
+      variables: {
+        input: {
+          documentType: "bureau-verification-v2-experian",
+          name: applicantName,
+          mobile: applicantMobile,
+        },
+      },
+    };
+
+    // ------------------------------------------------------------
+    // 7. CREATE PENDING CREDIT REPORT
+    // ------------------------------------------------------------
 
     creditReport = await CreditReport.create({
       userId,
       orderId: orderId ? String(orderId).trim() : null,
 
-      name: String(fullName).trim(),
-      mobile,
-      pan,
+      name: applicantName,
+      mobile: applicantMobile,
 
-      email: email?.toString().trim().toLowerCase() || null,
+      pan: panNumber ? String(panNumber).trim().toUpperCase() : null,
+
+      email: email ? String(email).trim().toLowerCase() : null,
 
       dob: dob || null,
 
-      address: "",
+      address: [addressLine1, addressLine2].filter(Boolean).join(", "),
 
-      state: stateName?.toString().trim() || "",
+      state: stateName ? String(stateName).trim() : "",
 
-      city: cityName?.toString().trim() || "",
+      city: cityName ? String(cityName).trim() : "",
 
-      pincode: pincode?.toString().trim() || "",
+      pincode: pincode ? String(pincode).trim() : "",
 
       reportType: "EXPERIAN",
-      consent: "Y",
       bureau: "EXPERIAN",
+      consent: customerConsent || "Y",
 
       status: "Pending",
-
       reportUrl: null,
       localPath: null,
       reportData: null,
       score: null,
-
       isPublic: false,
     });
 
-    console.log("[EXPERIAN] Pending Credit Report Created:", creditReport._id);
+    console.log("[EXPERIAN] Pending report created:", creditReport._id);
 
-    // ============================================================
-    // 15. CALL INDICONNECT
-    // ============================================================
+    // ------------------------------------------------------------
+    // 8. CALL INDICONNECT
+    // ------------------------------------------------------------
 
     const response = await axios.post(apiUrl, payload, {
       headers,
@@ -2670,241 +2571,288 @@ const ExperianReport = async (req, res) => {
 
     const apiData = response.data;
 
-    console.log("[EXPERIAN] RESPONSE:", JSON.stringify(apiData, null, 2));
+    console.log("[EXPERIAN] HTTP response received:", {
+      status: response.status,
+      hasGraphQLData: Boolean(apiData?.data),
+      hasGraphQLErrors: Boolean(apiData?.errors?.length),
+    });
 
-    // ============================================================
-    // 16. VERIFY RESPONSE
-    // ============================================================
+    // ------------------------------------------------------------
+    // 9. VALIDATE GRAPHQL RESPONSE
+    // ------------------------------------------------------------
 
     const verify = apiData?.data?.verify;
 
     if (!verify) {
       creditReport.status = "Failed";
       creditReport.reportData = apiData;
-
       await creditReport.save();
 
-      // Bureau gave no usable payload — Experian fail fee (₹40 single-plan)
-      const expFailCharge = await debitFailedPull(
-        creditReport,
-        "experian",
-        "EXPERIAN",
-      );
+      const failureCharge = await chargeFailedPull();
+
       return res.status(502).json({
         success: false,
-        message: "Invalid response from Experian API",
-
+        status: "failed",
+        message:
+          apiData?.errors?.[0]?.message ||
+          "Invalid response from IndiConnect Experian API",
         creditReportId: creditReport._id,
-        userId: creditReport.userId,
-        status: creditReport.status,
-
-        response: apiData,
-
-        failureCharge: expFailCharge.ok ? expFailCharge.total : 0,
+        error: apiData?.errors || null,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
-
-    // ============================================================
-    // 17. API FAILED
-    // ============================================================
 
     if (!verify.ok) {
       creditReport.status = "Failed";
       creditReport.reportData = apiData;
-
       await creditReport.save();
 
-      // Bureau verification rejected — Experian fail fee (₹40 single-plan)
-      const expVerifyCharge = await debitFailedPull(
-        creditReport,
-        "experian",
-        "EXPERIAN",
-      );
+      const failureCharge = await chargeFailedPull();
+
       return res.status(400).json({
         success: false,
-
-        message: verify.message || "Experian verification failed",
-
+        status: "failed",
+        message:
+          verify.message ||
+          verify.error?.message ||
+          "Experian verification failed",
         creditReportId: creditReport._id,
-        userId: creditReport.userId,
-        status: creditReport.status,
-
         error: verify.error || null,
         result: verify.result || null,
-
-        failureCharge: expVerifyCharge.ok ? expVerifyCharge.total : 0,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
 
-    // ============================================================
-    // 18. RESULT
-    // ============================================================
-
+    // A successful GraphQL operation must still contain a result.
     const result = verify.result;
 
-    if (!result) {
+    if (!result || typeof result !== "object") {
       creditReport.status = "Failed";
       creditReport.reportData = apiData;
-
       await creditReport.save();
 
-      // Bureau 400-class reject with no usable result — bill the fail fee
-      // like every other Experian rejection.
-      const expNoResultCharge = await debitFailedPull(
-        creditReport,
-        "experian",
-        "EXPERIAN",
-      );
-      return res.status(400).json({
+      const failureCharge = await chargeFailedPull();
+
+      return res.status(502).json({
         success: false,
-
-        message: "Experian report result not received",
-
+        status: "failed",
+        message: "Experian result was not returned by IndiConnect",
         creditReportId: creditReport._id,
-        userId: creditReport.userId,
-        status: creditReport.status,
-
-        error: verify.error || null,
-
-        failureCharge: expNoResultCharge.ok ? expNoResultCharge.total : 0,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
 
-    // ============================================================
-    // 19. SCORE
-    // ============================================================
+    // ------------------------------------------------------------
+    // 10. EXTRACT API RESULT
+    // ------------------------------------------------------------
 
-    let score = null;
+    const transactionId = result.txn_id || null;
+    const apiCategory = result.api_category || null;
+    const apiName = result.api_name || null;
+    const billable = result.billable ?? null;
 
-    const rawScore = result?.SCORE?.FCIREXScore;
+    const apiStatus = result.status ?? verify.status ?? null;
 
-    if (rawScore !== undefined && rawScore !== null && rawScore !== "") {
-      const parsedScore = Number(rawScore);
+    const apiDateTime = result.datetime || null;
 
-      if (!Number.isNaN(parsedScore)) {
-        score = parsedScore;
+    const experianReportLink = result.experian_report_link || null;
+
+    // Save the complete provider response for troubleshooting.
+    creditReport.reportData = apiData;
+    await creditReport.save();
+
+    // ------------------------------------------------------------
+    // 11. EXTRACT INPROFILE RESPONSE
+    // ------------------------------------------------------------
+
+    let reportPayload = result.inprofileResponse;
+
+    if (
+      reportPayload === undefined ||
+      reportPayload === null ||
+      reportPayload === ""
+    ) {
+      reportPayload = null;
+    }
+
+    // Some APIs return the JSON object encoded as a string.
+    if (typeof reportPayload === "string") {
+      try {
+        reportPayload = JSON.parse(reportPayload);
+      } catch {
+        // Do not treat an arbitrary string as a report object.
+        reportPayload = null;
       }
     }
 
-    const scoreConfidence = result?.SCORE?.FCIREXScoreConfidLevel ?? null;
+    // Handle an object containing another serialized response.
+    if (
+      reportPayload &&
+      typeof reportPayload === "object" &&
+      typeof reportPayload.inprofileResponse === "string"
+    ) {
+      try {
+        reportPayload = JSON.parse(reportPayload.inprofileResponse);
+      } catch {
+        // Keep the existing object if nested JSON is malformed.
+      }
+    }
 
-    // ============================================================
-    // 20. MATCH
-    // ============================================================
+    // ------------------------------------------------------------
+    // 12. EXTRACT SCORE AND REPORT DETAILS
+    // ------------------------------------------------------------
 
-    const exactMatch = result?.Match_result?.Exact_match ?? null;
+    const scoreCandidates = [
+      reportPayload?.SCORE?.FCIREXScore,
+      reportPayload?.score,
+      reportPayload?.creditScore,
+      reportPayload?.credit_score,
+      result.credit_score,
+    ];
 
-    // ============================================================
-    // 21. REPORT DETAILS
-    // ============================================================
+    let score = null;
 
-    const creditProfile = result?.CreditProfileHeader || {};
+    for (const rawScore of scoreCandidates) {
+      if (
+        rawScore !== undefined &&
+        rawScore !== null &&
+        String(rawScore).trim() !== ""
+      ) {
+        const parsedScore = Number(rawScore);
+
+        if (Number.isFinite(parsedScore)) {
+          score = parsedScore;
+          break;
+        }
+      }
+    }
+
+    const scoreConfidence =
+      reportPayload?.SCORE?.FCIREXScoreConfidLevel ?? null;
+
+    const exactMatch = reportPayload?.Match_result?.Exact_match ?? null;
+
+    const creditProfile = reportPayload?.CreditProfileHeader || {};
 
     const reportNumber = creditProfile.ReportNumber ?? null;
 
-    const reportDate = creditProfile.ReportDate ?? null;
+    const reportDate = creditProfile.ReportDate ?? apiDateTime ?? null;
 
     const reportTime = creditProfile.ReportTime ?? null;
 
     const version = creditProfile.Version ?? null;
 
-    // ============================================================
-    // 22. GENERATE PDF FROM EXPERIAN JSON
-    // ============================================================
+    // ------------------------------------------------------------
+    // 13. GENERATE LOCAL EXPERIAN PDF
+    // ------------------------------------------------------------
 
     let localPath = null;
+    let pdfGenerationError = null;
 
-    try {
-      localPath = await generateExperianPdf(
-        result,
-        creditReport._id.toString(),
-      );
+    const hasReportObject =
+      reportPayload !== null &&
+      typeof reportPayload === "object" &&
+      !Array.isArray(reportPayload) &&
+      Object.keys(reportPayload).length > 0;
 
-      console.log("[EXPERIAN] PDF generated:", localPath);
-    } catch (pdfError) {
-      console.error("[EXPERIAN] PDF generation failed:", pdfError.message);
+    if (hasReportObject) {
+      try {
+        localPath = await generateExperianPdf(
+          reportPayload,
+          creditReport._id.toString(),
+        );
+
+        if (!localPath) {
+          pdfGenerationError = "PDF generator did not return a file path";
+        }
+
+        console.log("[EXPERIAN] PDF generation result:", Boolean(localPath));
+      } catch (pdfError) {
+        pdfGenerationError = pdfError.message;
+
+        console.error("[EXPERIAN] PDF generation failed:", pdfError.message);
+      }
+    } else {
+      pdfGenerationError =
+        "inprofileResponse did not contain a usable JSON object";
     }
 
-    // ============================================================
-    // 23. PDF URL
-    // ============================================================
-
+    // This is the frontend route/path used by your existing app.
+    // Confirm it matches the actual static-file configuration.
     const pdfUrl = localPath
       ? `/uploads/credit-reports/experian/experian-${creditReport._id}.pdf`
       : null;
 
-    // ============================================================
-    // 24. PDF GENERATION FAILED
-    // ============================================================
+    // ------------------------------------------------------------
+    // 14. HANDLE PDF FAILURE
+    // ------------------------------------------------------------
 
     if (!localPath) {
       creditReport.status = "Failed";
+      creditReport.score = score;
+      creditReport.reportUrl = experianReportLink;
+      creditReport.localPath = null;
       creditReport.reportData = apiData;
 
       await creditReport.save();
 
-      // Data arrived from the bureau but our PDF step failed — Experian fail fee (₹40 single-plan)
-      const expPdfCharge = await debitFailedPull(
-        creditReport,
-        "experian",
-        "EXPERIAN",
-      );
+      const failureCharge = await chargeFailedPull();
+
       return res.status(500).json({
         success: false,
-
-        message: "Experian report generated but PDF creation failed",
-
+        status: "failed",
+        message:
+          "Experian API returned a response, but local PDF generation failed",
         creditReportId: creditReport._id,
-        userId: creditReport.userId,
-
-        status: creditReport.status,
-
-        failureCharge: expPdfCharge.ok ? expPdfCharge.total : 0,
+        txn_id: transactionId,
+        experian_report_link: experianReportLink,
+        pdfGenerationError,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
 
-    // ============================================================
-    // 25. UPDATE CREDIT REPORT
-    // ============================================================
+    // ------------------------------------------------------------
+    // 15. UPDATE SUCCESSFUL REPORT
+    // ------------------------------------------------------------
 
     creditReport.score = score;
 
-    // No external report URL
-    creditReport.reportUrl = null;
-
-    // Local PDF filesystem path
+    // Store the external provider URL separately from the local PDF.
+    creditReport.reportUrl = experianReportLink;
     creditReport.localPath = pdfUrl;
-
-    // Complete Experian API response
     creditReport.reportData = apiData;
-
     creditReport.status = "Success";
 
     await creditReport.save();
 
-    console.log(
-      "[EXPERIAN] Credit Report Updated Successfully:",
-      creditReport._id,
-    );
-
-    // Wallet debit (Experian = ₹50 + GST) — post-success only
+    // Charge the successful report only after PDF generation succeeds.
     await debitReportPull(creditReport, "experian", "EXPERIAN");
 
-    // ============================================================
-    // 26. FINAL RESPONSE
-    // ============================================================
+    console.log("[EXPERIAN] Report updated successfully:", creditReport._id);
+
+    // ------------------------------------------------------------
+    // 16. SUCCESS RESPONSE
+    // ------------------------------------------------------------
 
     return res.status(200).json({
       success: true,
-
       status: "success",
-
-      message: verify.message || "Experian report generated successfully",
+      message:
+        verify.message ||
+        result.message ||
+        "Experian report generated successfully",
 
       creditReportId: creditReport._id,
       userId: creditReport.userId,
 
-      score: creditReport.score,
+      txn_id: transactionId,
+      api_category: apiCategory,
+      api_name: apiName,
+      billable,
+      apiStatus,
+      datetime: apiDateTime,
+
+      score,
       scoreConfidence,
       exactMatch,
 
@@ -2913,48 +2861,33 @@ const ExperianReport = async (req, res) => {
       reportTime,
       version,
 
-      // External URL not used
-      reportUrl: null,
+      // External URL supplied by IndiConnect.
+      experian_report_link: experianReportLink,
 
-      // Actual server filesystem path
+      // Preserve the existing response fields for the frontend.
+      reportUrl: experianReportLink,
       localPath: creditReport.localPath,
-
-      // Browser/frontend URL
       pdfUrl,
 
       data: {
-        header: result?.Header || null,
-
-        userMessage: result?.UserMessage || null,
-
-        totalCAPS: result?.TotalCAPS_Summary || null,
-
-        caisAccount: result?.CAIS_Account || null,
-
-        caps: result?.CAPS || null,
-
-        nonCreditCAPS: result?.NonCreditCAPS || null,
-
-        currentApplication: result?.Current_Application || null,
+        header: reportPayload?.Header || null,
+        userMessage: reportPayload?.UserMessage || null,
+        totalCAPS: reportPayload?.TotalCAPS_Summary || null,
+        caisAccount: reportPayload?.CAIS_Account || null,
+        caps: reportPayload?.CAPS || null,
+        nonCreditCAPS: reportPayload?.NonCreditCAPS || null,
+        currentApplication: reportPayload?.Current_Application || null,
+        inprofileResponse: reportPayload,
       },
 
       creditReport,
     });
   } catch (error) {
-    // ============================================================
-    // ERROR
-    // ============================================================
-
-    console.error("[EXPERIAN] ERROR:", error.message);
-
-    // ============================================================
-    // UPDATE PENDING REPORT TO FAILED
-    // ============================================================
+    console.error("[EXPERIAN] Request failed:", error.message);
 
     if (creditReport) {
       try {
         creditReport.status = "Failed";
-
         creditReport.reportData = {
           error: error.response?.data || error.message,
         };
@@ -2962,92 +2895,71 @@ const ExperianReport = async (req, res) => {
         await creditReport.save();
       } catch (dbError) {
         console.error(
-          "[EXPERIAN] Failed to update report status:",
+          "[EXPERIAN] Failed to save error status:",
           dbError.message,
         );
       }
     }
 
-    // ============================================================
-    // AXIOS ERROR
-    // ============================================================
+    // ------------------------------------------------------------
+    // 17. PROVIDER HTTP ERROR
+    // ------------------------------------------------------------
 
     if (error.response) {
-      console.error("[EXPERIAN] STATUS:", error.response.status);
+      console.error("[EXPERIAN] HTTP status:", error.response.status);
 
+      // Do not log Authorization or service-key headers.
       console.error(
-        "[EXPERIAN] DATA:",
+        "[EXPERIAN] Provider error body:",
         JSON.stringify(error.response.data, null, 2),
       );
 
-      // Bureau answered with an error — Experian fail fee (₹40 single-plan)
-      const expCatchCharge = await debitFailedPull(
-        creditReport,
-        "experian",
-        "EXPERIAN",
-      );
-      return res.status(error.response.status || 500).json({
+      const failureCharge = await chargeFailedPull();
+
+      const providerMessage =
+        error.response.data?.body?.message ||
+        error.response.data?.message ||
+        "Experian API request failed";
+
+      return res.status(error.response.status || 502).json({
         success: false,
-
         status: "failed",
-
-        message: "Service Unavailable",
-
+        message: providerMessage,
         creditReportId: creditReport?._id || null,
-
-        userId: creditReport?.userId || null,
-
         error: error.response.data,
-
-        failureCharge: expCatchCharge.ok ? expCatchCharge.total : 0,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
 
-    // ============================================================
-    // NO RESPONSE
-    // ============================================================
+    // ------------------------------------------------------------
+    // 18. REQUEST SENT BUT NO RESPONSE
+    // ------------------------------------------------------------
 
     if (error.request) {
-      const expTimeoutCharge = creditReport
-        ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
-        : { ok: false, total: 0 };
+      const failureCharge = await chargeFailedPull();
+
       return res.status(504).json({
         success: false,
-
         status: "failed",
-
         message: "Experian API did not respond",
-
         creditReportId: creditReport?._id || null,
-
-        userId: creditReport?.userId || null,
-
-        failureCharge: expTimeoutCharge.ok ? expTimeoutCharge.total : 0,
+        failureCharge: failureCharge?.ok ? failureCharge.total : 0,
       });
     }
 
-    // ============================================================
-    // INTERNAL ERROR
-    // ============================================================
+    // ------------------------------------------------------------
+    // 19. INTERNAL ERROR
+    // ------------------------------------------------------------
 
-    const expInternalCharge = creditReport
-      ? await debitFailedPull(creditReport, "experian", "EXPERIAN")
-      : { ok: false, total: 0 };
+    const failureCharge = await chargeFailedPull();
 
     return res.status(500).json({
       success: false,
-
       status: "failed",
-
       message: "Internal server error",
-
       creditReportId: creditReport?._id || null,
-
-      userId: creditReport?.userId || null,
-
       error: error.message,
-
-      failureCharge: expInternalCharge.ok ? expInternalCharge.total : 0,
+      failureCharge: failureCharge?.ok ? failureCharge.total : 0,
     });
   }
 };

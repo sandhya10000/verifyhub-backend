@@ -1,5 +1,9 @@
 // templates/experianReport.template.js
 
+/* =========================================================
+   BASIC HELPERS
+========================================================= */
+
 const escapeHtml = (value) => {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -13,10 +17,22 @@ const escapeHtml = (value) => {
     .replace(/'/g, "&#039;");
 };
 
+const toArray = (value) =>
+  Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [value]
+      : [];
+
+const normalizeText = (value) =>
+  String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const formatDate = (value) => {
   if (!value) return "-";
 
-  const str = String(value);
+  const str = String(value).trim();
 
   if (/^\d{8}$/.test(str)) {
     return `${str.slice(6, 8)}-${str.slice(4, 6)}-${str.slice(0, 4)}`;
@@ -25,6 +41,18 @@ const formatDate = (value) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [year, month, day] = str.split("-");
     return `${day}-${month}-${year}`;
+  }
+
+  return escapeHtml(str);
+};
+
+const formatTime = (value) => {
+  if (!value) return "-";
+
+  const str = String(value).trim();
+
+  if (/^\d{6}$/.test(str)) {
+    return `${str.slice(0, 2)}:${str.slice(2, 4)}:${str.slice(4, 6)}`;
   }
 
   return escapeHtml(str);
@@ -42,19 +70,168 @@ const formatAmount = (value) => {
     : escapeHtml(value);
 };
 
-const getScoreLabel = (score) => {
-  const num = Number(score);
+const formatPercent = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return "-";
+  }
 
-  if (!Number.isFinite(num)) return "Not Available";
-  if (num >= 750) return "Excellent";
-  if (num >= 700) return "Good";
-  if (num >= 650) return "Fair";
+  const number = Number(value);
 
-  return "Needs Attention";
+  return Number.isFinite(number) ? `${number}%` : escapeHtml(value);
 };
+
+const lookup = (map, code) => {
+  if (code === null || code === undefined || String(code).trim() === "") {
+    return "-";
+  }
+
+  const key = String(code).trim();
+
+  return map[key] || key;
+};
+
+/* Picks the most frequent non-empty value of `key` from a list of objects */
+const mostCommon = (list, key) => {
+  const counts = {};
+
+  list.forEach((item) => {
+    const value = normalizeText(item?.[key]);
+    if (value) counts[value] = (counts[value] || 0) + 1;
+  });
+
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  return sorted.length ? sorted[0][0] : "";
+};
+
+/* =========================================================
+   CODE MAPS (Experian code -> readable text)
+========================================================= */
+
+const PORTFOLIO_TYPE_MAP = {
+  I: "Installment",
+  R: "Revolving",
+  M: "Mortgage",
+  O: "Open",
+  Z: "Line of Credit",
+};
+
+const ACCOUNT_TYPE_MAP = {
+  "00": "Other",
+  "01": "Auto Loan",
+  "02": "Housing Loan",
+  "03": "Property Loan",
+  "04": "Loan Against Shares/Securities",
+  "05": "Personal Loan",
+  "06": "Consumer Loan",
+  "07": "Gold Loan",
+  "08": "Education Loan",
+  "09": "Loan to Professional",
+  10: "Credit Card",
+  11: "Leasing",
+  12: "Overdraft",
+  13: "Two-Wheeler Loan",
+  14: "Non-Funded Credit Facility",
+  15: "Loan Against Bank Deposits",
+  16: "Fleet Card",
+  17: "Commercial Vehicle Loan",
+  18: "Telco - Wireless",
+  19: "Telco - Broadband",
+  20: "Telco - Landline",
+  31: "Secured Credit Card",
+  32: "Used Car Loan",
+  33: "Construction Equipment Loan",
+  34: "Tractor Loan",
+  35: "Corporate Credit Card",
+  36: "Kisan Credit Card",
+  37: "Loan on Credit Card",
+  41: "Microfinance - Business Loan",
+  42: "Microfinance - Personal Loan",
+  43: "Microfinance - Housing Loan",
+  44: "Microfinance - Other",
+  45: "PMAY - CLSS",
+  50: "Business Loan - Secured",
+  51: "Business Loan - General",
+  52: "Business Loan - Priority Sector - Small Business",
+  53: "Business Loan - Priority Sector - Agriculture",
+  54: "Business Loan - Priority Sector - Others",
+  61: "Business Loan Against Bank Deposits",
+  69: "Short Term Personal Loan",
+  70: "Priority Sector Gold Loan",
+  71: "Temporary Overdraft",
+};
+
+const ACCOUNT_STATUS_MAP = {
+  "00": "No Suit Filed",
+  11: "Active",
+  12: "Closed",
+  13: "Closed",
+  14: "Closed",
+  43: "Written Off",
+  71: "Restructured Loan",
+  78: "Restructured Loan (Govt. Mandated)",
+  80: "Settled",
+  82: "Written Off",
+  83: "Post (WO) Settled",
+};
+
+const STATE_MAP = {
+  "01": "Jammu & Kashmir",
+  "02": "Himachal Pradesh",
+  "03": "Punjab",
+  "04": "Chandigarh",
+  "05": "Uttarakhand",
+  "06": "Haryana",
+  "07": "Delhi",
+  "08": "Rajasthan",
+  "09": "Uttar Pradesh",
+  10: "Bihar",
+  11: "Sikkim",
+  12: "Arunachal Pradesh",
+  13: "Nagaland",
+  14: "Manipur",
+  15: "Mizoram",
+  16: "Tripura",
+  17: "Meghalaya",
+  18: "Assam",
+  19: "West Bengal",
+  20: "Jharkhand",
+  21: "Odisha",
+  22: "Chhattisgarh",
+  23: "Madhya Pradesh",
+  24: "Gujarat",
+  25: "Daman & Diu",
+  26: "Dadra & Nagar Haveli",
+  27: "Maharashtra",
+  28: "Andhra Pradesh",
+  29: "Karnataka",
+  30: "Goa",
+  31: "Lakshadweep",
+  32: "Kerala",
+  33: "Tamil Nadu",
+  34: "Puducherry",
+  35: "Andaman & Nicobar",
+  36: "Telangana",
+  99: "APO Address",
+};
+
+/* =========================================================
+   STATUS BADGE CLASS
+========================================================= */
 
 const getStatusClass = (status) => {
   const value = String(status || "").toLowerCase();
+
+  if (
+    value.includes("default") ||
+    value.includes("overdue") ||
+    value.includes("written") ||
+    value.includes("settled") ||
+    value.includes("doubtful") ||
+    value.includes("loss")
+  ) {
+    return "status-danger";
+  }
 
   if (
     value.includes("active") ||
@@ -70,19 +247,12 @@ const getStatusClass = (status) => {
     return "status-neutral";
   }
 
-  if (
-    value.includes("default") ||
-    value.includes("overdue") ||
-    value.includes("written") ||
-    value.includes("settled") ||
-    value.includes("doubtful") ||
-    value.includes("loss")
-  ) {
-    return "status-danger";
-  }
-
   return "status-warning";
 };
+
+/* =========================================================
+   PAYMENT HISTORY
+========================================================= */
 
 const getMonthNumber = (value) => {
   if (value === null || value === undefined) return null;
@@ -139,8 +309,37 @@ const getMonthShortName = (month) =>
     "Dec",
   ][month - 1] || "-";
 
-const renderHorizontalPaymentHistory = (history = []) => {
-  if (!Array.isArray(history) || history.length === 0) {
+/*
+  Cell value logic:
+  1. Days_Past_Due has a number  -> show the number (red if > 0)
+  2. Days_Past_Due is empty/"?"  -> show Asset_Classification letter
+     (S = Standard, B = Sub-standard, D = Doubtful, L = Loss)
+     B/D/L are highlighted red
+  3. Otherwise                   -> "-"
+*/
+const getHistoryCell = (item) => {
+  const rawDpd = item?.Days_Past_Due ?? item?.daysPastDue ?? item?.DaysPastDue;
+  const dpd = normalizeText(rawDpd);
+
+  if (dpd !== "" && dpd !== "?" && Number.isFinite(Number(dpd))) {
+    return { text: dpd, overdue: Number(dpd) > 0 };
+  }
+
+  const asset = normalizeText(
+    item?.Asset_Classification ?? item?.assetClassification,
+  ).toUpperCase();
+
+  if (asset && asset !== "?") {
+    return { text: asset, overdue: ["B", "D", "L"].includes(asset) };
+  }
+
+  return { text: "-", overdue: false };
+};
+
+const renderHorizontalPaymentHistory = (historyInput) => {
+  const history = toArray(historyInput);
+
+  if (history.length === 0) {
     return "";
   }
 
@@ -185,29 +384,11 @@ const renderHorizontalPaymentHistory = (history = []) => {
 
                 if (!item) return "<td>-</td>";
 
-                let dpd =
-                  item?.Days_Past_Due ??
-                  item?.daysPastDue ??
-                  item?.DaysPastDue ??
-                  "-";
-
-                if (
-                  dpd === "?" ||
-                  dpd === "" ||
-                  dpd === null ||
-                  dpd === undefined
-                ) {
-                  dpd = "-";
-                }
-
-                const overdue =
-                  dpd !== "-" &&
-                  Number.isFinite(Number(dpd)) &&
-                  Number(dpd) > 0;
+                const cell = getHistoryCell(item);
 
                 return `
-                  <td class="${overdue ? "overdue" : ""}">
-                    ${escapeHtml(dpd)}
+                  <td class="${cell.overdue ? "overdue" : ""}">
+                    ${escapeHtml(cell.text)}
                   </td>
                 `;
               }).join("")}
@@ -220,15 +401,38 @@ const renderHorizontalPaymentHistory = (history = []) => {
     </div>
 
     <div class="history-legend">
-      DPD = Days Past Due
+      DPD = Days Past Due &nbsp;|&nbsp; S = Standard, B = Sub-standard, D = Doubtful, L = Loss
     </div>
   `;
 };
 
-const experianReportTemplate = (result) => {
-  const score = result?.SCORE?.FCIREXScore ?? "-";
+/* =========================================================
+   MAIN TEMPLATE
+========================================================= */
 
-  const profile = result?.CreditProfileHeader || {};
+const experianReportTemplate = (response) => {
+  // Accepts: full API response, { result: ... }, or inprofileResponse directly
+  let source = response;
+
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch (error) {
+      source = {};
+    }
+  }
+
+  const result =
+    source?.data?.verify?.result?.inprofileResponse ||
+    source?.verify?.result?.inprofileResponse ||
+    source?.result?.inprofileResponse ||
+    source?.inprofileResponse ||
+    source ||
+    {};
+
+  const score = result?.SCORE?.BureauScore || result?.SCORE?.FCIREXScore || "-";
+
+  const profile = result?.CreditProfileHeader || result?.Header || {};
 
   const currentApplication = result?.Current_Application || {};
 
@@ -244,47 +448,105 @@ const experianReportTemplate = (result) => {
 
   const outstanding = caisSummary?.Total_Outstanding_Balance || {};
 
-  const accounts = Array.isArray(cais?.CAIS_Account_DETAILS)
-    ? cais.CAIS_Account_DETAILS
-    : [];
+  const accounts = toArray(cais?.CAIS_Account_DETAILS);
 
   const caps = result?.CAPS || {};
 
   const capsSummary = caps?.CAPS_Summary || {};
 
-  const capsApplications = Array.isArray(caps?.CAPS_Application_Details)
-    ? caps.CAPS_Application_Details
-    : [];
+  const capsApplications = toArray(caps?.CAPS_Application_Details);
 
-  const holderAddresses = Array.from(
-    new Map(
-      accounts
-        .flatMap((account) =>
-          Array.isArray(account?.CAIS_Holder_Address_Details)
-            ? account.CAIS_Holder_Address_Details
-            : [],
-        )
-        .map((address) => {
-          const parts = [
-            address?.City_non_normalized,
-            address?.State_non_normalized,
-            address?.ZIP_Postal_Code_non_normalized,
-          ]
-            .filter(
-              (value) =>
-                value !== null &&
-                value !== undefined &&
-                String(value).trim() !== "",
-            )
-            .map((value) => String(value).trim());
+  const nonCreditSummary = result?.NonCreditCAPS?.NonCreditCAPS_Summary || {};
 
-          const key = parts.join(", ");
+  /* ---------- Holder data collected from all accounts ---------- */
 
-          return [key, { ...address, fullAddress: key }];
-        })
-        .filter(([key]) => key),
-    ).values(),
+  const holderDetails = accounts.flatMap((account) =>
+    toArray(account?.CAIS_Holder_Details),
   );
+
+  const holderIds = accounts.flatMap((account) =>
+    toArray(account?.CAIS_Holder_ID_Details),
+  );
+
+  const holderPhones = accounts.flatMap((account) =>
+    toArray(account?.CAIS_Holder_Phone_Details),
+  );
+
+  /*
+    Current_Applicant_Details only has name + mobile in this response,
+    so DOB / PAN / Email / Voter ID fall back to the account holder data.
+  */
+  const applicantDob =
+    normalizeText(applicant?.Date_Of_Birth_Applicant) ||
+    mostCommon(holderDetails, "Date_of_birth");
+
+  const applicantPan =
+    normalizeText(applicant?.IncomeTaxPan) ||
+    mostCommon(holderDetails, "Income_TAX_PAN") ||
+    mostCommon(holderIds, "Income_TAX_PAN");
+
+  const applicantEmail =
+    normalizeText(applicant?.EMailId) ||
+    mostCommon(holderPhones, "EMailId") ||
+    mostCommon(holderIds, "EMailId");
+
+  const applicantVoterId =
+    normalizeText(applicant?.Voter_s_Identity_Card) ||
+    mostCommon(holderDetails, "Voter_ID_Number") ||
+    mostCommon(holderIds, "Voter_ID_Number");
+
+  const applicantPassport =
+    normalizeText(applicant?.Passport_number) ||
+    mostCommon(holderDetails, "Passport_Number") ||
+    mostCommon(holderIds, "Passport_Number");
+
+  const applicantDriverLicense =
+    normalizeText(applicant?.Driver_License_Number) ||
+    mostCommon(holderIds, "Driver_License_Number");
+
+  const applicantRationCard =
+    normalizeText(applicant?.Ration_Card_Number) ||
+    mostCommon(holderIds, "Ration_Card_Number");
+
+  const applicantAadhaar =
+    normalizeText(applicant?.Universal_ID_Number) ||
+    mostCommon(holderIds, "Universal_ID_Number");
+
+  /* ---------- Unique holder addresses (by State + PIN) ---------- */
+
+  const addressMap = new Map();
+
+  accounts
+    .flatMap((account) => toArray(account?.CAIS_Holder_Address_Details))
+    .forEach((address) => {
+      const pin = normalizeText(address?.ZIP_Postal_Code_non_normalized);
+
+      const stateName = lookup(
+        STATE_MAP,
+        normalizeText(address?.State_non_normalized),
+      );
+
+      const cityName =
+        normalizeText(address?.City_non_normalized) ||
+        normalizeText(address?.Third_Line_Of_Address_non_normalized) ||
+        normalizeText(address?.Second_Line_Of_Address_non_normalized);
+
+      if (!pin && !cityName) return;
+
+      const key = `${stateName}|${pin}`.toUpperCase();
+
+      const existing = addressMap.get(key);
+
+      if (!existing) {
+        addressMap.set(key, { cityName, stateName, pin });
+      } else if (!existing.cityName && cityName) {
+        existing.cityName = cityName;
+      }
+    });
+
+  const holderAddresses = Array.from(addressMap.values());
+
+  /* ---------- Summary values ---------- */
 
   const totalAccounts = creditAccount.CreditAccountTotal ?? 0;
   const activeAccounts = creditAccount.CreditAccountActive ?? 0;
@@ -292,6 +554,7 @@ const experianReportTemplate = (result) => {
   const defaultAccounts = creditAccount.CreditAccountDefault ?? 0;
 
   const fullName = [applicant?.First_Name, applicant?.Last_Name]
+    .map(normalizeText)
     .filter(Boolean)
     .join(" ");
 
@@ -810,12 +1073,12 @@ tr {
 
         <div class="header-meta">
           Report Date:
-          <strong>${escapeHtml(profile.ReportDate || "-")}</strong>
+          <strong>${formatDate(profile.ReportDate)}</strong>
         </div>
 
         <div class="header-meta">
           Report Time:
-          <strong>${escapeHtml(profile.ReportTime || "-")}</strong>
+          <strong>${formatTime(profile.ReportTime)}</strong>
         </div>
 
         <div class="header-meta">
@@ -838,47 +1101,47 @@ tr {
 
       <div class="application-field">
         <span class="application-label">Date of Birth - </span>
-        <span class="application-value">${escapeHtml(applicant?.DateOfBirth || applicant?.Date_of_Birth || "-")}</span>
+        <span class="application-value">${formatDate(applicantDob)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Ration Card - </span>
-        <span class="application-value">${escapeHtml(applicant?.RationCard || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantRationCard)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Mobile Phone - </span>
-        <span class="application-value">${escapeHtml(applicant?.MobilePhoneNumber || "-")}</span>
+        <span class="application-value">${escapeHtml(applicant?.MobilePhoneNumber)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">PAN - </span>
-        <span class="application-value">${escapeHtml(applicant?.IncomeTaxPan || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantPan)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Driving License - </span>
-        <span class="application-value">${escapeHtml(applicant?.DriverLicenseNumber || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantDriverLicense)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Passport Number - </span>
-        <span class="application-value">${escapeHtml(applicant?.PassportNumber || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantPassport)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Voter ID - </span>
-        <span class="application-value">${escapeHtml(applicant?.VoterID || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantVoterId)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Aadhaar Number - </span>
-        <span class="application-value">${escapeHtml(applicant?.AadhaarNumber || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantAadhaar)}</span>
       </div>
 
       <div class="application-field">
         <span class="application-label">Email - </span>
-        <span class="application-value">${escapeHtml(applicant?.EmailAddress || "-")}</span>
+        <span class="application-value">${escapeHtml(applicantEmail)}</span>
       </div>
     </div>
   </div>
@@ -930,10 +1193,10 @@ tr {
     <div class="summary-grid">
       <div>
         <div class="summary-heading">Credit Account Summary</div>
-        <div class="summary-item"><span>Total number of Accounts - </span>${totalAccounts}</div>
-        <div class="summary-item"><span>Active Accounts - </span>${activeAccounts}</div>
-        <div class="summary-item"><span>Closed Accounts - </span>${closedAccounts}</div>
-        <div class="summary-item"><span>Default Accounts - </span>${defaultAccounts}</div>
+        <div class="summary-item"><span>Total number of Accounts - </span>${escapeHtml(totalAccounts)}</div>
+        <div class="summary-item"><span>Active Accounts - </span>${escapeHtml(activeAccounts)}</div>
+        <div class="summary-item"><span>Closed Accounts - </span>${escapeHtml(closedAccounts)}</div>
+        <div class="summary-item"><span>Default Accounts - </span>${escapeHtml(defaultAccounts)}</div>
       </div>
 
       <div>
@@ -945,21 +1208,58 @@ tr {
 
       <div>
         <div class="summary-heading">Credit Enquiry Summary</div>
-        <div class="summary-item"><span>Last 7 days - </span>${capsSummary.CAPSLast7Days ?? 0}</div>
-        <div class="summary-item"><span>Last 30 days - </span>${capsSummary.CAPSLast30Days ?? 0}</div>
-        <div class="summary-item"><span>Last 90 days - </span>${capsSummary.CAPSLast90Days ?? 0}</div>
-        <div class="summary-item"><span>Last 180 days - </span>${capsSummary.CAPSLast180Days ?? 0}</div>
+        <div class="summary-item"><span>Last 7 days - </span>${escapeHtml(capsSummary.CAPSLast7Days ?? 0)}</div>
+        <div class="summary-item"><span>Last 30 days - </span>${escapeHtml(capsSummary.CAPSLast30Days ?? 0)}</div>
+        <div class="summary-item"><span>Last 90 days - </span>${escapeHtml(capsSummary.CAPSLast90Days ?? 0)}</div>
+        <div class="summary-item"><span>Last 180 days - </span>${escapeHtml(capsSummary.CAPSLast180Days ?? 0)}</div>
       </div>
 
       <div>
         <div class="summary-heading">Non-Credit Enquiry Summary</div>
-        <div class="summary-item"><span>Last 7 days - </span>${capsSummary.NonCreditCAPSLast7Days ?? 0}</div>
-        <div class="summary-item"><span>Last 30 days - </span>${capsSummary.NonCreditCAPSLast30Days ?? 0}</div>
-        <div class="summary-item"><span>Last 90 days - </span>${capsSummary.NonCreditCAPSLast90Days ?? 0}</div>
+        <div class="summary-item"><span>Last 7 days - </span>${escapeHtml(nonCreditSummary.NonCreditCAPSLast7Days ?? 0)}</div>
+        <div class="summary-item"><span>Last 30 days - </span>${escapeHtml(nonCreditSummary.NonCreditCAPSLast30Days ?? 0)}</div>
+        <div class="summary-item"><span>Last 90 days - </span>${escapeHtml(nonCreditSummary.NonCreditCAPSLast90Days ?? 0)}</div>
       </div>
     </div>
   </div>
+  <!-- HOLDER ADDRESSES -->
+  <div class="section">
+    <div class="section-title">HOLDER ADDRESSES</div>
 
+    ${
+      holderAddresses.length
+        ? `
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sr. No.</th>
+                  <th>City</th>
+                  <th>State</th>
+                  <th>PIN Code</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${holderAddresses
+                  .map(
+                    (address, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(address.cityName || "-")}</td>
+                    <td>${escapeHtml(address.stateName || "-")}</td>
+                    <td>${escapeHtml(address.pin || "-")}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        : '<div class="empty">No address details found.</div>'
+    }
+  </div>
   <!-- CREDIT ACCOUNTS -->
   <div class="section">
     <div class="section-title">CREDIT ACCOUNTS</div>
@@ -968,11 +1268,9 @@ tr {
       accounts.length
         ? accounts
             .map((account, index) => {
-              const status = account.accountStatusDescription || "-";
+              const status = lookup(ACCOUNT_STATUS_MAP, account.Account_Status);
 
-              const history = Array.isArray(account.CAIS_Account_History)
-                ? account.CAIS_Account_History
-                : [];
+              const history = toArray(account.CAIS_Account_History);
 
               return `
               <div class="account">
@@ -997,12 +1295,12 @@ tr {
                   <div class="account-grid">
                     <div class="account-field">
                       <div class="account-field-label">Account Type</div>
-                      <div class="account-field-value">${escapeHtml(account.accountTypeDescription || "-")}</div>
+                      <div class="account-field-value">${escapeHtml(lookup(ACCOUNT_TYPE_MAP, account.Account_Type))}</div>
                     </div>
 
                     <div class="account-field">
                       <div class="account-field-label">Portfolio Type</div>
-                      <div class="account-field-value">${escapeHtml(account.portfolioTypeDescription || "-")}</div>
+                      <div class="account-field-value">${escapeHtml(lookup(PORTFOLIO_TYPE_MAP, account.Portfolio_Type))}</div>
                     </div>
 
                     <div class="account-field">
@@ -1032,12 +1330,12 @@ tr {
 
                     <div class="account-field">
                       <div class="account-field-label">Rate of Interest</div>
-                      <div class="account-field-value">${escapeHtml(account.Rate_of_Interest || "-")}</div>
+                      <div class="account-field-value">${formatPercent(account.Rate_of_Interest)}</div>
                     </div>
 
                     <div class="account-field">
                       <div class="account-field-label">Repayment Tenure</div>
-                      <div class="account-field-value">${escapeHtml(account.Repayment_Tenure || "-")}</div>
+                      <div class="account-field-value">${escapeHtml(account.Repayment_Tenure && Number(account.Repayment_Tenure) > 0 ? account.Repayment_Tenure : "-")}</div>
                     </div>
 
                     <div class="account-field">
@@ -1081,7 +1379,7 @@ tr {
                   <tr>
                     <td>${escapeHtml(item.Subscriber_Name || "-")}</td>
                     <td>${formatDate(item.Date_of_Request)}</td>
-                    <td>${escapeHtml(item.enquiryReasonDescription || "-")}</td>
+                    <td>${escapeHtml(item.enquiryReasonDescription || item.Enquiry_Reason || "-")}</td>
                     <td>${formatAmount(item.Amount_Financed)}</td>
                   </tr>
                 `,
@@ -1095,44 +1393,7 @@ tr {
     }
   </div>
 
-  <!-- HOLDER ADDRESSES -->
-  <div class="section">
-    <div class="section-title">HOLDER ADDRESSES</div>
 
-    ${
-      holderAddresses.length
-        ? `
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Sr. No.</th>
-                  <th>City</th>
-                  <th>State</th>
-                  <th>PIN Code</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                ${holderAddresses
-                  .map(
-                    (address, index) => `
-                  <tr>
-                    <td>${index + 1}</td>
-                    <td>${escapeHtml(address.City_non_normalized || "-")}</td>
-                    <td>${escapeHtml(address.State_non_normalized || "-")}</td>
-                    <td>${escapeHtml(address.ZIP_Postal_Code_non_normalized || "-")}</td>
-                  </tr>
-                `,
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        `
-        : '<div class="empty">No address details found.</div>'
-    }
-  </div>
 
   <!-- FOOTER -->
   <div class="footer">
