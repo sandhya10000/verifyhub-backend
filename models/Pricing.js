@@ -92,6 +92,8 @@ const pricingSchema = new mongoose.Schema(
     aiFail: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
     rc: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
     gst: { type: productPriceSchema, default: { base: 10, gstRate: 0 } },
+    // Bank Statement Analyzer (Finpass) — flat per analysis, no GST.
+    bsa: { type: productPriceSchema, default: { base: 100, gstRate: 0 } },
     // One-time Custom Branded Report fee — flat GST-inclusive total (no split).
     cbr: { type: productPriceSchema, default: { base: 2500, gstRate: 0 } },
     otherFailedCharge: { type: productPriceSchema, default: { base: 30, gstRate: 0 } },
@@ -106,7 +108,7 @@ const pricingSchema = new mongoose.Schema(
 );
 
 const PLAN_KEYS = ["startup", "starter", "growth", "pro", "enterprise"];
-const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax", "rc", "gst"];
+const PRODUCT_KEYS = ["ai", "cibil", "crif", "experian", "equifax", "rc", "gst", "bsa"];
 
 // Recharge amount -> plan tier.
 // Single-plan mode: any amount >= minRecharge maps to SINGLE_PLAN_KEY.
@@ -172,6 +174,11 @@ function quoteForProduct(pricing, productKey, tier, kind = "success") {
     // Failures bill the same ₹10 as success — permanently, in every mode.
     const gst = pricing.gst || { base: 10, gstRate: 0 };
     return totalsFor(gst.base, gst.gstRate);
+  }
+  if (key === "bsa") {
+    // Same price on success and failure once Finpass has accepted the upload.
+    const bsa = pricing.bsa || { base: 100, gstRate: 0 };
+    return totalsFor(bsa.base, bsa.gstRate);
   }
   if (["cibil", "crif", "experian", "equifax"].includes(key)) {
     if (kind === "fail") {

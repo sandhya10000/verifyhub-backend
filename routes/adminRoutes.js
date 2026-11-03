@@ -3,6 +3,7 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const rcController = require('../controllers/rcController');
 const gstController = require('../controllers/gstController');
+const bsaController = require('../controllers/bsaController');
 const ticketController = require('../controllers/ticketController');
 const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/adminMiddleware');
@@ -17,6 +18,8 @@ router.get('/reports/credit-reports', auth, isAdmin, adminController.getAllCredi
 router.get('/reports/failed-reports', auth, isAdmin, adminController.getFailedCreditReports);
 router.get('/rc-reports', auth, isAdmin, rcController.getAllRcVerifications);
 router.get('/gst-reports', auth, isAdmin, gstController.getAllGstVerifications);
+router.get('/bsa-reports', auth, isAdmin, bsaController.getAllBankStatementAnalyses);
+router.get('/bsa-reports/:id/report', auth, isAdmin, bsaController.adminDownloadReport);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);

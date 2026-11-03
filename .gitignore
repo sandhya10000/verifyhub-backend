@@ -4,3 +4,6 @@ uploads/
  
 
 assets/*.json
+# Bank statement analyzer: temporary uploads and private reports
+tmp/
+private/

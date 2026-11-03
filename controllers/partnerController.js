@@ -257,6 +257,9 @@ exports.getPublicPlans = async (req, res) => {
     const gst = pricing
       ? quoteForProduct(pricing, "gst", "starter", "success")
       : { base: 10, gstRate: 0, gstAmount: 0, total: 10 };
+    const bsa = pricing
+      ? quoteForProduct(pricing, "bsa", "starter", "success")
+      : { base: 100, gstRate: 0, gstAmount: 0, total: 100 };
     // Admin-editable Add Funds banner (falls back to the bundled default).
     let addFundsBanner = { imageUrl: "/Add_Funds_banner.png", enabled: true, cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0 };
     try {
@@ -271,6 +274,7 @@ exports.getPublicPlans = async (req, res) => {
         otherFailedCharge: otherFailed.total,
         rc: { base: rc.base, gstRate: rc.gstRate, total: rc.total },
         gst: { base: gst.base, gstRate: gst.gstRate, total: gst.total },
+        bsa: { base: bsa.base, gstRate: bsa.gstRate, total: bsa.total },
         minRecharge: pricing?.minRecharge ?? 1000,
         rechargePlans: pricing?.rechargePlans?.length ? pricing.rechargePlans : DEFAULT_RECHARGE_PLANS,
         addFundsBanner: {
