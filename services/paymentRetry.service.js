@@ -82,30 +82,33 @@ async function sendRetryLink({
       },
     );
 
-    const whatsapp = await sendPaymentRetryWhatsApp(phone, {
-      name,
-      amount,
-      link: link.shortUrl,
-      mode,
-    });
+    // Disabled for now: the payment-retry WhatsApp template is not called.
+    // const whatsapp = await sendPaymentRetryWhatsApp(phone, {
+    //   name,
+    //   amount,
+    //   link: link.shortUrl,
+    //   mode,
+    // });
+    const whatsapp = { sent: false, skipped: true, reason: "payment-retry WhatsApp disabled" };
 
-    const waStatus = whatsapp?.sent
-      ? "whatsapp sent"
-      : `whatsapp not sent (${
-          whatsapp?.reason ||
-          (whatsapp?.mocked ? "not configured" : whatsapp?.skipped ? "skipped" : "no reason")
-        })`;
-    console.log(
-      `[payment-retry] link ${link.id} for txn ${transaction._id} -> ${waStatus} [template=${process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE || "none"}]`,
-    );
-    if (!whatsapp?.sent && String(whatsapp?.reason).includes("TEMPLATE_PARAM_MISMATCH")) {
-      console.error(
-        "[payment-retry] hint: template expects a different variable count — " +
-          "set WASIMPLE_PAYMENT_RETRY_MODE=body for 3 vars (name, amount, link) " +
-          "or button for 2 vars (name, amount) + static URL button; " +
-          "also confirm WASIMPLE_PAYMENT_RETRY_TEMPLATE is the exact new template name.",
-      );
-    }
+    // const waStatus = whatsapp?.sent
+    //   ? "whatsapp sent"
+    //   : `whatsapp not sent (${
+    //       whatsapp?.reason ||
+    //       (whatsapp?.mocked ? "not configured" : whatsapp?.skipped ? "skipped" : "no reason")
+    //     })`;
+    // console.log(
+    //   `[payment-retry] link ${link.id} for txn ${transaction._id} -> ${waStatus} [template=${process.env.WASIMPLE_PAYMENT_RETRY_TEMPLATE || "none"}]`,
+    // );
+    // Commented out: TEMPLATE_PARAM_MISMATCH hint disabled.
+    // if (!whatsapp?.sent && String(whatsapp?.reason).includes("TEMPLATE_PARAM_MISMATCH")) {
+    //   console.error(
+    //     "[payment-retry] hint: template expects a different variable count — " +
+    //       "set WASIMPLE_PAYMENT_RETRY_MODE=body for 3 vars (name, amount, link) " +
+    //       "or button for 2 vars (name, amount) + static URL button; " +
+    //       "also confirm WASIMPLE_PAYMENT_RETRY_TEMPLATE is the exact new template name.",
+    //   );
+    // }
     return { sent: true, url: link.shortUrl, whatsapp };
   } catch (e) {
     console.error("[payment-retry] unexpected failure:", e.message);

@@ -1,6 +1,7 @@
 const Ticket = require('../models/Ticket');
 const User = require('../models/User');
 const { sendTicketResolvedMail } = require('../utils/sendMail');
+const { toAttachments } = require('../config/ticketUpload');
 
 // ==========================================
 // PARTNER CONTROLLERS
@@ -9,6 +10,7 @@ const { sendTicketResolvedMail } = require('../utils/sendMail');
 exports.createTicket = async (req, res) => {
   try {
     const { category, reference, description } = req.body;
+    const attachments = toAttachments(req.files);
 
     if (!category || !description) {
       return res.status(400).json({ success: false, message: 'Category and description are required' });
@@ -27,7 +29,8 @@ exports.createTicket = async (req, res) => {
       partnerId: req.user._id, // Assuming authMiddleware sets req.user
       category,
       reference: supportId,
-      description
+      description,
+      attachments,
     });
 
     res.status(201).json({ success: true, data: newTicket, message: 'Ticket created successfully' });
@@ -92,11 +95,12 @@ exports.getPartnerUnreadCount = async (req, res) => {
 
 exports.addMessage = async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!text || !String(text).trim()) {
-      return res.status(400).json({ success: false, message: 'Message text is required' });
+    const text = String(req.body.text || '').trim();
+    const attachments = toAttachments(req.files);
+    if (!text && attachments.length === 0) {
+      return res.status(400).json({ success: false, message: 'Message text or an image is required' });
     }
-    if (String(text).trim().length > 2000) {
+    if (text.length > 2000) {
       return res.status(400).json({ success: false, message: 'Message too long (max 2000 chars)' });
     }
 
@@ -120,7 +124,8 @@ exports.addMessage = async (req, res) => {
     ticket.messages.push({
       sender: req.user._id,
       senderRole: isAdmin ? 'admin' : 'user',
-      text: String(text).trim(),
+      text,
+      attachments,
     });
     ticket.lastReplyAt = new Date();
     // Admin replying to an open ticket moves it to in-progress
