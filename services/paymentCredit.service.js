@@ -15,7 +15,35 @@ const { earnPoints } = require("../utils/points");
 // The caller is responsible for setting transaction.status = "SUCCESS" (and
 // saving) before calling this. Shared by /verify/payment and the Razorpay
 // webhook so both paths credit identically.
+// Idempotent: the atomic claim on walletCreditedAt guarantees the wallet is
+// credited at most once, however many webhook/verify/reconcile paths call this.
+// If the credit fails before the wallet $inc, the claim is released so a later
+// retry can credit it.
 async function creditWalletRecharge(transaction) {
+  const claimed = await Transaction.findOneAndUpdate(
+    { _id: transaction._id, walletCreditedAt: null },
+    { $set: { walletCreditedAt: new Date() } },
+    { new: true },
+  );
+  if (!claimed) {
+    const user = await User.findById(transaction.userId)
+      .select("walletBalance activePlan pendingPlanChoice")
+      .lean();
+    return { alreadyCredited: true, updatedUser: user, plan: transaction.planTier || null, planFee: 0, walletCredit: 0, bonusCredit: 0, autoAssigned: false };
+  }
+
+  let walletIncApplied = false;
+  try {
+    return await applyWalletCredit(transaction, (applied) => { walletIncApplied = applied; });
+  } catch (err) {
+    if (!walletIncApplied) {
+      await Transaction.updateOne({ _id: transaction._id }, { $set: { walletCreditedAt: null } });
+    }
+    throw err;
+  }
+}
+
+async function applyWalletCredit(transaction, markIncApplied) {
   const pricing = await Pricing.findOne({ key: "default" }).lean();
 
   const current = await User.findById(transaction.userId)
@@ -73,6 +101,7 @@ async function creditWalletRecharge(transaction) {
     { new: true },
   );
   if (!updatedUser) throw new Error("User not found");
+  markIncApplied(true); // point of no return: the wallet has been credited
 
   // Credit points: Rs paid = points earned (bonus not counted). Idempotent per orderId.
   try {

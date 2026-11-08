@@ -257,6 +257,17 @@ const { startSheetsScheduler } = require("./jobs/sheetsScheduler");
 ensureSheetsConfigSeeded().catch((e) => console.error("[sheets] config seed failed:", e.message));
 startSheetsScheduler();
 
+// Wallet recharge reconciliation: settles recharges stuck in PENDING by asking
+// Razorpay directly. Backstop for missed webhooks and interrupted verify calls.
+{
+  const { reconcilePendingRecharges } = require("./services/paymentSettle.service");
+  const RECONCILE_MS = Number(process.env.RECHARGE_RECONCILE_MS) || 5 * 60 * 1000;
+  const runReconcile = () =>
+    reconcilePendingRecharges().catch((e) => console.error("[reconcile] sweep failed:", e.message));
+  setTimeout(runReconcile, 60 * 1000);
+  setInterval(runReconcile, RECONCILE_MS);
+}
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 

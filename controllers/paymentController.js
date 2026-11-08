@@ -1,5 +1,7 @@
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
+const { reconcileOrder } = require("../services/paymentSettle.service");
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const Pricing = require("../models/Pricing");
@@ -95,11 +97,17 @@ const createWalletRechargeOrder = async (req, res) => {
     console.log("Plan:", plan, "| Plan Fee:", planFee, "| Wallet Credit:", walletCredit);
 
     // 5. Create Razorpay order
+    // Pre-generate the transaction id so it can travel as order notes; the
+    // webhook then matches the payment back to this row even if the browser
+    // verify call never completes.
+    const transactionId = new mongoose.Types.ObjectId();
+
     const options = {
       amount: Math.round(totalAmount * 100),
       currency: "INR",
       receipt: `wallet_recharge_${Date.now()}`,
       payment_capture: 1,
+      notes: { transactionId: String(transactionId) },
     };
 
     const order = await razorpay.orders.create(options);
@@ -108,6 +116,7 @@ const createWalletRechargeOrder = async (req, res) => {
 
     // 6. Save transaction (planSelected is the source of truth at verify)
     const transaction = new Transaction({
+      _id: transactionId,
       userId: user._id,
 
       orderId: order.id,
@@ -196,6 +205,14 @@ const cancelWalletRechargeOrder = async (req, res) => {
       });
     }
 
+    // Before failing the row, check Razorpay: if the order was actually paid
+    // (e.g. the modal closed after capture), settle it instead of marking FAILED.
+    try {
+      await reconcileOrder(String(orderId).trim());
+    } catch (e) {
+      console.error("[wallet-recharge] cancel reconcile failed:", e.message);
+    }
+
     const updated = await Transaction.findOneAndUpdate(
       {
         orderId: String(orderId).trim(),
@@ -268,8 +285,9 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    // 3. Prevent duplicate processing
-    if (transaction.status === "SUCCESS") {
+    // 3. Prevent duplicate processing. A SUCCESS row whose wallet credit never
+    // completed is NOT done: fall through so the credit is applied.
+    if (transaction.status === "SUCCESS" && transaction.walletCreditedAt) {
       return res.status(200).json({
         success: true,
         message: "Payment already verified",
@@ -308,9 +326,19 @@ const verifyPayment = async (req, res) => {
     // Two shapes: tier selection rides along (planSelected set -> tier set,
     // full amount credited) or pure top-up (planSelected null -> full credit,
     // tier untouched). Plans are free — no fee is ever withheld.
-    // Re-derive defensively and never strand paid money.
+    // creditWalletRecharge is idempotent (walletCreditedAt); if it throws, the
+    // webhook / reconciliation job will retry the credit.
     if (transaction.purpose === "WALLET_RECHARGE") {
       const result = await creditWalletRecharge(transaction);
+      if (result.alreadyCredited) {
+        return res.status(200).json({
+          success: true,
+          message: "Payment already verified",
+          transaction,
+          walletBalance: result.updatedUser?.walletBalance,
+          activePlan: result.updatedUser?.activePlan,
+        });
+      }
       return res.status(200).json({
         success: true,
         message: "Wallet recharged successfully",
