@@ -24,6 +24,7 @@ router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
 router.post('/partners/:id/deduct-funds', auth, isAdmin, adminController.deductFundsFromPartner);
+router.post('/partners/:id/points', auth, isAdmin, adminController.adjustPartnerPoints);
 router.get('/partners/:id', auth, isAdmin, adminController.getPartnerById);
 router.patch('/partners/:id', auth, isAdmin, adminController.updatePartner);
 router.get('/partners/:id/reports', auth, isAdmin, adminController.getPartnerReports);

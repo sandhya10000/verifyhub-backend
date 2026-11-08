@@ -2,6 +2,8 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const PointsLedger = require('../models/PointsLedger');
+const crypto = require('crypto');
 const Ticket = require('../models/Ticket');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
@@ -630,6 +632,83 @@ exports.deductFundsFromPartner = async (req, res) => {
   } catch (err) {
     console.error("deductFundsFromPartner Admin Error:", err);
     res.status(500).json({ success: false, message: "Could not deduct funds" });
+  }
+};
+
+// POST /api/admin/partners/:id/points { action: "add" | "deduct", amount, note }
+// Admin VeriPoints adjustment (whole points). Every change is written to the
+// PointsLedger as ADMIN_CREDIT / ADMIN_DEBIT with the acting admin and reason.
+// Deduction is conditional so the points balance can never go negative.
+exports.adjustPartnerPoints = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const action = String(req.body?.action || "").toLowerCase();
+    const amount = Number(req.body?.amount);
+    const note = String(req.body?.note || "").trim().slice(0, 200);
+    if (action !== "add" && action !== "deduct") {
+      return res.status(400).json({ success: false, message: "action must be 'add' or 'deduct'" });
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: "A positive whole number of points is required" });
+    }
+    if (amount > 10000000) {
+      return res.status(400).json({ success: false, message: "Amount exceeds the 1,00,00,000 points per-adjustment limit" });
+    }
+    if (!note) {
+      return res.status(400).json({ success: false, message: "A reason is required for audit" });
+    }
+
+    const target = await User.findById(id).select("role name email partner_id creditPoints").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ success: false, message: "Cannot adjust points on an admin account" });
+    }
+    const prevPoints = Number(target.creditPoints) || 0;
+    const actor = req.user?.email || "admin";
+
+    let updated;
+    if (action === "add") {
+      updated = await User.findByIdAndUpdate(
+        id,
+        { $inc: { creditPoints: amount } },
+        { new: true },
+      ).select("creditPoints").lean();
+    } else {
+      if (prevPoints < amount) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient VeriPoints — partner has ${prevPoints}, cannot deduct ${amount}`,
+        });
+      }
+      updated = await User.findOneAndUpdate(
+        { _id: id, creditPoints: { $gte: amount } },
+        { $inc: { creditPoints: -amount } },
+        { new: true },
+      ).select("creditPoints").lean();
+      if (!updated) {
+        return res.status(400).json({ success: false, message: "Insufficient VeriPoints — please refresh and try again" });
+      }
+    }
+
+    const balanceAfter = Number(updated.creditPoints) || 0;
+    await PointsLedger.create({
+      userId: id,
+      type: action === "add" ? "ADMIN_CREDIT" : "ADMIN_DEBIT",
+      points: amount,
+      rupeeValue: 0,
+      key: `admin_points_${action}_${id}_${crypto.randomUUID()}`,
+      refId: null,
+      balanceAfter,
+      description: `Admin ${action === "add" ? "credit" : "debit"} by ${actor}: ${note}`,
+    });
+
+    res.json({
+      success: true,
+      data: { creditPoints: balanceAfter, prevPoints, changed: action === "add" ? amount : -amount },
+    });
+  } catch (err) {
+    console.error("adjustPartnerPoints Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not adjust VeriPoints" });
   }
 };
 
