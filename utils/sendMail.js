@@ -437,6 +437,42 @@ async function sendCbrAdminNotifyMail(to, d) {
   });
 }
 
+// --- Branded report ready mail ---
+// Sent when the brand designer marks a white-label setup Done (partner is now active).
+
+function cbrReadyHtml(d) {
+  const meta = [
+    metaRow("Request ID", d.requestId || "—"),
+    metaRow("Brand name", d.firmName || "—"),
+    metaRow("Completed on (IST)", istDate(d.completedAt)),
+    ...(d.partnerId ? [metaRow("Partner ID", d.partnerId)] : []),
+  ].join("");
+  return receiptShell({
+    title: "Your Branded Report Is Ready",
+    preheader: `Branded report setup complete · ${d.requestId || ""}`,
+    name: d.name,
+    introHtml: `Your white-label setup is <b>complete</b>. Your logo and colours are now applied, and you can generate branded credit reports from the AI Analyzer page.`,
+    invoiceRowsHtml: row("AI Custom Branded Report — setup", "Completed"),
+    totalsHtml: totalRow("Request ID", d.requestId || "—", true),
+    metaRowsHtml: meta,
+    ctaUrl: process.env.FRONTEND_URL || "https://verifyhub.in",
+    ctaLabel: "Open AI Analyzer",
+  });
+}
+
+async function sendCbrReadyMail(to, d) {
+  return sendMail({
+    to,
+    subject: `Verify Hub: your branded report setup is complete (${d.requestId || ""})`,
+    html: cbrReadyHtml(d),
+    text: [
+      `Hi ${d.name || "Partner"}, your white-label setup is complete.`,
+      `Brand: ${d.firmName || "—"} | Request ID: ${d.requestId || "—"}`,
+      `You can now generate branded credit reports from the AI Analyzer page.`,
+    ].join("\n"),
+  });
+}
+
 // --- Support ticket resolution mail ---
 // Sent to the partner when an admin marks their ticket resolved. Includes the
 // ticket number, category (tag), issue description and resolution timestamp.
@@ -485,6 +521,6 @@ async function sendTicketResolvedMail(to, d) {
 
 module.exports = {
   sendOtpMail, sendMail, sendRechargeSuccessMail, sendPlanActivationMail, sendLowBalanceMail, sendAdminTopupMail, sendAdminDeductMail, sendTopupAdminNotifyMail,
-  sendCbrReceiptMail, sendCbrAdminNotifyMail, sendTicketResolvedMail,
+  sendCbrReceiptMail, sendCbrAdminNotifyMail, sendCbrReadyMail, sendTicketResolvedMail,
   getTransporter, resetTransporter, rechargeInvoiceHtml, planActivationInvoiceHtml, lowBalanceHtml, adminTopupInvoiceHtml, adminDeductInvoiceHtml,
 };

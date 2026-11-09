@@ -264,6 +264,25 @@ async function backfillBrandProfiles() {
     }
   }
 
+  // ── Brand-desk tracking: partners already active before the designer panel
+  // existed have their paid requests marked done (idempotent; safe every boot).
+  try {
+    const activeIds = await User.find({ brandingStatus: 'active' }).select('_id').lean();
+    const healed = await CustomBrandedRequest.updateMany(
+      {
+        partnerId: { $in: activeIds.map((u) => u._id) },
+        paymentStatus: 'Paid',
+        setupStatus: { $in: ['not_started', null] },
+      },
+      { $set: { setupStatus: 'done', setupCompletedAt: new Date() } },
+    );
+    if (healed.modifiedCount) {
+      console.log(`[backfillBrandProfiles] Marked ${healed.modifiedCount} request(s) setupStatus='done'.`);
+    }
+  } catch (err) {
+    console.error('[backfillBrandProfiles] setupStatus backfill failed:', err.message);
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────────
   console.log(
     `[backfillBrandProfiles] Done —` +

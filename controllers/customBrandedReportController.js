@@ -49,7 +49,7 @@ function notifySubscription(request, partner, txn) {
       try {
         const platform = String(process.env.TOPUP_NOTIFY_EMAILS || 'info@verifyhub.in')
           .split(',').map((s) => s.trim()).filter(Boolean);
-        const admins = await User.find({ role: 'admin', isActive: { $ne: false } })
+        const admins = await User.find({ role: { $in: ['admin', 'brand_designer'] }, isActive: { $ne: false } })
           .select('email').lean();
         const recipients = new Set([
           ...platform,
@@ -808,9 +808,13 @@ async function submitBrandAssets(req, res) {
     user.brandingStatus = nextStatus;
     await user.save();
 
+    // Only a not-yet-active partner needs the designer to (re)do setup.
+    const setupReset = nextStatus === 'onboarding'
+      ? { setupStatus: 'not_started', setupCompletedAt: null, setupCompletedBy: null }
+      : {};
     await CustomBrandedRequest.updateMany(
       { partnerId, paymentStatus: 'Paid' },
-      { $set: { brandingDetails: updatedDetails } }
+      { $set: { brandingDetails: updatedDetails, ...setupReset } }
     );
 
     return res.json({
@@ -879,6 +883,10 @@ async function requestRevision(req, res) {
         $set: {
           'brandingDetails.revisionsUsed': newUsed,
           'brandingDetails.revisionNotes': notesList,
+          // A revision sends the item back to the designer's queue.
+          setupStatus: 'not_started',
+          setupCompletedAt: null,
+          setupCompletedBy: null,
         },
       }
     );
