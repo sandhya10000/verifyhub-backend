@@ -6,6 +6,7 @@ const {
   listRequests,
   exportRequestsCsv,
   getRequestDetail,
+  getPartnerGeneratedReports,
   saveBrandProfile,
   updateSetupStatus,
 } = require('../controllers/whiteLabelController');
@@ -24,6 +25,7 @@ const logoUpload = multer({
 // Order matters: /export must be registered before /:id
 router.get('/export', ...staffOnly, exportRequestsCsv);
 router.get('/', ...staffOnly, listRequests);
+router.get('/partners/:partnerId/reports', ...staffOnly, getPartnerGeneratedReports);
 router.get('/:id', ...staffOnly, getRequestDetail);
 router.put('/:id/profile', ...staffOnly, logoUpload.single('logo'), saveBrandProfile);
 router.put('/:id/status', ...staffOnly, updateSetupStatus);

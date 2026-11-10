@@ -5,8 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 const CustomBrandedRequest = require('../models/CustomBrandedRequest');
 const BrandProfile = require('../models/BrandProfile');
+const AIAnalysis = require('../models/AIAnalysis');
 const User = require('../models/User');
 const { validateBrand } = require('../utils/reportRenderer');
 const { sendCbrReadyMail } = require('../utils/sendMail');
@@ -15,6 +17,7 @@ const BRAND_ASSETS_DIR = path.join(__dirname, '..', 'brand-assets');
 const SETUP_STATUSES = ['not_started', 'in_progress', 'done'];
 const MAX_PAGE_LIMIT = 100;
 const EXPORT_LIMIT = 5000;
+const PARTNER_REPORTS_LIMIT = 200;
 
 function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -28,6 +31,63 @@ function partnerCodeOf(user) {
 function istDay(value, endOfDay) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   return new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}+05:30`);
+}
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const SPARK_DAYS = 14;
+const TREND_BUCKETS = ['total', 'not_started', 'in_progress', 'done'];
+
+// Trend + sparkline data for the summary cards. Ignores list filters on purpose:
+// the cards always show overall movement (this IST month vs last, last 14 days).
+async function buildTrends() {
+  const ist = new Date(Date.now() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = ist.getUTCMonth();
+  const thisMonthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const lastMonthKey = m === 0 ? `${y - 1}-12` : `${y}-${String(m).padStart(2, '0')}`;
+  const lastMonthStart = new Date(Date.UTC(y, m - 1, 1) - IST_OFFSET_MS);
+
+  const days = [];
+  for (let i = SPARK_DAYS - 1; i >= 0; i -= 1) {
+    days.push(new Date(ist.getTime() - i * 86400000).toISOString().slice(0, 10));
+  }
+
+  const rows = await CustomBrandedRequest.aggregate([
+    { $match: { paymentStatus: 'Paid', createdAt: { $gte: lastMonthStart } } },
+    {
+      $group: {
+        _id: {
+          status: { $ifNull: ['$setupStatus', 'not_started'] },
+          day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } },
+          month: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'Asia/Kolkata' } },
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const out = {};
+  for (const b of TREND_BUCKETS) {
+    out[b] = { thisMonth: 0, lastMonth: 0, daily: Object.fromEntries(days.map((d) => [d, 0])) };
+  }
+  for (const r of rows) {
+    const { status, day, month } = r._id;
+    for (const b of [status, 'total']) {
+      if (!out[b]) continue;
+      if (month === thisMonthKey) out[b].thisMonth += r.count;
+      if (month === lastMonthKey) out[b].lastMonth += r.count;
+      if (day in out[b].daily) out[b].daily[day] += r.count;
+    }
+  }
+
+  const result = {};
+  for (const b of TREND_BUCKETS) {
+    const { thisMonth, lastMonth, daily } = out[b];
+    // Null when last month had no requests, so the UI can show "—" rather than a fake %.
+    const pct = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 1000) / 10 : null;
+    result[b] = { pct, spark: days.map((d) => daily[d]) };
+  }
+  return result;
 }
 
 async function buildBaseFilter(query) {
@@ -67,7 +127,7 @@ async function listRequests(req, res) {
     const base = await buildBaseFilter(req.query);
     const filter = withSetupFilter(base, req.query.setupStatus);
 
-    const [total, rows, counts] = await Promise.all([
+    const [total, rows, counts, trends] = await Promise.all([
       CustomBrandedRequest.countDocuments(filter),
       CustomBrandedRequest.find(filter)
         .populate('partnerId', PARTNER_FIELDS)
@@ -77,15 +137,17 @@ async function listRequests(req, res) {
         .lean(),
       CustomBrandedRequest.aggregate([
         { $match: base },
-        { $group: { _id: '$setupStatus', count: { $sum: 1 } } },
+        { $group: { _id: '$setupStatus', count: { $sum: 1 }, amount: { $sum: '$amount' } } },
       ]),
+      buildTrends(),
     ]);
 
-    const summary = { total: 0, not_started: 0, in_progress: 0, done: 0 };
+    const summary = { total: 0, totalAmount: 0, not_started: 0, in_progress: 0, done: 0, trends };
     for (const c of counts) {
       const key = c._id || 'not_started';
       summary[key] = (summary[key] || 0) + c.count;
       summary.total += c.count;
+      summary.totalAmount += c.amount || 0;
     }
 
     return res.json({
@@ -158,6 +220,48 @@ async function getRequestDetail(req, res) {
   } catch (err) {
     console.error('[whiteLabel] getRequestDetail error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load request.' });
+  }
+}
+
+// GET /api/white-label/partners/:partnerId/reports
+// Partner details plus every white-label (branded) AI report they generated.
+// Report links reuse the existing ai-analyzer endpoints, which allow admins.
+async function getPartnerGeneratedReports(req, res) {
+  try {
+    const { partnerId } = req.params;
+    if (!mongoose.isValidObjectId(partnerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid partner id.' });
+    }
+    const partner = await User.findById(partnerId).select(PARTNER_FIELDS).lean();
+    if (!partner) return res.status(404).json({ success: false, message: 'Partner not found.' });
+
+    const filter = { userId: partner._id, isBranded: true };
+    const [total, reports] = await Promise.all([
+      AIAnalysis.countDocuments(filter),
+      AIAnalysis.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(PARTNER_REPORTS_LIMIT)
+        .select('-rawModelResponse -filePath -htmlReport')
+        .populate('brandProfileId', 'firmName version')
+        .lean(),
+    ]);
+
+    // Size is not stored on the record; read it from the uploaded file when still present.
+    const { UPLOAD_DIR } = require('../config/uploadConfig');
+    const sizeOf = (storedFileName) => {
+      try {
+        const name = path.basename(storedFileName || '');
+        return name ? fs.statSync(path.join(UPLOAD_DIR, name)).size : null;
+      } catch {
+        return null;
+      }
+    };
+    const withSize = reports.map((r) => ({ ...r, fileSize: sizeOf(r.storedFileName) }));
+
+    return res.json({ success: true, data: { partner, reports: withSize, total } });
+  } catch (err) {
+    console.error('[whiteLabel] getPartnerGeneratedReports error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load generated reports.' });
   }
 }
 
@@ -328,6 +432,7 @@ module.exports = {
   listRequests,
   exportRequestsCsv,
   getRequestDetail,
+  getPartnerGeneratedReports,
   saveBrandProfile,
   updateSetupStatus,
 };
