@@ -288,6 +288,22 @@ async function getQuote(req, res) {
 // POST /api/partner/custom-branded-report/pay/wallet
 // Body: { email, phone } — atomic wallet debit (₹2500 flat, GST-inclusive).
 // ---------------------------------------------------------------------------
+// True only when ANOTHER fee payment already succeeded for this partner. The
+// atomic debit in payWithWallet sets brandingStatus='paid' itself, so the
+// generic findBlockingRequest() would always match the payment just made.
+async function findOtherSuccessfulFee(partnerId, orderId) {
+  const [request, txn] = await Promise.all([
+    CustomBrandedRequest.findOne({ partnerId, paymentStatus: 'Paid', orderId: { $ne: orderId } }).lean(),
+    Transaction.findOne({
+      userId: partnerId,
+      purpose: 'CUSTOM_BRAND_FEE',
+      status: 'SUCCESS',
+      orderId: { $ne: orderId },
+    }).lean(),
+  ]);
+  return request || txn || null;
+}
+
 async function payWithWallet(req, res) {
   try {
     const partnerId = req.user._id;
@@ -418,7 +434,7 @@ async function payWithWallet(req, res) {
 
     // Lost a double-submit race (two debits in flight)? Refund this one and
     // return the winner instead of creating a second Active request.
-    const raced = await findBlockingRequest(partnerId);
+    const raced = await findOtherSuccessfulFee(partnerId, orderId);
     if (raced) {
       const back = { walletBalance: net };
       if (points > 0) back.creditPoints = points;
