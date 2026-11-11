@@ -181,6 +181,11 @@ exports.getAllAiAnalyses = async (req, res) => {
       query.status = status;
     }
 
+    // branded=1 → only white-label (custom branded) reports.
+    if (String(req.query.branded || '') === '1') {
+      query.isBranded = true;
+    }
+
     if (startDate || endDate) {
       const range = istDateRange(startDate, endDate);
       if (range) query.createdAt = range;
@@ -324,6 +329,11 @@ exports.getAllPartners = async (req, res) => {
     const perPage = Math.min(parseInt(limit, 10) || 50, 200);
 
     let query = { role: 'user' };
+
+    // whiteLabel=1 → only partners enrolled in white-label (custom branded) services.
+    if (String(req.query.whiteLabel || '') === '1') {
+      query.brandingStatus = { $in: ['paid', 'onboarding', 'active'] };
+    }
 
     if (search) {
       query.$or = [

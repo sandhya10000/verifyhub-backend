@@ -70,3 +70,9 @@
 [ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:33.009Z] STEP="Frontend Polling Status" elapsed_step=2993ms elapsed_total=27196ms details={"status":"processing","htmlStatus":null}
 [ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:36.013Z] STEP="Frontend Polling Status" elapsed_step=3004ms elapsed_total=30200ms details={"status":"processing","htmlStatus":null}
 [ANALYSIS 6ae63fa1d6889a99d738631a] [2026-10-31T19:21:41.388Z] STEP="Frontend Polling Status" elapsed_step=5375ms elapsed_total=35575ms details={"status":"completed","htmlStatus":"completed"}
+[ANALYSIS 6ac4c445b3205a24f89b49d4] [2026-11-11T12:39:51.199Z] STEP="User Download Click Received" elapsed_step=0ms elapsed_total=0ms
+[ANALYSIS 6ac4c445b3205a24f89b49d4] [2026-11-11T12:39:51.377Z] STEP="Download Serving htmlReport" elapsed_step=178ms elapsed_total=178ms
+[ANALYSIS 6aeda55737172a269cfe0376] [2026-11-11T12:40:27.394Z] STEP="User Download Click Received" elapsed_step=0ms elapsed_total=0ms
+[ANALYSIS 6aeda55737172a269cfe0376] [2026-11-11T12:40:27.547Z] STEP="Download Serving htmlReport" elapsed_step=153ms elapsed_total=153ms
+[ANALYSIS 6aeda55737172a269cfe0376] [2026-11-11T12:41:29.084Z] STEP="User Download Click Received" elapsed_step=61537ms elapsed_total=61690ms
+[ANALYSIS 6aeda55737172a269cfe0376] [2026-11-11T12:41:29.223Z] STEP="Download Serving htmlReport" elapsed_step=139ms elapsed_total=61829ms
