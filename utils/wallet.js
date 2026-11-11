@@ -112,7 +112,7 @@ async function applyDebit(userId, reportId, productLabel, quote, purpose, tier, 
     if (err && err.code === 11000) {
       // Lost a race with a parallel charge for the same report —
       // refund this second debit (rupees and points).
-      await refund();
+      // await refund();
       const user = await User.findById(userId).select("walletBalance").lean();
       return { ok: true, duplicate: true, total: net, balance: user?.walletBalance ?? null };
     }
