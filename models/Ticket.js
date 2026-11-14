@@ -70,7 +70,6 @@ const ticketSchema = new mongoose.Schema(
             type: String,
             default: "",
             trim: true,
-            maxlength: 2000,
           },
           attachments: {
             type: [attachmentSchema],
