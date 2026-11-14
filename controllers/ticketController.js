@@ -100,9 +100,7 @@ exports.addMessage = async (req, res) => {
     if (!text && attachments.length === 0) {
       return res.status(400).json({ success: false, message: 'Message text or an image is required' });
     }
-    if (text.length > 2000) {
-      return res.status(400).json({ success: false, message: 'Message too long (max 2000 chars)' });
-    }
+    
 
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) {
