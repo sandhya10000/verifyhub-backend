@@ -1,4 +1,85 @@
 const puppeteer = require('puppeteer');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+/**
+ * Startup cleanup of leftover puppeteer_dev_chrome_profile-* and bsa-chrome-* folders
+ * from both local project temp dir and os.tmpdir().
+ */
+function cleanupOldChromeProfiles() {
+  const dirsToScan = [
+    path.join(__dirname, '..', 'temp'),
+    os.tmpdir(),
+  ];
+
+  for (const dir of dirsToScan) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const entries = fs.readdirSync(dir);
+      for (const entry of entries) {
+        if (entry.startsWith('puppeteer_dev_chrome_profile-') || entry.startsWith('bsa-chrome-')) {
+          const target = path.join(dir, entry);
+          try {
+            fs.rmSync(target, { recursive: true, force: true });
+          } catch (e) {
+            // file might still be locked or cleaned
+          }
+        }
+      }
+    } catch (err) {
+      // ignore scan errors
+    }
+  }
+}
+
+// Run cleanup immediately on module load
+cleanupOldChromeProfiles();
+
+let sharedBrowser = null;
+let launchPromise = null;
+
+async function getSharedBrowser() {
+  if (sharedBrowser && (typeof sharedBrowser.isConnected === 'function' ? sharedBrowser.isConnected() : sharedBrowser.connected)) {
+    return sharedBrowser;
+  }
+  if (!launchPromise) {
+    const tempDir = path.join(__dirname, '..', 'temp');
+    if (!fs.existsSync(tempDir)) {
+      try { fs.mkdirSync(tempDir, { recursive: true }); } catch (e) {}
+    }
+    const userDataDir = fs.existsSync(tempDir)
+      ? fs.mkdtempSync(path.join(tempDir, 'bsa-chrome-pool-'))
+      : undefined;
+
+    launchPromise = puppeteer.launch({
+      headless: 'new',
+      userDataDir,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-extensions'
+      ]
+    }).then((b) => {
+      sharedBrowser = b;
+      launchPromise = null;
+      return b;
+    }).catch((err) => {
+      launchPromise = null;
+      throw err;
+    });
+  }
+  return launchPromise;
+}
+
+process.on('SIGINT', async () => {
+  if (sharedBrowser) {
+    await sharedBrowser.close().catch(() => {});
+  }
+});
 
 async function generateAnalysisPdf(result) {
   const html = `
@@ -36,43 +117,51 @@ async function generateAnalysisPdf(result) {
     </html>
   `;
 
-  const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+  const browser = await getSharedBrowser();
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+
   try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '20px', bottom: '20px' } });
     return pdfBuffer;
   } finally {
-    await browser.close();
+    await page.close().catch(() => {});
+    await context.close().catch(() => {});
   }
 }
 
-
 // ---------------------------------------------------------------------------
-// generatePdfFromHtml — renders the full 8-section HTML report to PDF.
-// Called by the downloadPdf controller after the second Claude call produces
-// the rich HTML. The HTML is passed in directly (already stored in MongoDB).
+// generatePdfFromHtml — renders HTML report to PDF with shared browser pool
 // ---------------------------------------------------------------------------
 async function generatePdfFromHtml(htmlString) {
-  const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+  const browser = await getSharedBrowser();
+  // Create an isolated incognito context for total session hygiene without process startup overhead
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+
   try {
-    const page = await browser.newPage();
-    // Set viewport wide enough for the 1200px max-width container
     await page.setViewport({ width: 1280, height: 900 });
-    await page.setContent(htmlString, { waitUntil: 'networkidle0' });
-    // Emulate print media so @media print rules apply (removes box-shadows, etc.)
+    // Self-contained HTML with inline styles: domcontentloaded avoids unnecessary network waits
+    await page.setContent(htmlString, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.emulateMediaType('print');
+
     const pdfBuffer = await page.pdf({
-      format:           'A4',
-      printBackground:  true,
-      margin: { top: '15mm', right: '10mm', bottom: '15mm', left: '10mm' },
+      format: 'A4',
+      printBackground: true,
+      displayHeaderFooter: false,
+      margin: { top: '15px', bottom: '15px', left: '15px', right: '15px' }
     });
+
     return pdfBuffer;
   } finally {
-    await browser.close();
+    await page.close().catch(() => {});
+    await context.close().catch(() => {});
   }
 }
 
-module.exports = { generateAnalysisPdf, generatePdfFromHtml };
-
-
+module.exports = {
+  generateAnalysisPdf,
+  generatePdfFromHtml,
+  cleanupOldChromeProfiles,
+};

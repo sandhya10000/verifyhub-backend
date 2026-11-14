@@ -35,6 +35,7 @@ const whiteLabelRoutes = require("./routes/whiteLabelRoutes");
 const rcRoutes = require("./routes/rc");
 const gstRoutes = require("./routes/gst");
 const bsaRoutes = require("./routes/bsa");
+const bankStatementRoutes = require("./routes/bankStatementRoutes");
 
 // Connect Database
 connectDB();
@@ -187,7 +188,7 @@ const corsOptions = {
     "X-Requested-With",
   ],
 
-  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  exposedHeaders: ["Content-Range", "X-Content-Range", "Content-Disposition", "Content-Length"],
 };
 
 app.use(cors(corsOptions));
@@ -233,6 +234,8 @@ app.use("/api/white-label", whiteLabelRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
 app.use("/api/bsa", bsaRoutes);
+app.use("/api/bsa", bankStatementRoutes);
+app.use("/api/v1/bsa", bankStatementRoutes);
 
 // Low-balance mail sweep — DISABLED by default.
 //
@@ -259,6 +262,16 @@ const { startSheetsScheduler } = require("./jobs/sheetsScheduler");
 ensureSheetsConfigSeeded().catch((e) => console.error("[sheets] config seed failed:", e.message));
 startSheetsScheduler();
 
+// BSA Maintenance & Cleanup Tasks (Startup sweep + scheduled hourly maintenance)
+const { sweepStuckBsaRecords, cleanupOldBsaReports } = require("./jobs/bsaMaintenance");
+setTimeout(() => {
+  sweepStuckBsaRecords();
+  cleanupOldBsaReports();
+}, 5 * 1000); // 5 seconds after startup
+setInterval(() => {
+  sweepStuckBsaRecords();
+  cleanupOldBsaReports();
+}, 60 * 60 * 1000); // Hourly sweep
 // Wallet recharge reconciliation: settles recharges stuck in PENDING by asking
 // Razorpay directly. Backstop for missed webhooks and interrupted verify calls.
 // Opt-in: runs only when RECHARGE_RECONCILE_ENABLED=true.
