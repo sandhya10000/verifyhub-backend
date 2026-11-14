@@ -69,6 +69,15 @@ const transactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Set atomically the moment a WALLET_RECHARGE credit is applied. This is
+    // the single idempotency guard for wallet crediting: status can be SUCCESS
+    // while this is still null (e.g. a credit attempt that threw), and retries
+    // must still credit in that case.
+    walletCreditedAt: {
+      type: Date,
+      default: null,
+    },
+
     amount: {
       type: Number,
       required: true,

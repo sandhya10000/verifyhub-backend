@@ -1,0 +1,160 @@
+name: Deploy VerifyHub Production
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verifyhub-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout upstream master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+          cat >> ~/.ssh/config <<EOF
+          Host production-vps
+            HostName $SSH_HOST
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+
+          chmod 600 ~/.ssh/config
+
+      - name: Deploy to production
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          ssh production-vps "TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          echo "Starting VerifyHub production deployment..."
+
+          # Load Node.js and npm from NVM
+          export NVM_DIR="/home/deploy/.nvm"
+
+          if [ -s "$NVM_DIR/nvm.sh" ]; then
+            . "$NVM_DIR/nvm.sh"
+          fi
+
+          export PATH="/home/deploy/.nvm/versions/node/v22.23.2/bin:$PATH"
+
+          echo "Node version:"
+          node -v
+
+          echo "npm version:"
+          npm -v
+
+          # Move to production directory
+          cd /var/www/api
+
+          # Ensure required files and directories exist
+          test -d .git
+          test -f .env
+          test -f Server.js
+          test -d uploads
+
+          # Fetch the latest upstream master
+          git fetch upstream master
+
+          # Deploy only the commit that triggered this workflow
+          UPSTREAM_SHA="$(git rev-parse upstream/master)"
+
+          if [ "$UPSTREAM_SHA" != "$TARGET_SHA" ]; then
+            echo "ERROR: Upstream master does not match deployment commit."
+            echo "Expected: $TARGET_SHA"
+            echo "Found:    $UPSTREAM_SHA"
+            exit 1
+          fi
+
+          # Preserve the existing uploads directory during deployment.
+          # Git-tracked upload files are archived temporarily before reset.
+          UPLOAD_ARCHIVE="$(mktemp /tmp/verifyhub-uploads-XXXXXX.tar.gz)"
+          tar -czf "$UPLOAD_ARCHIVE" -C /var/www/api uploads
+
+          restore_uploads() {
+            if [ -n "${UPLOAD_ARCHIVE:-}" ] && [ -f "$UPLOAD_ARCHIVE" ]; then
+              tar -xzf "$UPLOAD_ARCHIVE" -C /var/www/api
+              rm -f "$UPLOAD_ARCHIVE"
+            fi
+          }
+
+          trap restore_uploads EXIT
+
+          # Discard tracked changes and deploy the requested commit.
+          # .env is expected to remain ignored by Git.
+          git reset --hard "$TARGET_SHA"
+
+          # Restore uploaded reports and other upload data.
+          restore_uploads
+          UPLOAD_ARCHIVE=""
+
+          # Verify critical production files remain available.
+          test -f .env
+          test -f Server.js
+          test -d uploads
+
+          # Install dependencies using the committed lockfile.
+          npm ci --omit=dev
+
+          # Restart only the production PM2 process.
+          pm2 restart verifyhub-api
+
+          # Confirm production health.
+          echo "Checking production health..."
+
+          HEALTHY=false
+
+          for attempt in $(seq 1 12); do
+            if curl -fsS https://docs.verifyhub.in/; then
+              echo
+              echo "Production health check passed."
+              HEALTHY=true
+              break
+            fi
+
+            echo "Health check attempt $attempt failed. Retrying..."
+            sleep 5
+          done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "ERROR: Production health check failed."
+            pm2 status verifyhub-api || true
+            pm2 logs verifyhub-api --lines 50 --nostream || true
+            exit 1
+          fi
+
+          echo "VerifyHub production deployment completed successfully."
+          REMOTE

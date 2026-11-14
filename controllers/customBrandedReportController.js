@@ -49,7 +49,7 @@ function notifySubscription(request, partner, txn) {
       try {
         const platform = String(process.env.TOPUP_NOTIFY_EMAILS || 'info@verifyhub.in')
           .split(',').map((s) => s.trim()).filter(Boolean);
-        const admins = await User.find({ role: 'admin', isActive: { $ne: false } })
+        const admins = await User.find({ role: { $in: ['admin', 'brand_designer'] }, isActive: { $ne: false } })
           .select('email').lean();
         const recipients = new Set([
           ...platform,
@@ -288,6 +288,22 @@ async function getQuote(req, res) {
 // POST /api/partner/custom-branded-report/pay/wallet
 // Body: { email, phone } — atomic wallet debit (₹2500 flat, GST-inclusive).
 // ---------------------------------------------------------------------------
+// True only when ANOTHER fee payment already succeeded for this partner. The
+// atomic debit in payWithWallet sets brandingStatus='paid' itself, so the
+// generic findBlockingRequest() would always match the payment just made.
+async function findOtherSuccessfulFee(partnerId, orderId) {
+  const [request, txn] = await Promise.all([
+    CustomBrandedRequest.findOne({ partnerId, paymentStatus: 'Paid', orderId: { $ne: orderId } }).lean(),
+    Transaction.findOne({
+      userId: partnerId,
+      purpose: 'CUSTOM_BRAND_FEE',
+      status: 'SUCCESS',
+      orderId: { $ne: orderId },
+    }).lean(),
+  ]);
+  return request || txn || null;
+}
+
 async function payWithWallet(req, res) {
   try {
     const partnerId = req.user._id;
@@ -418,7 +434,7 @@ async function payWithWallet(req, res) {
 
     // Lost a double-submit race (two debits in flight)? Refund this one and
     // return the winner instead of creating a second Active request.
-    const raced = await findBlockingRequest(partnerId);
+    const raced = await findOtherSuccessfulFee(partnerId, orderId);
     if (raced) {
       const back = { walletBalance: net };
       if (points > 0) back.creditPoints = points;
@@ -808,9 +824,13 @@ async function submitBrandAssets(req, res) {
     user.brandingStatus = nextStatus;
     await user.save();
 
+    // Only a not-yet-active partner needs the designer to (re)do setup.
+    const setupReset = nextStatus === 'onboarding'
+      ? { setupStatus: 'not_started', setupCompletedAt: null, setupCompletedBy: null }
+      : {};
     await CustomBrandedRequest.updateMany(
       { partnerId, paymentStatus: 'Paid' },
-      { $set: { brandingDetails: updatedDetails } }
+      { $set: { brandingDetails: updatedDetails, ...setupReset } }
     );
 
     return res.json({
@@ -879,6 +899,10 @@ async function requestRevision(req, res) {
         $set: {
           'brandingDetails.revisionsUsed': newUsed,
           'brandingDetails.revisionNotes': notesList,
+          // A revision sends the item back to the designer's queue.
+          setupStatus: 'not_started',
+          setupCompletedAt: null,
+          setupCompletedBy: null,
         },
       }
     );

@@ -24,6 +24,7 @@ router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);
 router.post('/partners/:id/deduct-funds', auth, isAdmin, adminController.deductFundsFromPartner);
+router.post('/partners/:id/points', auth, isAdmin, adminController.adjustPartnerPoints);
 router.get('/partners/:id', auth, isAdmin, adminController.getPartnerById);
 router.patch('/partners/:id', auth, isAdmin, adminController.updatePartner);
 router.get('/partners/:id/reports', auth, isAdmin, adminController.getPartnerReports);
@@ -42,6 +43,7 @@ router.post('/integrations/google-sheets/sync-now', auth, isAdmin, sheetsControl
 // (image-only); multer errors surface as 400 with the reason.
 const bannerController = require('../controllers/bannerController');
 const { bannerUpload } = require('../config/bannerUpload');
+const { attachImages } = require('../config/ticketUpload');
 router.get('/banners/add-funds', auth, isAdmin, bannerController.getAddFundsBanner);
 router.post('/banners/add-funds', auth, isAdmin, (req, res, next) => {
   bannerUpload.single('banner')(req, res, (err) => {
@@ -58,6 +60,6 @@ router.post('/tickets/mark-seen', auth, isAdmin, ticketController.markTicketsSee
 router.get('/tickets', auth, isAdmin, ticketController.getAllTickets);
 router.get('/tickets/:id', auth, isAdmin, ticketController.getTicketById);
 router.patch('/tickets/:id', auth, isAdmin, ticketController.updateTicket);
-router.post('/tickets/:id/messages', auth, isAdmin, ticketController.addMessage);
+router.post('/tickets/:id/messages', auth, isAdmin, attachImages, ticketController.addMessage);
 
 module.exports = router;

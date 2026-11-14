@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+const attachmentSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    filename: { type: String, default: "" },
+    mimeType: { type: String, default: "" },
+    size: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const ticketSchema = new mongoose.Schema(
   {
     partnerId: {
@@ -21,6 +31,10 @@ const ticketSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    attachments: {
+      type: [attachmentSchema],
+      default: [],
     },
     status: {
       type: String,
@@ -51,10 +65,16 @@ const ticketSchema = new mongoose.Schema(
             required: true,
           },
           text: {
+            // Optional when the message carries attachments; the controller
+            // enforces "text or at least one attachment".
             type: String,
-            required: true,
+            default: "",
             trim: true,
             maxlength: 2000,
+          },
+          attachments: {
+            type: [attachmentSchema],
+            default: [],
           },
           createdAt: {
             type: Date,

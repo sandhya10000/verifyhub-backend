@@ -12,7 +12,7 @@ const pointsLedgerSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["EARN", "REDEEM", "REVERSAL"],
+      enum: ["EARN", "REDEEM", "REVERSAL", "ADMIN_CREDIT", "ADMIN_DEBIT"],
       required: true,
     },
 

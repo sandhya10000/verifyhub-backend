@@ -2,6 +2,8 @@ const AIAnalysis = require('../models/AIAnalysis');
 const CreditReport = require('../models/creditReport');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const PointsLedger = require('../models/PointsLedger');
+const crypto = require('crypto');
 const Ticket = require('../models/Ticket');
 const RcVerification = require('../models/RcVerification');
 const GstVerification = require('../models/GstVerification');
@@ -67,7 +69,7 @@ exports.getOverviewSummary = async (req, res) => {
       AIAnalysis.countDocuments({ status: 'failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
       CreditReport.countDocuments({ status: 'Failed', createdAt: { $gte: monthStart, $lte: monthEnd } }),
       User.aggregate([
-        { $match: { role: { $ne: 'admin' } } },
+        { $match: { role: 'user' } },
         { $group: { _id: null, total: { $sum: '$walletBalance' } } }
       ]),
       Transaction.findOne({
@@ -78,7 +80,7 @@ exports.getOverviewSummary = async (req, res) => {
         status: 'SUCCESS',
         createdAt: { $gte: monthStart, $lte: monthEnd }
       }).select('_id').lean(),
-      User.countDocuments({ role: { $ne: 'admin' } }),
+      User.countDocuments({ role: 'user' }),
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: weekStart } }),
       User.countDocuments({ role: { $ne: 'admin' }, createdAt: { $gte: todayStart, $lte: todayEnd } }),
       Transaction.aggregate([
@@ -177,6 +179,11 @@ exports.getAllAiAnalyses = async (req, res) => {
     let query = {};
     if (status && status !== "All") {
       query.status = status;
+    }
+
+    // branded=1 → only white-label (custom branded) reports.
+    if (String(req.query.branded || '') === '1') {
+      query.isBranded = true;
     }
 
     if (startDate || endDate) {
@@ -321,7 +328,12 @@ exports.getAllPartners = async (req, res) => {
     const wantsAll = String(req.query.all || '') === '1';
     const perPage = Math.min(parseInt(limit, 10) || 50, 200);
 
-    let query = { role: { $ne: 'admin' } };
+    let query = { role: 'user' };
+
+    // whiteLabel=1 → only partners enrolled in white-label (custom branded) services.
+    if (String(req.query.whiteLabel || '') === '1') {
+      query.brandingStatus = { $in: ['paid', 'onboarding', 'active'] };
+    }
 
     if (search) {
       query.$or = [
@@ -436,7 +448,7 @@ exports.setPartnerStatus = async (req, res) => {
     }
     const target = await User.findById(id).select("role isActive").lean();
     if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
-    if (target.role === "admin") {
+    if (target.role !== "user") {
       return res.status(400).json({ success: false, message: "Admin accounts cannot be deactivated" });
     }
     if (target.isActive === isActive) {
@@ -491,7 +503,7 @@ exports.addFundsToPartner = async (req, res) => {
     }
     const target = await User.findById(id).select("role name email partner_id walletBalance").lean();
     if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
-    if (target.role === "admin") {
+    if (target.role !== "user") {
       return res.status(400).json({ success: false, message: "Cannot top up an admin account" });
     }
 
@@ -569,7 +581,7 @@ exports.deductFundsFromPartner = async (req, res) => {
     }
     const target = await User.findById(id).select("role name email partner_id walletBalance").lean();
     if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
-    if (target.role === "admin") {
+    if (target.role !== "user") {
       return res.status(400).json({ success: false, message: "Cannot deduct from an admin account" });
     }
     if ((target.walletBalance ?? 0) < amount) {
@@ -633,13 +645,90 @@ exports.deductFundsFromPartner = async (req, res) => {
   }
 };
 
+// POST /api/admin/partners/:id/points { action: "add" | "deduct", amount, note }
+// Admin VeriPoints adjustment (whole points). Every change is written to the
+// PointsLedger as ADMIN_CREDIT / ADMIN_DEBIT with the acting admin and reason.
+// Deduction is conditional so the points balance can never go negative.
+exports.adjustPartnerPoints = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const action = String(req.body?.action || "").toLowerCase();
+    const amount = Number(req.body?.amount);
+    const note = String(req.body?.note || "").trim().slice(0, 200);
+    if (action !== "add" && action !== "deduct") {
+      return res.status(400).json({ success: false, message: "action must be 'add' or 'deduct'" });
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: "A positive whole number of points is required" });
+    }
+    if (amount > 10000000) {
+      return res.status(400).json({ success: false, message: "Amount exceeds the 1,00,00,000 points per-adjustment limit" });
+    }
+    if (!note) {
+      return res.status(400).json({ success: false, message: "A reason is required for audit" });
+    }
+
+    const target = await User.findById(id).select("role name email partner_id creditPoints").lean();
+    if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
+    if (target.role !== "user") {
+      return res.status(400).json({ success: false, message: "Cannot adjust points on an admin account" });
+    }
+    const prevPoints = Number(target.creditPoints) || 0;
+    const actor = req.user?.email || "admin";
+
+    let updated;
+    if (action === "add") {
+      updated = await User.findByIdAndUpdate(
+        id,
+        { $inc: { creditPoints: amount } },
+        { new: true },
+      ).select("creditPoints").lean();
+    } else {
+      if (prevPoints < amount) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient VeriPoints — partner has ${prevPoints}, cannot deduct ${amount}`,
+        });
+      }
+      updated = await User.findOneAndUpdate(
+        { _id: id, creditPoints: { $gte: amount } },
+        { $inc: { creditPoints: -amount } },
+        { new: true },
+      ).select("creditPoints").lean();
+      if (!updated) {
+        return res.status(400).json({ success: false, message: "Insufficient VeriPoints — please refresh and try again" });
+      }
+    }
+
+    const balanceAfter = Number(updated.creditPoints) || 0;
+    await PointsLedger.create({
+      userId: id,
+      type: action === "add" ? "ADMIN_CREDIT" : "ADMIN_DEBIT",
+      points: amount,
+      rupeeValue: 0,
+      key: `admin_points_${action}_${id}_${crypto.randomUUID()}`,
+      refId: null,
+      balanceAfter,
+      description: `Admin ${action === "add" ? "credit" : "debit"} by ${actor}: ${note}`,
+    });
+
+    res.json({
+      success: true,
+      data: { creditPoints: balanceAfter, prevPoints, changed: action === "add" ? amount : -amount },
+    });
+  } catch (err) {
+    console.error("adjustPartnerPoints Admin Error:", err);
+    res.status(500).json({ success: false, message: "Could not adjust VeriPoints" });
+  }
+};
+
 // PATCH /api/admin/partners/:id { name?, phone?, state?, city?, pincode? }
 // Admin edit of partner contact/profile fields. Never targets admins.
 exports.updatePartner = async (req, res) => {
   try {
     const target = await User.findById(req.params.id).select("role").lean();
     if (!target) return res.status(404).json({ success: false, message: "Partner not found" });
-    if (target.role === "admin") return res.status(400).json({ success: false, message: "Not a partner account" });
+    if (target.role !== "user") return res.status(400).json({ success: false, message: "Not a partner account" });
 
     const set = {};
     if (req.body.name !== undefined) {
@@ -688,7 +777,7 @@ exports.getPartnerById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select("-password").lean();
     if (!user) return res.status(404).json({ success: false, message: "Partner not found" });
-    if (user.role === "admin") return res.status(400).json({ success: false, message: "Not a partner account" });
+    if (user.role !== "user") return res.status(400).json({ success: false, message: "Not a partner account" });
 
     const range = ["month", "week"].includes(req.query.range) ? req.query.range : "lifetime";
     const since = range === "month" ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)

@@ -31,6 +31,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
 const partnerRoutes = require("./routes/partnerRoutes");
 const customBrandedReportRoutes = require("./routes/customBrandedReportRoutes");
+const whiteLabelRoutes = require("./routes/whiteLabelRoutes");
 const rcRoutes = require("./routes/rc");
 const gstRoutes = require("./routes/gst");
 const bsaRoutes = require("./routes/bsa");
@@ -229,6 +230,7 @@ app.use("/api/partner", partnerRoutes);
 app.use("/api/partner/custom-branded-report", customBrandedReportRoutes);
 app.use("/api/branding", customBrandedReportRoutes);
 app.use("/api/partner/branding", customBrandedReportRoutes);
+app.use("/api/white-label", whiteLabelRoutes);
 app.use("/api/rc", rcRoutes);
 app.use("/api/gst", gstRoutes);
 app.use("/api/bsa", bsaRoutes);
@@ -270,6 +272,20 @@ setInterval(() => {
   sweepStuckBsaRecords();
   cleanupOldBsaReports();
 }, 60 * 60 * 1000); // Hourly sweep
+// Wallet recharge reconciliation: settles recharges stuck in PENDING by asking
+// Razorpay directly. Backstop for missed webhooks and interrupted verify calls.
+// Opt-in: runs only when RECHARGE_RECONCILE_ENABLED=true.
+if (String(process.env.RECHARGE_RECONCILE_ENABLED || "").toLowerCase() === "true") {
+  const { reconcilePendingRecharges } = require("./services/paymentSettle.service");
+  const RECONCILE_MS = Number(process.env.RECHARGE_RECONCILE_MS) || 5 * 60 * 1000;
+  const runReconcile = () =>
+    reconcilePendingRecharges().catch((e) => console.error("[reconcile] sweep failed:", e.message));
+  setTimeout(runReconcile, 60 * 1000);
+  setInterval(runReconcile, RECONCILE_MS);
+  console.log("[reconcile] pending-recharge sweep ENABLED");
+} else {
+  console.log("[reconcile] pending-recharge sweep disabled (set RECHARGE_RECONCILE_ENABLED=true to enable)");
+}
 
 // Start Server
 const PORT = process.env.PORT || 5000;

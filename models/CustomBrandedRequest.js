@@ -69,6 +69,17 @@ const customBrandedRequestSchema = new mongoose.Schema(
       default: 'Active',
     },
 
+    // ── Brand-desk setup (managed by the brand designer / admin) ─────────────
+    setupStatus: {
+      type: String,
+      enum: ['not_started', 'in_progress', 'done'],
+      default: 'not_started',
+      index: true,
+    },
+    setupCompletedAt: { type: Date, default: null },
+    setupCompletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    internalNotes: { type: String, default: '' },
+
     // ── Onboarding / Assets submitted by partner ─────────────────────────────
     brandingDetails: {
       logoUrl: { type: String, default: '' },

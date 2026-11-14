@@ -1,7 +1,5 @@
 const crypto = require("crypto");
-const mongoose = require("mongoose");
-const Transaction = require("../models/Transaction");
-const { creditWalletRecharge } = require("../services/paymentCredit.service");
+const { findTransaction, settlePaidTransaction } = require("../services/paymentSettle.service");
 
 function isValidSignature(rawBody, signature, secret) {
   if (!rawBody || !signature || !secret) return false;
@@ -12,35 +10,12 @@ function isValidSignature(rawBody, signature, secret) {
   return crypto.timingSafeEqual(a, b);
 }
 
-// Idempotently flip a transaction to SUCCESS and apply its side effects.
-// The atomic status guard prevents double-crediting if Razorpay delivers
-// both payment_link.paid and payment.captured for the same payment.
-async function markPaidAndCredit(txnId, paymentId) {
-  if (!txnId) return { ok: false, reason: "no-txn-id" };
-  if (!mongoose.isValidObjectId(txnId)) return { ok: false, reason: "invalid-txn-id" };
-
-  const update = { status: "SUCCESS" };
-  if (paymentId) update.paymentId = paymentId;
-
-  const txn = await Transaction.findOneAndUpdate(
-    { _id: txnId, status: { $ne: "SUCCESS" } },
-    { $set: update },
-    { new: true },
-  );
-
-  if (!txn) {
-    const exists = await Transaction.exists({ _id: txnId });
-    return { ok: !!exists, already: true };
-  }
-
-  if (txn.purpose === "WALLET_RECHARGE") {
-    await creditWalletRecharge(txn);
-  } else if (txn.purpose === "CUSTOM_BRAND_FEE") {
-    // Lazy require avoids a circular dependency at module load.
-    const { activateCustomBrandedReport } = require("./customBrandedReportController");
-    await activateCustomBrandedReport(txn, paymentId);
-  }
-  return { ok: true };
+// Settle a paid transaction, matched by our txn id (notes) or Razorpay order id.
+// Safe to repeat: wallet crediting is guarded by walletCreditedAt.
+async function markPaidAndCredit({ txnId, orderId, paymentId }) {
+  const txn = await findTransaction({ txnId, orderId });
+  if (!txn) return { ok: false, reason: "txn-not-found" };
+  return settlePaidTransaction(txn, paymentId);
 }
 
 // POST /api/razorpay/webhook — must receive the RAW body (registered before
@@ -75,15 +50,16 @@ async function razorpayWebhook(req, res) {
       const link = event.payload?.payment_link?.entity || {};
       const payment = event.payload?.payment?.entity || {};
       const txnId = link.notes?.transactionId || link.notes?.txnId;
-      const result = await markPaidAndCredit(txnId, payment.id);
+      const result = await markPaidAndCredit({ txnId, orderId: payment.order_id, paymentId: payment.id });
       console.log("[razorpay-webhook] payment_link.paid", link.id, result);
-    } else if (type === "payment.captured") {
+    } else if (type === "payment.captured" || type === "order.paid") {
+      // Checkout (order-based) payments carry no notes, so match by order id.
       const payment = event.payload?.payment?.entity || {};
-      const txnId = payment.notes?.transactionId || payment.notes?.txnId;
-      if (txnId) {
-        const result = await markPaidAndCredit(txnId, payment.id);
-        console.log("[razorpay-webhook] payment.captured", payment.id, result);
-      }
+      const order = event.payload?.order?.entity || {};
+      const txnId = payment.notes?.transactionId || order.notes?.transactionId;
+      const orderId = payment.order_id || order.id;
+      const result = await markPaidAndCredit({ txnId, orderId, paymentId: payment.id });
+      console.log("[razorpay-webhook]", type, payment.id || order.id, result);
     } else if (type === "payment.failed") {
       // Failure retry links are triggered by the client on payment.failed
       // (so modal dismissals stay silent). Logged here for visibility only.
