@@ -2,16 +2,46 @@ const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 const BankStatementAnalysis = require('../models/BankStatementAnalysis');
-const { canAfford, chargeForReport, chargeFailedReport } = require('../utils/wallet');
-const { uploadStatement, getResult, downloadPdf } = require('../services/finpassBsa.service');
-const { rebrandFinpassPdf } = require('../services/bsaPdfBranding.service');
+const walletUtil = require('../utils/wallet');
 
-// Rebranded reports live outside the public /uploads tree.
-const PRIVATE_REPORT_DIR = path.join(__dirname, '..', 'private', 'bsa-reports');
+// Pipeline Modules
+const pipelineExtractor = require('../utils/bankStatementExtractor');
+const { classifyTransactions } = require('../utils/bankStatementClassifier');
+const { computeBankAnalytics } = require('../utils/bankStatementEngine');
+const { generateNarrative } = require('../utils/bankStatementNarrativeService');
+const { renderBankStatementReportHtml } = require('../utils/bankStatementHtmlRenderer');
+const pipelinePdf = require('../utils/pdfGenerator');
+
+// Configurable private report directory
+const PRIVATE_REPORT_DIR = process.env.REPORT_DIR || path.join(__dirname, '..', 'private', 'bsa-reports');
 fs.mkdirSync(PRIVATE_REPORT_DIR, { recursive: true });
 
-const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000;
-const FINALIZING_STALE_MS = 2 * 60 * 1000;
+// Concurrency queue for background BSA jobs
+const MAX_CONCURRENT_JOBS = parseInt(process.env.BSA_MAX_CONCURRENT_JOBS, 10) || 2;
+let activeJobCount = 0;
+const jobQueue = [];
+
+function pumpJobQueue() {
+  while (activeJobCount < MAX_CONCURRENT_JOBS && jobQueue.length > 0) {
+    const nextJob = jobQueue.shift();
+    activeJobCount++;
+    (async () => {
+      try {
+        await executeStatementJob(nextJob.docId, nextJob.pdfBuffer, nextJob.originalFileName);
+      } catch (err) {
+        console.error(`[bsa-queue] Uncaught execution error for doc ${nextJob.docId}:`, err.message);
+      } finally {
+        activeJobCount--;
+        setImmediate(pumpJobQueue);
+      }
+    })();
+  }
+}
+
+function enqueueJob(docId, pdfBuffer, originalFileName) {
+  jobQueue.push({ docId, pdfBuffer, originalFileName });
+  pumpJobQueue();
+}
 
 const removeTmp = (filePath) => {
   if (!filePath) return;
@@ -19,41 +49,186 @@ const removeTmp = (filePath) => {
 };
 
 const maskAccount = (num) => {
-  const s = String(num || '');
+  const s = String(num || '').trim();
   return s.length > 4 ? `${'X'.repeat(s.length - 4)}${s.slice(-4)}` : s || null;
 };
 
+/**
+ * Background Pipeline Worker
+ * Runs under controlled concurrency queue.
+ * Safe error handling prevents any unhandled rejections from crashing the server.
+ */
+async function executeStatementJob(docId, pdfBuffer, originalFileName) {
+  let doc = null;
+  try {
+    doc = await BankStatementAnalysis.findById(docId);
+    if (!doc) return;
+
+    // 1. Extraction and Reconciliation Gate
+    let extractionResult;
+    try {
+      extractionResult = await pipelineExtractor.extractAndReconcile(pdfBuffer, { allowPartial: false });
+    } catch (err) {
+      console.log(`[bsa] Extraction/Reconciliation stopped for doc ${docId}:`, err.message);
+      doc.status = 'Failed';
+      doc.failureReason = err.userMessage || err.message || 'The bank statement could not be parsed or reconciled cleanly. You have not been charged.';
+      doc.failureCategory = 'VALIDATION';
+      doc.errorCode = err.code || 'RECONCILIATION_FAILED';
+      doc.failedAt = new Date();
+      await doc.save();
+      return;
+    }
+
+    const extractedData = extractionResult.data;
+
+    // Transition to Finalizing
+    doc.status = 'Finalizing';
+    doc.pageCount = extractedData.pageCount || extractionResult.stats?.pageCount || 1;
+    doc.accountHolderName = extractedData.accountHolderName || extractedData.accountProfile?.holderName || null;
+    doc.bankName = extractedData.bankName || extractedData.accountProfile?.bankName || null;
+    doc.accountNumberMasked = maskAccount(extractedData.accountNumber || extractedData.accountProfile?.accountNumberMasked);
+    doc.statementFrom = extractedData.statementFrom || extractedData.accountProfile?.periodStart || null;
+    doc.statementTo = extractedData.statementTo || extractedData.accountProfile?.periodEnd || null;
+    await doc.save();
+
+    // 2. Classification
+    const classifiedTxs = await classifyTransactions(
+      extractedData.transactions,
+      extractedData.accountHolderName,
+      { useClaudeFallback: true }
+    );
+
+    // 3. Analytics Engine
+    const analytics = computeBankAnalytics(extractedData, classifiedTxs);
+
+    // 4. Narrative Synthesis
+    const narrative = await generateNarrative(analytics);
+
+    // 5. HTML Rendering
+    const html = renderBankStatementReportHtml({
+      extractedData,
+      analytics,
+      narrative,
+      classifiedTransactions: classifiedTxs,
+      reportMetadata: {
+        fileName: originalFileName,
+        generatedAt: new Date().toLocaleString('en-IN', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Asia/Kolkata',
+        }),
+      },
+    });
+
+    // 6. PDF Generation (Isolated Puppeteer runner)
+    let pdfBufferGenerated;
+    try {
+      pdfBufferGenerated = await pipelinePdf.generatePdfFromHtml(html);
+    } catch (pdfErr) {
+      console.error(`[bsa] PDF generation failed for doc ${docId}:`, pdfErr.message);
+      doc.status = 'Failed';
+      doc.failureReason = 'Report PDF generation encountered an error. You have not been charged.';
+      doc.failureCategory = 'UNKNOWN';
+      doc.errorCode = 'PDF_GENERATION_FAILED';
+      doc.failedAt = new Date();
+      await doc.save();
+      return;
+    }
+
+    const relFileName = `${String(doc._id)}.pdf`;
+    const absPdfPath = path.join(PRIVATE_REPORT_DIR, relFileName);
+    fs.writeFileSync(absPdfPath, pdfBufferGenerated);
+
+    // Store rendered HTML alongside PDF so dynamic regeneration is always possible
+    const htmlFileName = `${String(doc._id)}.html`;
+    fs.writeFileSync(path.join(PRIVATE_REPORT_DIR, htmlFileName), html, 'utf8');
+
+    // 7. Save Success State
+    doc.status = 'Success';
+    doc.localPath = relFileName;
+    doc.bsaData = {
+      kpis: analytics.kpis,
+      scorecard: analytics.scorecard,
+      obligations: analytics.recurringObligations,
+      circularEvents: analytics.flaggedCircularEvents,
+      creditCardRotations: analytics.creditCardRotations || [],
+      bounceEvents: analytics.bounceEvents || [],
+      internalMovements: analytics.internalMovements || { count: 0, totalCredits: 0, totalDebits: 0, items: [] },
+      amlIndicators: analytics.amlIndicators,
+      narrative,
+      reconciliation: extractedData.reconciliation || null,
+      audit: extractedData.audit || { repairs: [] },
+    };
+    await doc.save();
+
+    // Charge wallet on success
+    await walletUtil.chargeForReport(doc.userId, doc._id, 'bsa', 'BSA');
+    console.log(`[bsa] Analysis completed successfully for doc ${docId}`);
+  } catch (err) {
+    console.error(`[bsa] Background processing error for doc ${docId}:`, err.message);
+    if (doc) {
+      try {
+        doc.status = 'Failed';
+        doc.failureReason = 'We could not prepare the report. You have not been charged.';
+        doc.failureCategory = 'UNKNOWN';
+        doc.failedAt = new Date();
+        await doc.save();
+      } catch (saveErr) {
+        console.error(`[bsa] Failed to save failure state for doc ${docId}:`, saveErr.message);
+      }
+    }
+  }
+}
+
 // POST /api/bsa/analyze  (multipart: file)
-// Free rejections (not a PDF, password-protected, no balance) happen before any
-// Finpass call. Once Finpass accepts the upload the analysis is billed, whether
-// it later succeeds or fails.
 exports.analyze = async (req, res) => {
   const tmpPath = req.file?.path;
   try {
     const userId = req.user?._id;
     if (!userId) {
-      removeTmp(tmpPath);
       return res.status(401).json({ success: false, message: 'User authentication required' });
     }
-    if (!req.file) {
+    if (!req.file || !tmpPath) {
       return res.status(400).json({ success: false, message: 'Please upload the bank statement PDF.' });
     }
 
-    // Password-protected PDFs cannot be read by Finpass with an empty password.
+    let fileBuffer;
     try {
-      await PDFDocument.load(fs.readFileSync(tmpPath));
-    } catch {
-      removeTmp(tmpPath);
+      fileBuffer = fs.readFileSync(tmpPath);
+    } catch (readErr) {
+      return res.status(400).json({ success: false, message: 'Could not read uploaded statement file.' });
+    }
+
+    // Free rejections: Check valid PDF structure and password encryption upfront
+    if (fileBuffer.slice(0, 5).toString('latin1') !== '%PDF-') {
       return res.status(400).json({
         success: false,
-        code: 'PASSWORD_PROTECTED',
-        message: 'This statement is password-protected. Please upload it without a password.',
+        code: 'INVALID_FORMAT',
+        message: 'The uploaded file is not a valid PDF document.',
       });
     }
 
-    const gate = await canAfford(userId, 'bsa');
+    try {
+      await PDFDocument.load(fileBuffer);
+    } catch (loadErr) {
+      const errMsg = String(loadErr.message || '').toLowerCase();
+      if (errMsg.includes('encrypt') || errMsg.includes('password')) {
+        return res.status(400).json({
+          success: false,
+          code: 'PASSWORD_PROTECTED',
+          message: 'This statement is password-protected. Please upload it without a password.',
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_FORMAT',
+        message: 'Corrupted or unreadable PDF structure.',
+      });
+    }
+
+    // Free rejections: Check wallet affordability
+    const gate = await walletUtil.canAfford(userId, 'bsa');
     if (!gate.ok && gate.reason !== 'user-not-found') {
-      removeTmp(tmpPath);
       return res.status(402).json({
         success: false,
         message: `Insufficient wallet balance. ${gate.total} required — please recharge.`,
@@ -62,6 +237,7 @@ exports.analyze = async (req, res) => {
       });
     }
 
+    // Create DB entry in Processing state
     const doc = await BankStatementAnalysis.create({
       userId,
       orderId: `bsa_${String(userId)}_${Date.now()}`,
@@ -69,49 +245,20 @@ exports.analyze = async (req, res) => {
       status: 'Processing',
     });
 
-    try {
-      const { clientId, docId } = await uploadStatement(tmpPath);
-      doc.clientId = clientId;
-      doc.docId = docId;
-      await doc.save();
-    } catch (err) {
-      console.error('[bsa] Finpass upload failed:', err.code || '', err.message);
-      // Not accepted by Finpass: nothing was analysed, so no charge.
-      doc.status = 'Failed';
-      doc.failureReason = err.code === 'CONFIG_MISSING'
-        ? 'Bank statement service is not configured'
-        : 'Could not upload the statement to the analysis service. Please try again.';
-      doc.failureCategory = err.code === 'CONFIG_MISSING' ? 'AUTH_CONFIG' : 'NETWORK';
-      doc.failedAt = new Date();
-      await doc.save();
-      removeTmp(tmpPath);
-      return res.status(502).json({ success: false, id: doc._id, status: 'Failed', message: doc.failureReason });
-    }
+    // Enqueue job in concurrency queue
+    enqueueJob(doc._id, fileBuffer, req.file.originalname);
 
-    // The statement has been handed to Finpass, so the local copy is no longer needed.
-    removeTmp(tmpPath);
     return res.status(201).json({ success: true, id: doc._id, status: 'Processing' });
   } catch (err) {
     console.error('[bsa] analyze error:', err.message);
-    removeTmp(tmpPath);
     return res.status(500).json({ success: false, message: 'Could not start the analysis. Please try again.' });
+  } finally {
+    // Temp upload cleanup: guarantee deletion in finally block on success, rejection, or error
+    removeTmp(tmpPath);
   }
 };
 
-// Marks the analysis Failed and bills it (provider accepted the upload).
-async function failAndCharge(doc, reason, category, errorCode) {
-  doc.status = 'Failed';
-  doc.failureReason = reason;
-  doc.failureCategory = category;
-  doc.errorCode = errorCode || null;
-  doc.failedAt = new Date();
-  await doc.save();
-  await chargeFailedReport(doc.userId, doc._id, 'bsa', 'BSA');
-}
-
-// GET /api/bsa/:id — polled by the page. While Processing it asks Finpass; when
-// Finpass is done it downloads, rebrands and bills the report in this request,
-// so the wallet is already debited when the page refreshes.
+// GET /api/bsa/:id — polled by frontend
 exports.getStatus = async (req, res) => {
   try {
     const doc = await BankStatementAnalysis.findById(req.params.id);
@@ -119,87 +266,7 @@ exports.getStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Analysis not found' });
     }
 
-    if (doc.status === 'Success' || doc.status === 'Failed') {
-      return res.json({ success: true, data: publicView(doc) });
-    }
-
-    // Another poll is finishing this one; report it as still processing.
-    if (doc.status === 'Finalizing') {
-      const age = Date.now() - new Date(doc.updatedAt).getTime();
-      if (age < FINALIZING_STALE_MS) {
-        return res.json({ success: true, data: publicView(doc) });
-      }
-    }
-
-    if (Date.now() - new Date(doc.createdAt).getTime() > PROCESSING_TIMEOUT_MS) {
-      await failAndCharge(doc, 'The analysis took too long. Please try again.', 'TIMEOUT', 'TIMEOUT');
-      return res.json({ success: true, data: publicView(doc) });
-    }
-
-    let result;
-    try {
-      result = await getResult(doc.clientId);
-    } catch (err) {
-      // Transient provider/network error: keep polling, do not bill yet.
-      console.error('[bsa] result poll error:', err.message);
-      return res.json({ success: true, data: publicView(doc) });
-    }
-
-    if (result?.status === 'failed' || result?.error_message) {
-      await failAndCharge(doc, result.error_message || 'The analysis could not be completed.', 'BUREAU_REJECT', null);
-      return res.json({ success: true, data: publicView(doc) });
-    }
-
-    if (!(result?.status === 'completed' && result?.analysis_completed && result?.analysis_pdf_s3_url)) {
-      return res.json({ success: true, data: publicView(doc) });
-    }
-
-    // Claim the result so two concurrent polls cannot both finalize it.
-    const claimed = await BankStatementAnalysis.findOneAndUpdate(
-      { _id: doc._id, status: 'Processing' },
-      { $set: { status: 'Finalizing' } },
-      { new: true },
-    );
-    if (!claimed) {
-      const again = await BankStatementAnalysis.findById(doc._id);
-      return res.json({ success: true, data: publicView(again) });
-    }
-
-    try {
-      const raw = await downloadPdf(result.analysis_pdf_s3_url);
-      const { buffer, pageCount } = await rebrandFinpassPdf(raw);
-
-      const relPath = `${String(doc._id)}.pdf`;
-      fs.writeFileSync(path.join(PRIVATE_REPORT_DIR, relPath), buffer);
-
-      const info = result.account_info || {};
-      claimed.localPath = relPath;
-      claimed.pageCount = pageCount;
-      claimed.accountHolderName = info.account_holder_name || null;
-      claimed.bankName = info.bank_name || null;
-      claimed.accountNumberMasked = maskAccount(info.account_number);
-      claimed.statementFrom = info.statement_period?.from || null;
-      claimed.statementTo = info.statement_period?.to || null;
-      claimed.bsaData = { account_info: { ...info, account_number: maskAccount(info.account_number) }, checkpoint: result.checkpoint };
-      claimed.status = 'Success';
-      await claimed.save();
-
-      // Delivered: bill it once. chargeForReport is idempotent per reportId.
-      await chargeForReport(claimed.userId, claimed._id, 'bsa', 'BSA');
-      return res.json({ success: true, data: publicView(claimed) });
-    } catch (err) {
-      // Our branding/download step failed after Finpass finished. That is our
-      // fault, so the partner is not billed.
-      console.error('[bsa] finalize error:', err.code || '', err.message);
-      claimed.status = 'Failed';
-      claimed.failureReason = err.code === 'BRANDING_ANCHOR_MISSING'
-        ? 'We could not prepare this report because its layout is not recognised yet. You have not been charged.'
-        : 'We could not prepare the report. You have not been charged.';
-      claimed.failureCategory = 'UNKNOWN';
-      claimed.failedAt = new Date();
-      await claimed.save();
-      return res.json({ success: true, data: publicView(claimed) });
-    }
+    return res.json({ success: true, data: publicView(doc) });
   } catch (err) {
     console.error('[bsa] getStatus error:', err.message);
     return res.status(500).json({ success: false, message: 'Could not fetch the analysis status.' });
@@ -240,22 +307,55 @@ exports.getMyAnalyses = async (req, res) => {
 };
 
 // GET /api/bsa/:id/report — owner-only PDF download.
+// If PDF is missing but HTML is stored, regenerates PDF on the fly.
 exports.downloadReport = async (req, res) => {
   try {
     const doc = await BankStatementAnalysis.findById(req.params.id).select('userId status localPath fileName').lean();
     if (!doc || String(doc.userId) !== String(req.user._id)) {
       return res.status(404).json({ success: false, message: 'Report not found' });
     }
-    if (doc.status !== 'Success' || !doc.localPath) {
+    if (doc.status !== 'Success') {
       return res.status(409).json({ success: false, message: 'Report is not ready' });
     }
-    const abs = path.join(PRIVATE_REPORT_DIR, path.basename(doc.localPath));
-    if (!fs.existsSync(abs)) {
-      return res.status(404).json({ success: false, message: 'Report file is missing' });
+
+    const pdfFileName = doc.localPath ? path.basename(doc.localPath) : `${String(doc._id)}.pdf`;
+    const absPdfPath = path.join(PRIVATE_REPORT_DIR, pdfFileName);
+
+    if (!fs.existsSync(absPdfPath)) {
+      // Check if stored HTML exists to regenerate PDF on the fly
+      const htmlPath = path.join(PRIVATE_REPORT_DIR, `${String(doc._id)}.html`);
+      if (fs.existsSync(htmlPath)) {
+        try {
+          const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+          const regeneratedPdf = await pipelinePdf.generatePdfFromHtml(htmlContent);
+          fs.writeFileSync(absPdfPath, regeneratedPdf);
+        } catch (genErr) {
+          console.error('[bsa] On-the-fly PDF regeneration failed:', genErr.message);
+          return res.status(500).json({ success: false, message: 'Report PDF could not be regenerated.' });
+        }
+      } else {
+        return res.status(404).json({ success: false, message: 'Report file is missing' });
+      }
     }
+
+    const stat = fs.statSync(absPdfPath);
+    const isDownload = String(req.query.download || '') === '1';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const downloadName = `bank-statement-analysis-${doc._id}.pdf`;
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="bank-statement-analysis-${doc._id}.pdf"`);
-    return res.sendFile(abs);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${downloadName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+
+    const stream = fs.createReadStream(absPdfPath);
+    stream.on('error', (streamErr) => {
+      console.error('[bsa] stream error:', streamErr.message);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming report file' });
+      }
+    });
+    return stream.pipe(res);
   } catch (err) {
     console.error('[bsa] downloadReport error:', err.message);
     return res.status(500).json({ success: false, message: 'Could not download the report.' });
@@ -263,7 +363,6 @@ exports.downloadReport = async (req, res) => {
 };
 
 // GET /api/admin/bsa-reports?page&limit&search&partnerSearch&status&startDate&endDate
-// Admin view across all partners. Read-only; no transaction or signed-link data.
 exports.getAllBankStatementAnalyses = async (req, res) => {
   try {
     const User = require('../models/User');
@@ -320,7 +419,7 @@ exports.getAllBankStatementAnalyses = async (req, res) => {
   }
 };
 
-// GET /api/admin/bsa-reports/:id/report — admin PDF download (route is admin-only).
+// GET /api/admin/bsa-reports/:id/report — admin PDF download
 exports.adminDownloadReport = async (req, res) => {
   try {
     const doc = await BankStatementAnalysis.findById(req.params.id).select('status localPath').lean();
@@ -329,16 +428,32 @@ exports.adminDownloadReport = async (req, res) => {
     }
     const abs = path.join(PRIVATE_REPORT_DIR, path.basename(doc.localPath));
     if (!fs.existsSync(abs)) return res.status(404).json({ success: false, message: 'Report file is missing' });
+
+    const stat = fs.statSync(abs);
+    const isDownload = String(req.query.download || '') === '1';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const downloadName = `bank-statement-analysis-${doc._id}.pdf`;
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="bank-statement-analysis-${doc._id}.pdf"`);
-    return res.sendFile(abs);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${downloadName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+
+    const stream = fs.createReadStream(abs);
+    stream.on('error', (streamErr) => {
+      console.error('[bsa] admin stream error:', streamErr.message);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming report file' });
+      }
+    });
+    return stream.pipe(res);
   } catch (err) {
     console.error('[bsa] admin download error:', err.message);
     return res.status(500).json({ success: false, message: 'Could not download the report.' });
   }
 };
 
-// What the partner sees. Never includes transactions or signed links.
+// What the partner sees. Retains identical shape as expected by frontend.
 function publicView(doc) {
   const d = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
@@ -357,3 +472,11 @@ function publicView(doc) {
     createdAt: d.createdAt,
   };
 }
+
+module.exports.executeStatementJob = executeStatementJob;
+module.exports.enqueueJob = enqueueJob;
+module.exports.getQueueStats = () => ({
+  activeJobCount,
+  queuedCount: jobQueue.length,
+  maxConcurrent: MAX_CONCURRENT_JOBS,
+});
