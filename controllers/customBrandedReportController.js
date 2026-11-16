@@ -172,6 +172,12 @@ async function getBrandingStatus(req, res) {
     }
 
     let status = user.brandingStatus || 'not_purchased';
+    const partnerCode = String(user.partner_id || '').toLowerCase();
+    // Safety check: Only VH098 is active for now. If another user has 'active', normalize them to 'paid'.
+    if (status === 'active' && partnerCode !== 'vh098') {
+      status = 'paid';
+      await User.updateOne({ _id: partnerId }, { $set: { brandingStatus: 'paid' } });
+    }
     let paidAt = user.brandingPaidAt || null;
     let amount = user.brandingAmount || null;
 
@@ -1028,8 +1034,9 @@ async function uploadBrandedReport(req, res) {
     // --- STRICT GATE ---
     // 1. Feature toggle check
     const isBrandedEnabled = process.env.BRANDED_REPORTS_ENABLED !== 'false';
-    // 2. User brandingStatus check
-    const isUserActive = req.user.brandingStatus === 'active';
+    // 2. User brandingStatus check (currently active only for VH098)
+    const partnerCode = String(req.user.partner_id || '').toLowerCase();
+    const isUserActive = req.user.brandingStatus === 'active' && partnerCode === 'vh098';
     // 3. Active BrandProfile check
     const activeProfile = await BrandProfile.findOne({
       partnerId: req.user._id,
