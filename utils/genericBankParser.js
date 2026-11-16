@@ -355,13 +355,16 @@ const ADDRESS_CONTAMINATION_RE =
 function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   const t = fullText || '';
 
-  // Only match explicitly labelled holder fields (never unlabelled MR/MRS lines in address blocks)
+  // Only match explicitly labelled holder fields or clear header name blocks
+  const p1Text = t.slice(0, 2000);
   const holderMatch =
     t.match(
-      /(?:Account\s*Holder(?:'?s)?\s*Name|Name\s*of\s*(?:the\s*)?(?:Account\s*Holder|Customer)|Customer\s*Name|Primary\s*Holder(?:\s*Name)?|A\/c\s*Holder\s*Name|Account\s*Title)\s*[:\-]\s*(?:\d+\s*:\s*)?([^\r\n]+)/i
+      /(?:Account\s*Holder(?:'?s)?\s*Name|Name\s*of\s*(?:the\s*)?(?:Account\s*Holder|Customer)|Customer\s*Name|Primary\s*Holder(?:\s*Name)?|A\/c\s*Holder\s*Name|Account\s*Title)\s*[:\-]?\s*(?:\d+\s*:\s*)?([^\r\n]+)/i
     ) ||
+    t.match(/Welcome\s*:\s*(?:[\s\S]{0,60}?)\s*((?:MR|MRS|MS|MISS|DR|SHRI|SMT)\.?\s+[A-Za-z][A-Za-z\s.]{1,50})/i) ||
     t.match(/Account\s*No\s*:\s*\d+\s+INR\s+([A-Za-z][A-Za-z\s.]{1,50}?)(?:\r?\n|\s{2,}|Gl\s*Sub)/i) ||
-    t.match(/(?:^|\n)\s*(?:Holder\s*Name|Account\s*Name|Customer\s*Name|Name)\s*[:\-]\s*([A-Za-z][^\r\n]{1,60})/i);
+    t.match(/(?:^|\n)\s*(?:Holder\s*Name|Account\s*Name|Customer\s*Name|Name)\s*[:\-]?\s*([A-Za-z][^\r\n]{1,60})/i) ||
+    p1Text.match(/(?:^|\r?\n)\s*((?:MR|MRS|MS|MISS|DR|SHRI|SMT|M\/S)\.?\s*[A-Za-z][A-Za-z\s.]{1,50})(?:\r?\n|$)/i);
 
   let rawHolder = 'Account Holder';
   if (holderMatch && holderMatch[1]) {
@@ -386,7 +389,8 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   }
 
   const accMatch =
-    t.match(/(?:Account\s*(?:No|Number|#)|A\/c\s*(?:No|Number))\s*[:\-]\s*([X*\d]{6,22})/i) ||
+    t.match(/(?:Account\s*(?:No|Number|#)|A\/c\s*(?:No|Number))\s*[:\-]?\s*([X*\d]{6,22})/i) ||
+    t.match(/Statement\s+(?:of\s+Account|for\s+A\/c)\s*[:\-]?\s*([X*\d]{6,22})/i) ||
     t.match(/Account\s*No[\s\S]{0,80}?:\s*(\d{8,20})/i);
   const ifscMatch = t.match(/\b([A-Z]{4}0[A-Z0-9]{6})\b/);
 
@@ -424,6 +428,9 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   let printedClosingHasExplicitSign = false;
   let printedTotalDebits = null;
   let printedTotalCredits = null;
+  let printedDebitCount = null;
+  let printedCreditCount = null;
+  let printedTotalTxCount = null;
 
   // 1. Try extracting from 4-column summary blocks (Opening, Debit/Withdrawal, Credit/Deposit, Closing)
   const numRe = '(?:INR|Rs\\.?|₹)?\\s*\\(?[+-]?[\\d,]+(?:\\.\\d{2})?\\)?(?:\\s*(?:Cr|Dr|CR|DR|-))?';
@@ -446,6 +453,12 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
 
   const sm1 = t.match(summaryTableRe1);
   const sm2 = !sm1 ? t.match(summaryTableRe2) : null;
+
+  // Pattern for SBI-style summary: "Statement Summary ... Brought Forward ... Dr Count Cr Count Total Debits Total Credits Closing Balance ... 12,230.95CR 1233 306 39,98,938.43 39,94,422.00 7,714.52CR"
+  const sbiSummaryRe =
+    /(?:Statement\s*Summary|Account\s*Summary)[\s\S]*?Brought\s*Forward[\s\S]*?Closing\s*Balance[\s\S]*?([0-9,]+\.\d{2}(?:\s*(?:CR|DR))?)[\s\S]*?([0-9,]+\.\d{2})[\s\S]*?([0-9,]+\.\d{2})[\s\S]*?([0-9,]+\.\d{2}(?:\s*(?:CR|DR))?)/i;
+  const smSbi = !sm1 && !sm2 ? t.match(sbiSummaryRe) : null;
+
   if (sm1) {
     const opInfo = parseSignedAmountInfo(sm1[1]);
     const drVal = Math.abs(parseAmount(sm1[2]));
@@ -479,6 +492,30 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
       printedClosing = clInfo.value;
       printedClosingHasExplicitSign = clInfo.hasExplicitSign;
       printedClosingSource = 'summary_table_closing';
+    }
+  } else if (smSbi) {
+    const opInfo = parseSignedAmountInfo(smSbi[1]);
+    const drVal = Math.abs(parseAmount(smSbi[2]));
+    const crVal = Math.abs(parseAmount(smSbi[3]));
+    const clInfo = parseSignedAmountInfo(smSbi[4]);
+    if (Number.isFinite(opInfo.value)) {
+      printedOpening = opInfo.value;
+      printedOpeningHasExplicitSign = opInfo.hasExplicitSign;
+      printedOpeningSource = 'summary_table_opening';
+    }
+    if (Number.isFinite(drVal)) printedTotalDebits = drVal;
+    if (Number.isFinite(crVal)) printedTotalCredits = crVal;
+    if (Number.isFinite(clInfo.value)) {
+      printedClosing = clInfo.value;
+      printedClosingHasExplicitSign = clInfo.hasExplicitSign;
+      printedClosingSource = 'summary_table_closing';
+    }
+    const countMatch = t.match(/Dr\s*Count\s*Cr\s*Count[\s\S]*?(\d{1,6})\s+(\d{1,6})/i);
+    if (countMatch) {
+      const drC = parseInt(countMatch[1], 10);
+      const crC = parseInt(countMatch[2], 10);
+      if (Number.isFinite(drC)) printedDebitCount = drC;
+      if (Number.isFinite(crC)) printedCreditCount = crC;
     }
   }
 
@@ -536,28 +573,35 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   }
 
   let unlabeledTotalPair = null;
-  const unlabeledTotMatch = t.match(
-    /(?:^|\n)\s*(?:Grand\s+Total|Total|Statement\s+Total)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})\s+(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})(?:\s+([\d,]+\.\d{2}))?/i
+  const unlabeledTotMatches = Array.from(
+    t.matchAll(
+      /(?:^|\n)\s*(?:Grand\s+Total|Total|Statement\s+Total)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})\s+(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})(?:\s+([\d,]+\.\d{2}))?/gi
+    )
   );
-  if (unlabeledTotMatch && printedTotalDebits === null && printedTotalCredits === null) {
-    const a = Math.abs(parseAmount(unlabeledTotMatch[1]));
-    const b = Math.abs(parseAmount(unlabeledTotMatch[2]));
+  if (unlabeledTotMatches.length > 0 && printedTotalDebits === null && printedTotalCredits === null) {
+    // Pick the last matching total row (the true end-of-statement totals, skipping header summaries)
+    const lastMatch = unlabeledTotMatches[unlabeledTotMatches.length - 1];
+    const a = Math.abs(parseAmount(lastMatch[1]));
+    const b = Math.abs(parseAmount(lastMatch[2]));
     if (Number.isFinite(a) && Number.isFinite(b)) {
       unlabeledTotalPair = [a, b];
     }
   }
 
-  let printedDebitCount = null;
-  let printedCreditCount = null;
-  let printedTotalTxCount = null;
-  const drCntMatch = t.match(/(?:No\.?\s*of\s*Debits?|Debit\s*Count|Total\s*Debit\s*Txns?)\s*[:\-]?\s*(\d{1,5})\b/i);
-  if (drCntMatch) printedDebitCount = parseInt(drCntMatch[1], 10);
-  const crCntMatch = t.match(/(?:No\.?\s*of\s*Credits?|Credit\s*Count|Total\s*Credit\s*Txns?)\s*[:\-]?\s*(\d{1,5})\b/i);
-  if (crCntMatch) printedCreditCount = parseInt(crCntMatch[1], 10);
-  const totCntMatch = t.match(
-    /(?:Total\s*(?:No\.?\s*of\s*)?Transactions?|Transaction\s*Count)\s*[:\-]?\s*(\d{1,6})\b/i
-  );
-  if (totCntMatch) printedTotalTxCount = parseInt(totCntMatch[1], 10);
+  if (printedDebitCount === null) {
+    const drCntMatch = t.match(/(?:No\.?\s*of\s*Debits?|Debit\s*Count|Total\s*Debit\s*Txns?)\s*[:\-]?\s*(\d{1,5})\b/i);
+    if (drCntMatch) printedDebitCount = parseInt(drCntMatch[1], 10);
+  }
+  if (printedCreditCount === null) {
+    const crCntMatch = t.match(/(?:No\.?\s*of\s*Credits?|Credit\s*Count|Total\s*Credit\s*Txns?)\s*[:\-]?\s*(\d{1,5})\b/i);
+    if (crCntMatch) printedCreditCount = parseInt(crCntMatch[1], 10);
+  }
+  if (printedTotalTxCount === null) {
+    const totCntMatch = t.match(
+      /(?:Total\s*(?:No\.?\s*of\s*)?Transactions?|Transaction\s*Count)\s*[:\-]?\s*(\d{1,6})\b/i
+    );
+    if (totCntMatch) printedTotalTxCount = parseInt(totCntMatch[1], 10);
+  }
 
   return {
     bankName: detectedBank && detectedBank !== 'Unknown Bank' ? detectedBank : 'Bank not identified',

@@ -241,17 +241,16 @@ async function backfillBrandProfiles() {
       );
 
       // ── 11. Promote brandingStatus to 'active' ───────────────────────────
-      // uploadBrandedReport gate requires brandingStatus === 'active', so any
-      // partner stuck at 'paid' or 'onboarding' is promoted now that they
-      // have a valid profile.
-      if (user.brandingStatus === 'paid' || user.brandingStatus === 'onboarding') {
+      // ONLY promote if explicitly configured, or for VH098. Otherwise leave at
+      // 'paid' or 'onboarding' until the designer finishes the setup.
+      const isVH098 = partnerCode === 'vh098';
+      if (isVH098 && (user.brandingStatus === 'paid' || user.brandingStatus === 'onboarding')) {
         await User.updateOne(
           { _id: user._id },
           { $set: { brandingStatus: 'active' } },
         );
         console.log(
-          `[backfillBrandProfiles] Promoted brandingStatus to 'active' for user ${user._id}` +
-          ` (was '${user.brandingStatus}').`,
+          `[backfillBrandProfiles] Promoted brandingStatus to 'active' for user ${user._id} (${partnerCode}).`,
         );
       }
     } catch (err) {

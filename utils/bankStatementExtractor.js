@@ -1938,9 +1938,12 @@ async function extractAndReconcile(pdfBuffer, options = {}) {
         }
       }
 
-      // Attempt 2b: If narration sanity flagged specific page(s), re-extract only the affected page(s) through the Claude page-extraction path
+      // Attempt 2b: If narration sanity flagged specific page(s) BUT the statement is NOT cleanly reconciled mathematically,
+      // re-extract only the affected page(s) through the Claude page-extraction path.
+      // (If the mathematical balance chain is ALREADY 100% cleanly reconciled with 0 breaks, DO NOT overwrite with Claude!)
       if (
         result &&
+        !isCandidateCleanlyReconciled(result) &&
         Array.isArray(result.taintedPages) &&
         result.taintedPages.length > 0 &&
         options.liveClaude !== false
