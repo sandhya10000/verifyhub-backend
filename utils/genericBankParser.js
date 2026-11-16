@@ -367,11 +367,12 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   if (holderMatch && holderMatch[1]) {
     let candidate = holderMatch[1]
       .split(/\r?\n/)[0]
-      .replace(/\s{2,}.*$/, '') // Stop at column boundary (wide gap between multi-column headers)
+      .replace(/\s{4,}.*$/, '') // Stop at wide column boundary between multi-column headers
       .replace(NEXT_HEADER_LABEL_RE, '')
       .replace(/\s*[:|].*$/, '')
       .replace(/^\s*(?:MR|MRS|MS|MISS|DR|SHRI|SMT|KUM|M\/S)\.?\s+/i, '')
       .replace(/\s+[A-Za-z]+,[A-Za-z]+.*$/, '') // Strip city/state comma tokens e.g. "FARIDABAD,FARIDABAD"
+      .replace(/\s+/g, ' ')
       .trim();
 
     // Strip any trailing address segment if glued on the same line
@@ -418,54 +419,120 @@ function extractAccountInfo(fullText, detectedBank, pageBfBalances = []) {
   let printedOpening = null;
   let printedOpeningSource = null;
   let printedOpeningHasExplicitSign = false;
-
-  const openMatch = t.match(
-    /(?:Opening\s+Balance|Balance\s+as\s+on\s+Start\s+Date)\s*(?:as\s+on\s+[^\s:]+\s*)?[:\-]?\s*(?:INR|Rs\.?|₹)?\s*((?:Dr|Cr|DR|CR)?\s*\(?[+-]?[\d,]+\.\d{2}\)?\s*(?:Cr|Dr|CR|DR|-)?)/i
-  );
-  if (openMatch) {
-    const info = parseSignedAmountInfo(openMatch[1]);
-    if (Number.isFinite(info.value)) {
-      printedOpening = info.value;
-      printedOpeningHasExplicitSign = info.hasExplicitSign;
-      printedOpeningSource = 'printed_opening';
-    }
-  } else if (pageBfBalances.length > 0 && pageBfBalances[0].page === 1) {
-    printedOpening = pageBfBalances[0].balance;
-    printedOpeningHasExplicitSign = pageBfBalances[0].hasExplicitSign;
-    printedOpeningSource = 'page1_bf';
-  }
-
   let printedClosing = null;
   let printedClosingSource = null;
   let printedClosingHasExplicitSign = false;
+  let printedTotalDebits = null;
+  let printedTotalCredits = null;
 
-  const closeMatch = t.match(
-    /(?:Closing\s+Balance|Effective\s+Available\s+Balance|Clear\s+Balance|Balance\s+as\s+on\s+End\s+Date)\s*(?:as\s+on\s+[^\s:]+\s*)?[:\-]?\s*(?:INR|Rs\.?|₹)?\s*((?:Dr|Cr|DR|CR)?\s*\(?[+-]?[\d,]+\.\d{2}\)?\s*(?:Cr|Dr|CR|DR|-)?)/i
+  // 1. Try extracting from 4-column summary blocks (Opening, Debit/Withdrawal, Credit/Deposit, Closing)
+  const numRe = '(?:INR|Rs\\.?|₹)?\\s*\\(?[+-]?[\\d,]+(?:\\.\\d{2})?\\)?(?:\\s*(?:Cr|Dr|CR|DR|-))?';
+  const summaryTableRe1 = new RegExp(
+    '(?:Opening\\s*Balance\\s*(?:Total\\s*)?(?:Debit|Withdrawals?)\\s*(?:Total\\s*)?(?:Credit|Deposits?)\\s*Closing\\s*Balance)[\\r\\n\\s]*' +
+    '(' + numRe + ')' +
+    '\\s*(' + numRe + ')' +
+    '\\s*(' + numRe + ')' +
+    '\\s*(' + numRe + ')',
+    'i'
   );
-  if (closeMatch) {
-    const info = parseSignedAmountInfo(closeMatch[1]);
-    if (Number.isFinite(info.value)) {
-      printedClosing = info.value;
-      printedClosingHasExplicitSign = info.hasExplicitSign;
-      printedClosingSource = 'printed_closing';
+  const summaryTableRe2 = new RegExp(
+    '(?:Opening\\s*Balance\\s*(?:Total\\s*)?(?:Credit|Deposits?)\\s*(?:Total\\s*)?(?:Debit|Withdrawals?)\\s*Closing\\s*Balance)[\\r\\n\\s]*' +
+    '(' + numRe + ')' +
+    '\\s*(' + numRe + ')' +
+    '\\s*(' + numRe + ')' +
+    '\\s*(' + numRe + ')',
+    'i'
+  );
+
+  const sm1 = t.match(summaryTableRe1);
+  const sm2 = !sm1 ? t.match(summaryTableRe2) : null;
+  if (sm1) {
+    const opInfo = parseSignedAmountInfo(sm1[1]);
+    const drVal = Math.abs(parseAmount(sm1[2]));
+    const crVal = Math.abs(parseAmount(sm1[3]));
+    const clInfo = parseSignedAmountInfo(sm1[4]);
+    if (Number.isFinite(opInfo.value)) {
+      printedOpening = opInfo.value;
+      printedOpeningHasExplicitSign = opInfo.hasExplicitSign;
+      printedOpeningSource = 'summary_table_opening';
+    }
+    if (Number.isFinite(drVal)) printedTotalDebits = drVal;
+    if (Number.isFinite(crVal)) printedTotalCredits = crVal;
+    if (Number.isFinite(clInfo.value)) {
+      printedClosing = clInfo.value;
+      printedClosingHasExplicitSign = clInfo.hasExplicitSign;
+      printedClosingSource = 'summary_table_closing';
+    }
+  } else if (sm2) {
+    const opInfo = parseSignedAmountInfo(sm2[1]);
+    const crVal = Math.abs(parseAmount(sm2[2]));
+    const drVal = Math.abs(parseAmount(sm2[3]));
+    const clInfo = parseSignedAmountInfo(sm2[4]);
+    if (Number.isFinite(opInfo.value)) {
+      printedOpening = opInfo.value;
+      printedOpeningHasExplicitSign = opInfo.hasExplicitSign;
+      printedOpeningSource = 'summary_table_opening';
+    }
+    if (Number.isFinite(drVal)) printedTotalDebits = drVal;
+    if (Number.isFinite(crVal)) printedTotalCredits = crVal;
+    if (Number.isFinite(clInfo.value)) {
+      printedClosing = clInfo.value;
+      printedClosingHasExplicitSign = clInfo.hasExplicitSign;
+      printedClosingSource = 'summary_table_closing';
     }
   }
 
-  let printedTotalDebits = null;
-  let printedTotalCredits = null;
-  const totDrMatch = t.match(
-    /(?:Total\s+(?:Debit|Withdrawal)s?(?:\s+Amount)?|Debit\s+Total|Total\s+Withdrawn)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i
-  );
-  if (totDrMatch) {
-    const v = Math.abs(parseAmount(totDrMatch[1]));
-    if (Number.isFinite(v)) printedTotalDebits = v;
+  // 2. Fall back to standard individual field matching if not found
+  if (printedOpening === null) {
+    const openMatch = t.match(
+      /(?:Opening\s+Balance|Balance\s+as\s+on\s+Start\s+Date)\s*(?:as\s+on\s+[^\s:]+\s*)?[:\-]?\s*(?:INR|Rs\.?|₹)?\s*((?:Dr|Cr|DR|CR)?\s*\(?[+-]?[\d,]+\.\d{2}\)?\s*(?:Cr|Dr|CR|DR|-)?)/i
+    );
+    if (openMatch) {
+      const info = parseSignedAmountInfo(openMatch[1]);
+      if (Number.isFinite(info.value)) {
+        printedOpening = info.value;
+        printedOpeningHasExplicitSign = info.hasExplicitSign;
+        printedOpeningSource = 'printed_opening';
+      }
+    } else if (pageBfBalances.length > 0 && pageBfBalances[0].page === 1) {
+      printedOpening = pageBfBalances[0].balance;
+      printedOpeningHasExplicitSign = pageBfBalances[0].hasExplicitSign;
+      printedOpeningSource = 'page1_bf';
+    }
   }
-  const totCrMatch = t.match(
-    /(?:Total\s+(?:Credit|Deposit)s?(?:\s+Amount)?|Credit\s+Total|Total\s+Deposited)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i
-  );
-  if (totCrMatch) {
-    const v = Math.abs(parseAmount(totCrMatch[1]));
-    if (Number.isFinite(v)) printedTotalCredits = v;
+
+  if (printedClosing === null) {
+    const closeMatch = t.match(
+      /(?:Closing\s+Balance|Effective\s+Available\s+Balance|Clear\s+Balance|Balance\s+as\s+on\s+End\s+Date)\s*(?:as\s+on\s+[^\s:]+\s*)?[:\-]?\s*(?:INR|Rs\.?|₹)?\s*((?:Dr|Cr|DR|CR)?\s*\(?[+-]?[\d,]+\.\d{2}\)?\s*(?:Cr|Dr|CR|DR|-)?)/i
+    );
+    if (closeMatch) {
+      const info = parseSignedAmountInfo(closeMatch[1]);
+      if (Number.isFinite(info.value)) {
+        printedClosing = info.value;
+        printedClosingHasExplicitSign = info.hasExplicitSign;
+        printedClosingSource = 'printed_closing';
+      }
+    }
+  }
+
+  if (printedTotalDebits === null) {
+    const totDrMatch = t.match(
+      /(?:Total\s+(?:Debit|Withdrawal)s?(?:\s+Amount)?|Debit\s+Total|Total\s+Withdrawn)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i
+    );
+    if (totDrMatch) {
+      const v = Math.abs(parseAmount(totDrMatch[1]));
+      if (Number.isFinite(v)) printedTotalDebits = v;
+    }
+  }
+
+  if (printedTotalCredits === null) {
+    const totCrMatch = t.match(
+      /(?:Total\s+(?:Credit|Deposit)s?(?:\s+Amount)?|Credit\s+Total|Total\s+Deposited)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.\d{2})/i
+    );
+    if (totCrMatch) {
+      const v = Math.abs(parseAmount(totCrMatch[1]));
+      if (Number.isFinite(v)) printedTotalCredits = v;
+    }
   }
 
   let unlabeledTotalPair = null;
@@ -1150,7 +1217,8 @@ function parseGenericStatement(fullText, detectedBank, options = {}) {
       const expectedPaise = prevBalancePaise + creditPaise - debitPaise;
 
       if (Math.abs(expectedPaise - balPaise) > 1) {
-        if (!r.balanceHasExplicitSign && balPaise > 0 && Math.abs(expectedPaise - -balPaise) <= 1) {
+        // Auto-heal sign if flipping sign reconciles chain (handles glued DR/CR or sign inverted by text streams)
+        if (Math.abs(expectedPaise - -balPaise) <= 1) {
           balPaise = -balPaise;
           signInferred = true;
           repairs.push({
@@ -1174,8 +1242,6 @@ function parseGenericStatement(fullText, detectedBank, options = {}) {
             debitPaise = creditPaise;
             creditPaise = tmp;
           } else if (
-            !r.balanceHasExplicitSign &&
-            balPaise > 0 &&
             Math.abs(swappedPaise - -balPaise) <= 1 &&
             (creditPaise > 0 || debitPaise > 0)
           ) {

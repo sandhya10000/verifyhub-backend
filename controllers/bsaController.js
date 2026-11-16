@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
+const pdfjs = require('pdfjs-dist/legacy/build/pdf.mjs');
 const BankStatementAnalysis = require('../models/BankStatementAnalysis');
 const walletUtil = require('../utils/wallet');
 
@@ -12,9 +13,12 @@ const { generateNarrative } = require('../utils/bankStatementNarrativeService');
 const { renderBankStatementReportHtml } = require('../utils/bankStatementHtmlRenderer');
 const pipelinePdf = require('../utils/pdfGenerator');
 
-// Configurable private report directory
+// Configurable private report and original statement upload directories
 const PRIVATE_REPORT_DIR = process.env.REPORT_DIR || path.join(__dirname, '..', 'private', 'bsa-reports');
 fs.mkdirSync(PRIVATE_REPORT_DIR, { recursive: true });
+
+const PRIVATE_UPLOAD_DIR = process.env.BSA_UPLOAD_DIR || path.join(__dirname, '..', 'private', 'bsa-uploads');
+fs.mkdirSync(PRIVATE_UPLOAD_DIR, { recursive: true });
 
 // Concurrency queue for background BSA jobs
 const MAX_CONCURRENT_JOBS = parseInt(process.env.BSA_MAX_CONCURRENT_JOBS, 10) || 2;
@@ -27,7 +31,7 @@ function pumpJobQueue() {
     activeJobCount++;
     (async () => {
       try {
-        await executeStatementJob(nextJob.docId, nextJob.pdfBuffer, nextJob.originalFileName);
+        await executeStatementJob(nextJob.docId, nextJob.pdfBuffer, nextJob.originalFileName, nextJob.password);
       } catch (err) {
         console.error(`[bsa-queue] Uncaught execution error for doc ${nextJob.docId}:`, err.message);
       } finally {
@@ -38,9 +42,89 @@ function pumpJobQueue() {
   }
 }
 
-function enqueueJob(docId, pdfBuffer, originalFileName) {
-  jobQueue.push({ docId, pdfBuffer, originalFileName });
+function enqueueJob(docId, pdfBuffer, originalFileName, password = '') {
+  jobQueue.push({ docId, pdfBuffer, originalFileName, password });
   pumpJobQueue();
+}
+
+/**
+ * Validates PDF encryption and checks whether a password is required or valid.
+ */
+function verifyPdfEncryptionAndAuth(fileBuffer, password = '') {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    let authFailed = false;
+
+    const task = pdfjs.getDocument({
+      data: new Uint8Array(fileBuffer),
+      password: password || '',
+      stopAtErrors: false,
+      useSystemFonts: true,
+    });
+
+    task.onPassword = (callback, reason) => {
+      attempts++;
+      if (attempts > 1) {
+        authFailed = true;
+        try { task.destroy(); } catch (e) {}
+        return resolve({
+          status: 'INCORRECT_PASSWORD',
+          code: 'INCORRECT_PASSWORD',
+          message: 'Incorrect password for this bank statement. Please check and try again.',
+          isEncrypted: true,
+        });
+      }
+
+      if (reason === pdfjs.PasswordResponses.NEED_PASSWORD) {
+        if (!password) {
+          authFailed = true;
+          try { task.destroy(); } catch (e) {}
+          return resolve({
+            status: 'PASSWORD_PROTECTED',
+            code: 'PASSWORD_PROTECTED',
+            message: 'This statement is password-protected. Please enter the password to continue.',
+            isEncrypted: true,
+          });
+        }
+        callback(password);
+      } else if (reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD) {
+        authFailed = true;
+        try { task.destroy(); } catch (e) {}
+        return resolve({
+          status: 'INCORRECT_PASSWORD',
+          code: 'INCORRECT_PASSWORD',
+          message: 'Incorrect password for this bank statement. Please check and try again.',
+          isEncrypted: true,
+        });
+      }
+    };
+
+    task.promise.then((doc) => {
+      if (authFailed) return;
+      resolve({
+        status: 'OK',
+        isEncrypted: attempts > 0,
+        pageCount: doc.numPages,
+      });
+    }).catch((loadErr) => {
+      if (authFailed) return;
+      if (loadErr.name === 'PasswordException' || String(loadErr.message || '').toLowerCase().includes('password')) {
+        return resolve({
+          status: password ? 'INCORRECT_PASSWORD' : 'PASSWORD_PROTECTED',
+          code: password ? 'INCORRECT_PASSWORD' : 'PASSWORD_PROTECTED',
+          message: password
+            ? 'Incorrect password for this bank statement. Please check and try again.'
+            : 'This statement is password-protected. Please enter the password to continue.',
+          isEncrypted: true,
+        });
+      }
+      return resolve({
+        status: 'INVALID_FORMAT',
+        code: 'INVALID_FORMAT',
+        message: 'Corrupted or unreadable PDF structure.',
+      });
+    });
+  });
 }
 
 const removeTmp = (filePath) => {
@@ -58,7 +142,7 @@ const maskAccount = (num) => {
  * Runs under controlled concurrency queue.
  * Safe error handling prevents any unhandled rejections from crashing the server.
  */
-async function executeStatementJob(docId, pdfBuffer, originalFileName) {
+async function executeStatementJob(docId, pdfBuffer, originalFileName, password = '') {
   let doc = null;
   try {
     doc = await BankStatementAnalysis.findById(docId);
@@ -67,7 +151,7 @@ async function executeStatementJob(docId, pdfBuffer, originalFileName) {
     // 1. Extraction and Reconciliation Gate
     let extractionResult;
     try {
-      extractionResult = await pipelineExtractor.extractAndReconcile(pdfBuffer, { allowPartial: false });
+      extractionResult = await pipelineExtractor.extractAndReconcile(pdfBuffer, { allowPartial: false, password });
     } catch (err) {
       console.log(`[bsa] Extraction/Reconciliation stopped for doc ${docId}:`, err.message);
       doc.status = 'Failed';
@@ -208,21 +292,32 @@ exports.analyze = async (req, res) => {
       });
     }
 
-    try {
-      await PDFDocument.load(fileBuffer);
-    } catch (loadErr) {
-      const errMsg = String(loadErr.message || '').toLowerCase();
-      if (errMsg.includes('encrypt') || errMsg.includes('password')) {
-        return res.status(400).json({
-          success: false,
-          code: 'PASSWORD_PROTECTED',
-          message: 'This statement is password-protected. Please upload it without a password.',
-        });
-      }
+    const password = req.body?.password != null ? String(req.body.password).trim() : '';
+
+    const pdfAuthCheck = await verifyPdfEncryptionAndAuth(fileBuffer, password);
+    if (pdfAuthCheck.status === 'PASSWORD_PROTECTED') {
       return res.status(400).json({
         success: false,
-        code: 'INVALID_FORMAT',
-        message: 'Corrupted or unreadable PDF structure.',
+        requiresPassword: true,
+        code: 'PASSWORD_PROTECTED',
+        message: 'This bank statement is password-protected. Please enter the password to unlock.',
+      });
+    }
+
+    if (pdfAuthCheck.status === 'INCORRECT_PASSWORD') {
+      return res.status(400).json({
+        success: false,
+        requiresPassword: true,
+        code: 'INCORRECT_PASSWORD',
+        message: 'Incorrect password for this statement. Please check and try again.',
+      });
+    }
+
+    if (pdfAuthCheck.status !== 'OK') {
+      return res.status(400).json({
+        success: false,
+        code: pdfAuthCheck.code || 'INVALID_FORMAT',
+        message: pdfAuthCheck.message || 'Corrupted or unreadable PDF structure.',
       });
     }
 
@@ -237,16 +332,22 @@ exports.analyze = async (req, res) => {
       });
     }
 
+    // Save uploaded statement PDF to private directory so admin can inspect original statements
+    const origFileName = `${String(userId)}_${Date.now()}_${path.basename(req.file.originalname)}`;
+    const origAbsPath = path.join(PRIVATE_UPLOAD_DIR, origFileName);
+    fs.writeFileSync(origAbsPath, fileBuffer);
+
     // Create DB entry in Processing state
     const doc = await BankStatementAnalysis.create({
       userId,
       orderId: `bsa_${String(userId)}_${Date.now()}`,
       fileName: req.file.originalname,
+      originalStatementPath: origFileName,
       status: 'Processing',
     });
 
-    // Enqueue job in concurrency queue
-    enqueueJob(doc._id, fileBuffer, req.file.originalname);
+    // Enqueue job in concurrency queue with validated password (if any)
+    enqueueJob(doc._id, fileBuffer, req.file.originalname, password);
 
     return res.status(201).json({ success: true, id: doc._id, status: 'Processing' });
   } catch (err) {
@@ -453,6 +554,44 @@ exports.adminDownloadReport = async (req, res) => {
   }
 };
 
+// GET /api/admin/bsa-reports/:id/original-statement — admin view/download original uploaded bank statement PDF
+exports.adminDownloadOriginalStatement = async (req, res) => {
+  try {
+    const doc = await BankStatementAnalysis.findById(req.params.id)
+      .select('originalStatementPath fileName')
+      .lean();
+    if (!doc || !doc.originalStatementPath) {
+      return res.status(404).json({ success: false, message: 'Original uploaded statement file is not available for this record.' });
+    }
+    const abs = path.join(PRIVATE_UPLOAD_DIR, path.basename(doc.originalStatementPath));
+    if (!fs.existsSync(abs)) {
+      return res.status(404).json({ success: false, message: 'Original statement file is missing from disk.' });
+    }
+
+    const stat = fs.statSync(abs);
+    const isDownload = String(req.query.download || '') === '1';
+    const dispositionType = isDownload ? 'attachment' : 'inline';
+    const downloadName = doc.fileName || `original-statement-${doc._id}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${downloadName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+
+    const stream = fs.createReadStream(abs);
+    stream.on('error', (streamErr) => {
+      console.error('[bsa] admin stream original error:', streamErr.message);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming original statement file' });
+      }
+    });
+    return stream.pipe(res);
+  } catch (err) {
+    console.error('[bsa] admin download original statement error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not fetch original statement file.' });
+  }
+};
+
 // What the partner sees. Retains identical shape as expected by frontend.
 function publicView(doc) {
   const d = typeof doc.toObject === 'function' ? doc.toObject() : doc;
@@ -469,6 +608,7 @@ function publicView(doc) {
     failureReason: d.failureReason,
     failureCategory: d.failureCategory,
     reportUrl: d.status === 'Success' ? `/api/bsa/${d._id}/report` : null,
+    hasOriginalStatement: Boolean(d.originalStatementPath),
     createdAt: d.createdAt,
   };
 }

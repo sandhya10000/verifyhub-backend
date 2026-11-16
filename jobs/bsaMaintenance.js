@@ -44,29 +44,39 @@ async function cleanupOldBsaReports() {
   const retentionDays = parseInt(process.env.BSA_RETENTION_DAYS, 10) || 90;
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   const reportDir = process.env.REPORT_DIR || path.join(__dirname, '..', 'private', 'bsa-reports');
+  const uploadDir = process.env.BSA_UPLOAD_DIR || path.join(__dirname, '..', 'private', 'bsa-uploads');
 
   try {
     const oldDocs = await BankStatementAnalysis.find({
       createdAt: { $lt: cutoff },
-      status: 'Success',
-      localPath: { $ne: null },
-    }).select('_id localPath').lean();
+    }).select('_id localPath originalStatementPath').lean();
 
     let filesCleaned = 0;
     for (const doc of oldDocs) {
-      const pdfPath = path.join(reportDir, `${String(doc._id)}.pdf`);
-      const htmlPath = path.join(reportDir, `${String(doc._id)}.html`);
-      try {
-        if (fs.existsSync(pdfPath)) {
-          fs.unlinkSync(pdfPath);
-          filesCleaned++;
-        }
-      } catch (e) { /* ignore */ }
-      try {
-        if (fs.existsSync(htmlPath)) {
-          fs.unlinkSync(htmlPath);
-        }
-      } catch (e) { /* ignore */ }
+      if (doc.localPath) {
+        const pdfPath = path.join(reportDir, `${String(doc._id)}.pdf`);
+        const htmlPath = path.join(reportDir, `${String(doc._id)}.html`);
+        try {
+          if (fs.existsSync(pdfPath)) {
+            fs.unlinkSync(pdfPath);
+            filesCleaned++;
+          }
+        } catch (e) { /* ignore */ }
+        try {
+          if (fs.existsSync(htmlPath)) {
+            fs.unlinkSync(htmlPath);
+          }
+        } catch (e) { /* ignore */ }
+      }
+      if (doc.originalStatementPath) {
+        const origPath = path.join(uploadDir, path.basename(doc.originalStatementPath));
+        try {
+          if (fs.existsSync(origPath)) {
+            fs.unlinkSync(origPath);
+            filesCleaned++;
+          }
+        } catch (e) { /* ignore */ }
+      }
     }
 
     if (filesCleaned > 0) {
