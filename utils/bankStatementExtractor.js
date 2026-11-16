@@ -24,6 +24,7 @@ const crypto = require('crypto');
 const pdfParse = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const Anthropic = require('@anthropic-ai/sdk');
+const pdfjs = require('pdfjs-dist/legacy/build/pdf.mjs');
 
 const {
   parseGenericStatement,
@@ -76,6 +77,8 @@ function getScanClaudeModel() {
  */
 async function inspectStatementPdf(pdfBuffer, options = {}) {
   const maxSizeBytes = options.maxSizeBytes || 15 * 1024 * 1024;
+  const password = typeof options.password === 'string' ? options.password : '';
+
   if (!pdfBuffer || pdfBuffer.length === 0) {
     const err = new Error('Empty PDF file received.');
     err.code = 'EMPTY_FILE';
@@ -93,26 +96,60 @@ async function inspectStatementPdf(pdfBuffer, options = {}) {
     throw err;
   }
 
-  let pdfDoc;
-  try {
-    pdfDoc = await PDFDocument.load(pdfBuffer);
-  } catch (err) {
-    const e = new Error('This statement is password-protected. Please upload it without a password.');
-    e.code = 'PASSWORD_PROTECTED';
-    throw e;
-  }
+  // Use pdfjs-dist directly to handle encrypted and unencrypted PDFs robustly
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    let authFailed = false;
+    let isPasswordProtected = false;
 
-  const pageCount = pdfDoc.getPageCount();
-  const pagesGeometry = []; // [{ pageNumber, text, charCount, isImageOnly, items: [{ str, x, y, w }] }]
+    const task = pdfjs.getDocument({
+      data: new Uint8Array(pdfBuffer),
+      password: password,
+      stopAtErrors: false,
+      useSystemFonts: true,
+    });
 
-  let parsed;
-  try {
-    parsed = await pdfParse(pdfBuffer, {
-      pagerender: (pageData) => {
-        const pageNumber = (pageData.pageIndex ?? pagesGeometry.length) + 1;
-        return pageData.getTextContent().then((tc) => {
+    task.onPassword = (callback, reason) => {
+      isPasswordProtected = true;
+      attempts++;
+      if (attempts > 1) {
+        authFailed = true;
+        try { task.destroy(); } catch (e) {}
+        const err = new Error('Incorrect password for bank statement PDF.');
+        err.code = 'INCORRECT_PASSWORD';
+        return reject(err);
+      }
+
+      if (reason === pdfjs.PasswordResponses.NEED_PASSWORD) {
+        if (!password) {
+          authFailed = true;
+          try { task.destroy(); } catch (e) {}
+          const err = new Error('This statement is password-protected. Please enter the password.');
+          err.code = 'PASSWORD_PROTECTED';
+          return reject(err);
+        }
+        callback(password);
+      } else if (reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD) {
+        authFailed = true;
+        try { task.destroy(); } catch (e) {}
+        const err = new Error('Incorrect password for bank statement PDF.');
+        err.code = 'INCORRECT_PASSWORD';
+        return reject(err);
+      }
+    };
+
+    task.promise.then(async (doc) => {
+      if (authFailed) return;
+      try {
+        const pageCount = doc.numPages;
+        const pagesGeometry = [];
+
+        for (let p = 1; p <= pageCount; p++) {
+          const page = await doc.getPage(p);
+          const tc = await page.getTextContent();
           const items = [];
           const yLinesMap = new Map();
+
           for (const item of tc.items || []) {
             const str = String(item.str || '');
             if (!str.trim()) continue;
@@ -126,60 +163,63 @@ async function inspectStatementPdf(pdfBuffer, options = {}) {
             yLinesMap.get(yKey).push({ str, x });
           }
 
-          // Sort lines top-to-bottom (higher y first in PDF coordinates) and items left-to-right (by x)
+          // Sort lines top-to-bottom and items left-to-right
           const sortedYKeys = Array.from(yLinesMap.keys()).sort((a, b) => b - a);
           const pageLines = sortedYKeys.map((yKey) => {
             const row = yLinesMap.get(yKey).sort((a, b) => a.x - b.x);
             const rawLine = row.map((r) => r.str).join(' ').trim();
-            // Collapse spurious whitespace in dates (e.g. 01 - 08 - 2025) and formatted numbers (e.g. 1 , 000)
             return rawLine
               .replace(/(\d{2})\s*[-/]\s*(\d{2})\s*[-/]\s*(\d{4})/g, '$1-$2-$3')
               .replace(/(\d+)\s*,\s*(\d+)/g, '$1,$2');
           });
 
-          const pageText = [`Page ${pageNumber}`, ...pageLines].join('\n');
+          const pageText = [`Page ${p}`, ...pageLines].join('\n');
           const rawCharCount = pageLines.join('').replace(/\s+/g, '').length;
           const isImageOnly = rawCharCount < 40;
 
           pagesGeometry.push({
-            pageNumber,
+            pageNumber: p,
             text: pageText,
             charCount: rawCharCount,
             isImageOnly,
             items,
           });
+        }
 
-          return pageText + '\n';
+        pagesGeometry.sort((a, b) => a.pageNumber - b.pageNumber);
+        const fullText = pagesGeometry.map((p) => p.text).join('\n');
+        const imageOnlyPages = pagesGeometry.filter((p) => p.isImageOnly).map((p) => p.pageNumber);
+        const textLayerPages = pagesGeometry.filter((p) => !p.isImageOnly).map((p) => p.pageNumber);
+        const avgChars = fullText.length / Math.max(pageCount, 1);
+        const isScanned = imageOnlyPages.length === pageCount || avgChars < 60;
+        const isMixedPdf = !isScanned && imageOnlyPages.length > 0 && (imageOnlyPages.length >= 2 || imageOnlyPages.length / pageCount > 0.1);
+
+        resolve({
+          pageCount,
+          isScanned,
+          isMixedPdf,
+          imageOnlyPages,
+          textLayerPages,
+          pagesGeometry,
+          fullText,
+          avgCharsPerPage: Math.round(avgChars),
+          isPasswordProtected,
         });
-      },
+      } catch (procErr) {
+        reject(procErr);
+      }
+    }).catch((loadErr) => {
+      if (authFailed) return;
+      if (loadErr.name === 'PasswordException' || String(loadErr.message || '').toLowerCase().includes('password')) {
+        const err = new Error(password ? 'Incorrect password for bank statement PDF.' : 'This statement is password-protected. Please enter the password.');
+        err.code = password ? 'INCORRECT_PASSWORD' : 'PASSWORD_PROTECTED';
+        return reject(err);
+      }
+      const e = new Error('Corrupted or unreadable PDF structure.');
+      e.code = 'INVALID_PDF';
+      reject(e);
     });
-  } catch (err) {
-    const e = new Error('Corrupted or unreadable PDF structure.');
-    e.code = 'INVALID_PDF';
-    throw e;
-  }
-
-  pagesGeometry.sort((a, b) => a.pageNumber - b.pageNumber);
-  const fullText = pagesGeometry.length > 0
-    ? pagesGeometry.map((p) => p.text).join('\n')
-    : (parsed.text || '');
-
-  const imageOnlyPages = pagesGeometry.filter((p) => p.isImageOnly).map((p) => p.pageNumber);
-  const textLayerPages = pagesGeometry.filter((p) => !p.isImageOnly).map((p) => p.pageNumber);
-  const avgChars = fullText.length / Math.max(pageCount, 1);
-  const isScanned = imageOnlyPages.length === pageCount || avgChars < 60;
-  const isMixedPdf = imageOnlyPages.length > 0 && textLayerPages.length > 0;
-
-  return {
-    pageCount,
-    isScanned,
-    isMixedPdf,
-    imageOnlyPages,
-    textLayerPages,
-    pagesGeometry,
-    fullText,
-    avgCharsPerPage: Math.round(avgChars),
-  };
+  });
 }
 
 /**
@@ -1507,6 +1547,42 @@ function detectBankName(fullText) {
   const t = fullText || '';
   const headerFooter = t.slice(0, 2500) + '\n' + t.slice(Math.max(0, t.length - 1500));
 
+  // If statement explicitly states its IFSC in the header/account details, use that first
+  const ifscMatch = (t.slice(0, 2000) || '').match(/(?:IFSC|IFS\s*Code)\s*[:\-]?\s*([A-Z]{4})0[A-Z0-9]{6}/i);
+  if (ifscMatch && ifscMatch[1]) {
+    const code = ifscMatch[1].toUpperCase();
+    const IFSC_PREFIX_MAP = {
+      IDFB: 'IDFC FIRST Bank',
+      SBIN: 'State Bank of India',
+      HDFC: 'HDFC Bank',
+      ICIC: 'ICICI Bank',
+      UTIB: 'Axis Bank',
+      BARB: 'Bank of Baroda',
+      PUNB: 'Punjab National Bank',
+      CNRB: 'Canara Bank',
+      KKBK: 'Kotak Mahindra Bank',
+      AUBL: 'AU Small Finance Bank',
+      INDB: 'IndusInd Bank',
+      UBIN: 'Union Bank of India',
+      FDRL: 'Federal Bank',
+      YESB: 'Yes Bank',
+      BKID: 'Bank of India',
+      CBIN: 'Central Bank of India',
+      IDIB: 'Indian Bank',
+      UCBA: 'UCO Bank',
+      MAHB: 'Bank of Maharashtra',
+      RATN: 'RBL Bank',
+      BDBL: 'Bandhan Bank',
+      SIBL: 'South Indian Bank',
+      KVBL: 'Karur Vysya Bank',
+      PSIB: 'Punjab & Sind Bank',
+      IOBA: 'Indian Overseas Bank',
+    };
+    if (IFSC_PREFIX_MAP[code]) {
+      return IFSC_PREFIX_MAP[code];
+    }
+  }
+
   const BANK_PATTERNS = [
     [/Punjab\s*&\s*Sind\s*Bank|\bPSIB0\d{6}\b/i, 'Punjab & Sind Bank'],
     [/BANK OF BARODA|Customer Account Ledger|\bBARB0\d{6}\b/i, 'Bank of Baroda'],
@@ -1761,8 +1837,16 @@ function isCandidateCleanlyReconciled(candidate) {
     return false;
   }
   if ((candidate.chainBreaks || 0) > 0) return false;
-  if ((candidate.unresolvedRows || []).length > 0) return false;
-  if ((candidate.completenessChecks?.failed || []).length > 0) return false;
+
+  const criticalFailed = (candidate.completenessChecks?.failed || []).filter(
+    (c) => c !== 'narration_sanity'
+  );
+  if (criticalFailed.length > 0) return false;
+
+  const criticalUnresolved = (candidate.unresolvedRows || []).filter(
+    (u) => !u.isNarrationSanityFailure
+  );
+  if (criticalUnresolved.length > 0) return false;
 
   const openingPaise = Math.round((candidate.exactOpeningBalance ?? candidate.openingBalance ?? 0) * 100);
   const closingPaise = Math.round((candidate.exactClosingBalance ?? candidate.closingBalance ?? 0) * 100);

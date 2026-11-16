@@ -20,6 +20,7 @@ router.get('/rc-reports', auth, isAdmin, rcController.getAllRcVerifications);
 router.get('/gst-reports', auth, isAdmin, gstController.getAllGstVerifications);
 router.get('/bsa-reports', auth, isAdmin, bsaController.getAllBankStatementAnalyses);
 router.get('/bsa-reports/:id/report', auth, isAdmin, bsaController.adminDownloadReport);
+router.get('/bsa-reports/:id/original-statement', auth, isAdmin, bsaController.adminDownloadOriginalStatement);
 router.get('/partners', auth, isAdmin, adminController.getAllPartners);
 router.patch('/partners/:id/status', auth, isAdmin, adminController.setPartnerStatus);
 router.post('/partners/:id/add-funds', auth, isAdmin, adminController.addFundsToPartner);

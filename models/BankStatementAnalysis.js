@@ -26,6 +26,9 @@ const bankStatementAnalysisSchema = new mongoose.Schema(
     // Our rebranded PDF (private path, served via the owner-checked endpoint).
     localPath: { type: String, default: null },
 
+    // Original uploaded bank statement PDF (stored in private/bsa-uploads/ for admin inspection).
+    originalStatementPath: { type: String, default: null },
+
     accountHolderName: { type: String, default: null },
     bankName: { type: String, default: null },
     accountNumberMasked: { type: String, default: null },
