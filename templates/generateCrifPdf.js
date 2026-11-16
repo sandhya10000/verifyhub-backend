@@ -110,19 +110,36 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     );
   };
 
-  const fmtNum = (value) => {
-    if (
-      value === undefined ||
-      value === null ||
-      value === "" ||
-      !Number.isFinite(Number(value))
-    ) {
-      return "0";
+  // Parses CRIF amount strings such as "1,10,000", "₹ 2,50,000" or "62702.58".
+  // Returns null when the value is not a plain number.
+  const parseAmount = (value) => {
+    if (value === undefined || value === null) return null;
+
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
     }
+
+    const cleaned = String(value).replace(/[₹,\s]/g, "");
+
+    if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+
+    return Number(cleaned);
+  };
+
+  // Shows provider text exactly as received; formats only real numbers.
+  const fmtNum = (value) => {
+    if (value === undefined || value === null) return "-";
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed === "" ? "-" : trimmed;
+    }
+
+    if (!Number.isFinite(value)) return "-";
 
     return new Intl.NumberFormat("en-IN", {
       maximumFractionDigits: 2,
-    }).format(Number(value));
+    }).format(value);
   };
 
   const fmtDate = (value) => {
@@ -188,21 +205,11 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     return String(value);
   };
 
-  const getNumber = (obj, ...keys) => {
-    const value = getValue(obj, ...keys);
-    const number = Number(value);
-
-    return value === null || value === "" || !Number.isFinite(number)
-      ? 0
-      : number;
-  };
+  const getNumber = (obj, ...keys) =>
+    parseAmount(getValue(obj, ...keys)) ?? 0;
 
   const sum = (...values) =>
-    values.reduce((total, value) => {
-      const number = Number(value);
-
-      return total + (Number.isFinite(number) ? number : 0);
-    }, 0);
+    values.reduce((total, value) => total + (parseAmount(value) ?? 0), 0);
 
   // ----------------------------------------------------------
   // REPORT SECTIONS
@@ -525,15 +532,27 @@ const generateCrifPdf = async (apiData, creditReportId) => {
     getNumber(secondary, "SECONDARY-UNSECURED-NUMBER-OF-ACCOUNTS"),
   );
 
-  const currentBalance = sum(
-    getNumber(primary, "PRIMARY-CURRENT-BALANCE"),
-    getNumber(secondary, "SECONDARY-CURRENT-BALANCE"),
-  );
+  // Totals come from the loan rows: the provider's summary amounts are
+  // returned as 0 for these fields even when accounts carry real values.
+  const isPrimaryLoan = (loan) =>
+    (getValue(loan, "MATCHED-TYPE") ?? "PRIMARY") === "PRIMARY";
 
-  const disbursedAmount = sum(
-    getNumber(primary, "PRIMARY-DISBURSED-AMOUNT"),
-    getNumber(secondary, "SECONDARY-DISBURSED-AMOUNT"),
-  );
+  const currentBalance = accountLoans
+    .filter(isPrimaryLoan)
+    .reduce(
+      (total, loan) =>
+        total + (parseAmount(getValue(loan, "CURRENT-BAL", "CURRENT-BALANCE")) ?? 0),
+      0,
+    );
+
+  const disbursedAmount = accountLoans
+    .filter(isPrimaryLoan)
+    .reduce(
+      (total, loan) =>
+        total +
+        (parseAmount(getValue(loan, "DISBURSED-AMT", "DISBURSED-AMOUNT")) ?? 0),
+      0,
+    );
 
   const enquiries6 = firstAvailable(
     getValue(

@@ -2037,60 +2037,9 @@ const CrifReport = async (req, res) => {
 
     let localPath = null;
 
-    // Fast path: provider gave us a PDF URL — download it.
-    if (reportUrl) {
-      try {
-        // Physical folder:
-        // backend/uploads/credit-reports/crif
-        const crifUploadDir = path.join(
-          __dirname,
-          "../uploads/credit-reports/crif",
-        );
-
-        // Create folder if it does not exist
-        if (!fs.existsSync(crifUploadDir)) {
-          fs.mkdirSync(crifUploadDir, {
-            recursive: true,
-          });
-        }
-
-        // Use transaction ID for unique filename
-        const fileName = `crif-${transactionId || creditReport._id}.pdf`;
-
-        // Physical file path
-        const physicalFilePath = path.join(crifUploadDir, fileName);
-
-        console.log("[CRIF] Downloading provider PDF...");
-        console.log("[CRIF] Provider PDF URL:", reportUrl);
-        console.log("[CRIF] Local file path:", physicalFilePath);
-
-        const pdfResponse = await axios.get(reportUrl, {
-          responseType: "arraybuffer",
-          timeout: 60000,
-        });
-
-        fs.writeFileSync(physicalFilePath, pdfResponse.data);
-
-        // Path to store in MongoDB
-        localPath = `/uploads/credit-reports/crif/${fileName}`;
-
-        console.log(
-          "[CRIF] Provider PDF saved successfully:",
-          physicalFilePath,
-        );
-
-        console.log("[CRIF] DB localPath:", localPath);
-      } catch (pdfError) {
-        console.error("[CRIF] Provider PDF download failed:", pdfError.message);
-
-        localPath = null;
-      }
-    } else {
-      console.log("[CRIF] No provider PDF URL — will generate PDF locally.");
-    }
-
-    // Fallback: generate PDF locally from bureau JSON (same as CIBIL/Experian).
-    if (!localPath) {
+    // Always generate the CreditDost-styled PDF locally from bureau JSON.
+    // The provider's own PDF is intentionally not downloaded or served.
+    {
       try {
         console.log(
           "[CRIF] Generating local PDF via generateCrifPdf template...",
@@ -2178,11 +2127,9 @@ const CrifReport = async (req, res) => {
 
         localPath = `/uploads/credit-reports/crif/${generatedFileName}`;
 
-        // No provider link — point reportUrl at our own file so history
-        // buttons open the generated PDF (CIBIL pattern).
-        if (!reportUrl) {
-          reportUrl = localPath;
-        }
+        // Point reportUrl at our own file so history buttons open the
+        // generated PDF, not the provider's expiring S3 link.
+        reportUrl = localPath;
 
         console.log(
           "[CRIF] Local PDF generated successfully:",
@@ -2234,7 +2181,7 @@ const CrifReport = async (req, res) => {
     // STEP 26: SUCCESS RESPONSE
     // ============================================================
 
-    return res.status(200).json({
+    const crifResponseBody = {
       success: true,
       status: "success",
 
@@ -2266,7 +2213,14 @@ const CrifReport = async (req, res) => {
       bureauData,
 
       data: creditReport,
-    });
+    };
+
+    console.log(
+      "[CRIF] Final JSON response:",
+      JSON.stringify(crifResponseBody, null, 2),
+    );
+
+    return res.status(200).json(crifResponseBody);
   } catch (error) {
     // ============================================================
     // ERROR HANDLING
