@@ -1501,6 +1501,20 @@ const CibilReportFromIndiConnect = async (req, res) => {
 };
 */
 //Without OTP
+// CRIF (IndiConnect) provider-balance detection. The owner must top up the
+// IndiConnect account; users only ever see CRIF_BALANCE_USER_MESSAGE.
+const CRIF_BALANCE_RE =
+  /INSUFFICIENT_PROVIDER_BALANCE|insufficient[^"]{0,40}balance|balance[^"]{0,40}(low|zero|exhausted|depleted|insufficient)|balance_exhausted/i;
+const CRIF_BALANCE_USER_MESSAGE =
+  "Verification service temporarily unavailable. Please try again later.";
+const isCrifProviderBalanceError = (payload) => {
+  try {
+    return CRIF_BALANCE_RE.test(JSON.stringify(payload ?? ""));
+  } catch {
+    return false;
+  }
+};
+
 const CrifReport = async (req, res) => {
   let creditReport = null;
 
@@ -1767,15 +1781,25 @@ const CrifReport = async (req, res) => {
         "CRIF",
       );
 
-      return res.status(400).json({
+      const crifGqlBalance = isCrifProviderBalanceError(apiData.errors);
+
+      if (crifGqlBalance) {
+        console.error(
+          "[CRIF] IndiConnect provider balance exhausted — owner recharge needed.",
+        );
+      }
+
+      return res.status(crifGqlBalance ? 503 : 400).json({
         success: false,
         status: "failed",
 
-        message: apiData.errors?.[0]?.message || "CRIF GraphQL request failed",
+        message: crifGqlBalance
+          ? CRIF_BALANCE_USER_MESSAGE
+          : apiData.errors?.[0]?.message || "CRIF GraphQL request failed",
 
         creditReportId: creditReport._id,
 
-        data: apiData,
+        data: crifGqlBalance ? undefined : apiData,
 
         failureCharge: crifFailCharge.ok ? crifFailCharge.total : 0,
       });
@@ -1908,21 +1932,34 @@ const CrifReport = async (req, res) => {
         "CRIF",
       );
 
-      return res.status(400).json({
+      const crifVerifyBalance = isCrifProviderBalanceError([
+        verifyData?.message,
+        result?.message,
+        verifyData?.error,
+      ]);
+
+      if (crifVerifyBalance) {
+        console.error(
+          "[CRIF] IndiConnect provider balance exhausted — owner recharge needed.",
+        );
+      }
+
+      return res.status(crifVerifyBalance ? 503 : 400).json({
         success: false,
         status: "failed",
 
-        message:
-          verifyData?.message ||
-          result?.message ||
-          verifyData?.error?.message ||
-          "CRIF report request failed",
+        message: crifVerifyBalance
+          ? CRIF_BALANCE_USER_MESSAGE
+          : verifyData?.message ||
+            result?.message ||
+            verifyData?.error?.message ||
+            "CRIF report request failed",
 
         creditReportId: creditReport._id,
 
         transactionId: result?.txn_id || null,
 
-        data: apiData,
+        data: crifVerifyBalance ? undefined : apiData,
 
         failureCharge: crifFailCharge.ok ? crifFailCharge.total : 0,
       });
@@ -2268,15 +2305,25 @@ const CrifReport = async (req, res) => {
           total: 0,
         };
 
-      return res.status(error.response.status || 500).json({
+      const crifHttpBalance = isCrifProviderBalanceError(error.response.data);
+
+      if (crifHttpBalance) {
+        console.error(
+          "[CRIF] IndiConnect provider balance exhausted — owner recharge needed.",
+        );
+      }
+
+      return res.status(crifHttpBalance ? 503 : error.response.status || 500).json({
         success: false,
         status: "failed",
 
-        message: "CRIF API request failed",
+        message: crifHttpBalance
+          ? CRIF_BALANCE_USER_MESSAGE
+          : "CRIF API request failed",
 
         creditReportId: creditReport?._id || null,
 
-        error: error.response.data,
+        error: crifHttpBalance ? undefined : error.response.data,
 
         failureCharge: crifErrCharge.ok ? crifErrCharge.total : 0,
       });
