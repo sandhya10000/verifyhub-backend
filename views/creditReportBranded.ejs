@@ -428,7 +428,8 @@ tbody tr:hover{background:#f3f6fb}
 </head>
 <body>
 
-<!-- ═══════════════════════ FULL-WIDTH BRAND BANNER ═══════════════════════ -->
+<% if (brand && (brand.partnerCode || '').toLowerCase() === 'vh098') { %>
+<!-- ═══════════════════════ FULL-WIDTH BRAND BANNER (VH098) ═══════════════════════ -->
 <div class="container" style="padding-bottom:0">
  <div class="full-width-brand-header">
   <img class="full-width-brand-banner"
@@ -440,6 +441,49 @@ tbody tr:hover{background:#f3f6fb}
 
 <div class="container">
  <div class="card hero-card">
+<% } else { %>
+<!-- ═══════════════════════ BRANDED HERO HEADER (Standard Layout) ═══════════════════════ -->
+<div class="container" style="padding-bottom:0;">
+ <div class="hero-head" style="background:var(--grad);border-radius:14px 14px 0 0;padding:26px 28px;color:#fff;margin-top:16px;box-shadow:0 4px 6px rgba(0,0,0,.1);box-sizing:border-box;">
+  <div class="hero-flex" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+   <div class="brand" style="display:flex;flex-direction:column;gap:6px;">
+    <div class="brand-wordmark" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+     <% const pCode = (brand && (brand.partnerCode || '').toLowerCase()); %>
+     <% if (['vh1243', 'vh009'].includes(pCode)) { %>
+     <!-- OnePaid Square App Icon Presentation -->
+     <div style="width:68px;height:68px;min-width:68px;border-radius:16px;overflow:hidden;border:2px solid rgba(255,255,255,0.45);box-shadow:0 8px 20px rgba(0,0,0,0.32), inset 0 1px 1px rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;background:#003fd1;position:relative;">
+       <img src="<%= brand.logo.dataUri %>" alt="<%= brand.firmName %>" style="width:100%;height:100%;object-fit:cover;display:block;">
+     </div>
+     <% } else { %>
+     <!-- Standard Logo Container (vh744, etc.) -->
+     <div style="background:#0f172a;padding:8px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);box-shadow:0 4px 12px rgba(0,0,0,0.3);display:inline-flex;align-items:center;">
+       <img src="<%= brand.logo.dataUri %>" alt="<%= brand.firmName %>" style="max-height:50px;max-width:180px;height:auto;width:auto;object-fit:contain;display:block;">
+     </div>
+     <% } %>
+     <span style="font-size:1.6rem;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.3);"><%- t('report_title') %></span>
+    </div>
+    <div class="brand-sub" style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:0.92rem;opacity:0.95;color:#f8fafc;font-weight:400;">
+     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" fill="#facc15"/></svg>
+     <%- brand.tagline || t('hero_tagline') %>
+    </div>
+   </div>
+   <div class="hero-ai-badge" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);border-radius:12px;padding:12px 18px;display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px;">
+    <div class="hero-ai-badge-top" style="font-size:0.95rem;font-weight:700;display:flex;align-items:center;gap:8px;color:#fff;">
+     <svg width="14" height="14" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="6" cy="6" r="5.5" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>
+      <polyline points="3.5,6.2 5.2,7.8 8.5,4.5" stroke="rgba(255,255,255,1)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+     </svg>
+     <%- t('hero_ai_verified') %>
+    </div>
+    <div class="hero-ai-badge-sub" style="font-size:0.75rem;opacity:0.85;color:#e2e8f0;"><%- t('hero_ai_trusted') %></div>
+   </div>
+  </div>
+ </div>
+</div>
+
+<div class="container">
+ <div class="card hero-card" style="box-shadow:0 4px 6px rgba(0,0,0,.1);border-top:none;border-radius:0 0 14px 14px;margin-top:0;">
+<% } %>
   <div class="grid2" style="align-items:center">
    <div>
     <!-- Client detail grid with centre divider -->
@@ -937,6 +981,9 @@ tbody tr:hover{background:#f3f6fb}
 <!-- ═══════════════════════ ABOUT US + FOOTER ═══════════════════════ -->
 <div class="container">
 
+<% if (['vh744', 'vh1243'].includes((brand && (brand.partnerCode || '').toLowerCase())) || brand?.hideAboutUs) { %>
+<!-- About Us hidden for VH744 -->
+<% } else { %>
  <div class="card about-card">
   <h3><%- t('about_title', { firmName: brand.firmName }) %></h3>
   <p class="about-intro">
@@ -974,6 +1021,11 @@ tbody tr:hover{background:#f3f6fb}
   <div class="about-tagline"><%- t('about_tagline') %></div>
  </div>
 
+<% } %>
+
+<% if (['vh744', 'vh1243'].includes((brand && (brand.partnerCode || '').toLowerCase())) || brand?.hideNextSteps) { %>
+<!-- Next Steps hidden for VH744 -->
+<% } else { %>
  <!-- ═══════════════════ SECTION 1: NEXT STEPS & SUPPORT ═══════════════════ -->
  <div class="section-title"><%- t('next_steps_heading') %></div>
  <div class="next-steps-card">
@@ -1010,6 +1062,11 @@ tbody tr:hover{background:#f3f6fb}
   </div>
  </div>
 
+<% } %>
+
+<% if (['vh744', 'vh1243'].includes((brand && (brand.partnerCode || '').toLowerCase())) || brand?.hideDisclaimers) { %>
+<!-- Disclaimers hidden for VH744 -->
+<% } else { %>
  <!-- ═══════════════════ SECTION 2: IMPORTANT DISCLAIMERS ═══════════════════ -->
  <div class="section-title"><%- t('disclaimers_heading') %></div>
  <div class="disclaimers-card">
@@ -1025,22 +1082,49 @@ tbody tr:hover{background:#f3f6fb}
   <% } %>
  </div>
 
- <!-- ═══════════════════════ DARK FOOTER BLOCK ═══════════════════════ -->
- <div style="margin-top:28px;padding:34px 28px;background:#2d3436;color:white;text-align:center;border-radius:12px 12px 0 0;">
-  <h3 style="margin:0 0 6px;font-size:1.25rem"><%= brand.firmName %></h3>
-  <p style="margin:0 0 10px">
-   <%- t('footer_website_label') %> <a href="<%- brand.website || 'https://card.onlytap.in/sonwanienterprises' %>" target="_blank" rel="noopener noreferrer" style="color:#00cec9;text-decoration:none"><%- (brand.website || 'https://card.onlytap.in/sonwanienterprises').replace(/^https?:\/\//, '') %></a>
+<% } %>
+
+ <!-- ═══════════════════════ BRANDED FOOTER BLOCK ═══════════════════════ -->
+ <div style="margin-top:28px;padding:36px 28px;background:linear-gradient(135deg, #111827 0%, #1f2937 100%);color:#ffffff;text-align:center;border-radius:14px 14px 0 0;border-top:4px solid var(--brand-primary);box-shadow:0 -4px 12px rgba(0,0,0,0.1);">
+  <h3 style="margin:0 0 8px;font-size:1.35rem;font-weight:800;letter-spacing:0.5px;color:#ffffff;"><%= brand.firmName %></h3>
+  <p style="margin:0 0 14px;font-size:0.92rem;color:#e2e8f0;">
+   <%- t('footer_website_label') %> <a href="<%- brand.website || 'https://card.onlytap.in/sonwanienterprises' %>" target="_blank" rel="noopener noreferrer" style="color:#ef4444;font-weight:600;text-decoration:none;transition:color 0.2s;"><%- (brand.website || 'https://card.onlytap.in/sonwanienterprises').replace(/^https?:\/\//, '') %></a>
    &nbsp;|&nbsp;
-   <%- t('footer_email_label') %> <a href="mailto:<%- brand.email || 'sonwanienterprises@gmail.com' %>" style="color:#00cec9;text-decoration:none"><%- brand.email || 'sonwanienterprises@gmail.com' %></a>
+   <%- t('footer_email_label') %> <a href="mailto:<%- brand.email || 'sonwanienterprises@gmail.com' %>" style="color:#ef4444;font-weight:600;text-decoration:none;transition:color 0.2s;"><%- brand.email || 'sonwanienterprises@gmail.com' %></a>
+   </p>
+
+   <% if (brand.socialLinks && (brand.socialLinks.linkedin || brand.socialLinks.instagram || brand.socialLinks.facebook || brand.socialLinks.youtube)) { %>
+   <!-- Social links -->
+   <div style="margin:16px 0 14px;">
+    <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;">
+     <% if (brand.socialLinks.linkedin) { %>
+     <a href="<%- brand.socialLinks.linkedin %>" target="_blank" rel="noopener noreferrer"
+        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">LinkedIn</a>
+     <% } %>
+     <% if (brand.socialLinks.instagram) { %>
+     <a href="<%- brand.socialLinks.instagram %>" target="_blank" rel="noopener noreferrer"
+        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">Instagram</a>
+     <% } %>
+     <% if (brand.socialLinks.facebook) { %>
+     <a href="<%- brand.socialLinks.facebook %>" target="_blank" rel="noopener noreferrer"
+        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">Facebook</a>
+     <% } %>
+     <% if (brand.socialLinks.youtube) { %>
+     <a href="<%- brand.socialLinks.youtube %>" target="_blank" rel="noopener noreferrer"
+        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">YouTube</a>
+     <% } %>
+    </div>
+   </div>
+   <% } %><p style="display:none">
   </p>
 
   <!-- Line 1 (bold) -->
-  <p style="margin:14px 0 4px;font-weight:700;font-size:1rem;color:#f1f2f6">
+  <p style="margin:16px 0 4px;font-weight:700;font-size:1.02rem;color:#ffffff;">
    <%- t('footer_empowering', { firmName: brand.firmName }) %>
   </p>
 
   <!-- Line 2 -->
-  <p style="margin:0 0 12px;font-size:.9rem;color:#dfe6e9">
+  <p style="margin:0 0 14px;font-size:.88rem;color:#9ca3af;">
    <%- t('footer_ai_powered') %>
   </p>
 

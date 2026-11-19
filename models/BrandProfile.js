@@ -70,6 +70,12 @@ const BrandProfileSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    socialLinks: {
+      linkedin: { type: String, default: '', trim: true },
+      instagram: { type: String, default: '', trim: true },
+      facebook: { type: String, default: '', trim: true },
+      youtube: { type: String, default: '', trim: true },
+    },
   },
   { timestamps: true }
 );
