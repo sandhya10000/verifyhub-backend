@@ -99,7 +99,21 @@ const failValidationRc = async (req, res, options) => {
   });
 };
 
-const buildRcQuery = (vehicleNumber, documentType) =>
+// Provider-side outage: the upstream source is down, not the partner's fault,
+// so these failures are never billed.
+const SOURCE_BUSY_RE = /source is busy or unavailable/i;
+const isSourceBusy = (...candidates) =>
+  candidates.some((c) => {
+    if (!c) return false;
+    if (typeof c === "string") return SOURCE_BUSY_RE.test(c);
+    try {
+      return SOURCE_BUSY_RE.test(JSON.stringify(c));
+    } catch {
+      return false;
+    }
+  });
+
+const buildRcQuery =(vehicleNumber, documentType) =>
   `mutation {\n  verify(\n    input: {\n      vehicleNumber: "${vehicleNumber}",\n      documentType: "${documentType}"\n    }\n  ) {\n    ok\n    message\n    result {\n      ... on DTVehicleRcResult {\n          reg_no\n          class\n          chassis\n          engine\n          vehicle_manufacturer_name\n          model\n          vehicle_colour\n          type\n          norms_type\n          body_type\n          owner_count\n          owner_name\n          owner_father_name\n          mobile_number\n          status\n          status_as_on\n          reg_authority\n          reg_date\n          vehicle_manufacturing_month_year\n          rc_expiry_date\n          vehicle_tax_upto\n          vehicle_insurance_company_name\n          vehicle_insurance_upto\n          vehicle_insurance_policy_number\n          rc_financer\n          present_address\n          permanent_address\n          vehicle_cubic_capacity\n          gross_vehicle_weight\n          unladen_weight\n          vehicle_category\n          vehicle_cylinders_no\n          vehicle_seat_capacity\n          wheelbase\n          pucc_number\n          pucc_upto\n          blacklist_status\n          permit_issue_date\n          permit_number\n          permit_type\n          permit_valid_from\n          permit_valid_upto\n          national_permit_upto\n          is_commercial\n          financed\n          rto_code\n      }\n    }\n    error {\n      status\n      message\n      decryptedError\n    }\n  }\n}`;
 
 // POST /api/rc/verify-rc { vehicleNumber, consent }
@@ -190,10 +204,13 @@ const verifyRc = async (req, res) => {
       await verification.save(); // pre-save fills failureReason
       // Every backend-hit failure is billed, regardless of status code.
       let failCharge = { ok: false, total: 0 };
-      try {
-        failCharge = await chargeFailedReport(userId, verification._id, "rc", "RC", true);
-      } catch (err) {
-        console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, err.message);
+      // "Source is busy or unavailable" is a provider outage — no deduction.
+      if (!isSourceBusy(verify?.message, verify?.error, apiData)) {
+        try {
+          failCharge = await chargeFailedReport(userId, verification._id, "rc", "RC", true);
+        } catch (err) {
+          console.error(`[wallet] fail-charge error for RC verification ${verification._id}:`, err.message);
+        }
       }
       return res.status(400).json({
         success: false,
@@ -246,7 +263,7 @@ const verifyRc = async (req, res) => {
     // Every backend-hit failure is billed, regardless of status code —
     // including provider errors, timeouts and internal errors.
     let catchCharge = { ok: false, total: 0 };
-    if (verification?._id) {
+    if (verification?._id && !isSourceBusy(err.response?.data, err.message)) {
       try {
         catchCharge = await chargeFailedReport(
           verification.userId,
