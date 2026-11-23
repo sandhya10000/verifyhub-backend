@@ -173,8 +173,10 @@ async function getBrandingStatus(req, res) {
 
     let status = user.brandingStatus || 'not_purchased';
     const partnerCode = String(user.partner_id || '').toLowerCase();
-    // Safety check: Only VH098 is active for now. If another user has 'active', normalize them to 'paid'.
-    if (status === 'active' && partnerCode !== 'vh098') {
+    // Partners allowed to be active once their setup is verified
+    const ACTIVE_WHITELIST = ['vh098', 'vh744', 'vh1243'];
+    // Safety check: If a partner has 'active' but is not yet in verified list, normalize them to 'paid'.
+    if (status === 'active' && !ACTIVE_WHITELIST.includes(partnerCode)) {
       status = 'paid';
       await User.updateOne({ _id: partnerId }, { $set: { brandingStatus: 'paid' } });
     }
@@ -1034,9 +1036,10 @@ async function uploadBrandedReport(req, res) {
     // --- STRICT GATE ---
     // 1. Feature toggle check
     const isBrandedEnabled = process.env.BRANDED_REPORTS_ENABLED !== 'false';
-    // 2. User brandingStatus check (currently active only for VH098)
+    // 2. User brandingStatus check (verified active partners)
     const partnerCode = String(req.user.partner_id || '').toLowerCase();
-    const isUserActive = req.user.brandingStatus === 'active' && partnerCode === 'vh098';
+    const ACTIVE_WHITELIST = ['vh098', 'vh744', 'vh1243'];
+    const isUserActive = req.user.brandingStatus === 'active' && ACTIVE_WHITELIST.includes(partnerCode);
     // 3. Active BrandProfile check
     const activeProfile = await BrandProfile.findOne({
       partnerId: req.user._id,

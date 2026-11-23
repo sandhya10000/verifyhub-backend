@@ -113,8 +113,8 @@ function validateBrand(brand) {
   }
 
   // Validate website
-  if (!brand.website || typeof brand.website !== 'string' || !brand.website.startsWith('https://')) {
-    throw new Error(`Invalid brand: website must start with https:// (got: ${brand.website})`);
+  if (!brand.website || typeof brand.website !== 'string' || (!brand.website.startsWith('https://') && !brand.website.startsWith('http://'))) {
+    throw new Error(`Invalid brand: website must start with http:// or https:// (got: ${brand.website})`);
   }
 
   // Validate email

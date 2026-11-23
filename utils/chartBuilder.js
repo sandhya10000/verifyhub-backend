@@ -241,7 +241,7 @@ function outstandingVsSanctionedUrl(accounts, chartLabels) {
   );
 
   if (!relevant.length) {
-    const labels = accounts.map((a) => a.lender.substring(0, 22));
+    const labels = accounts.map((a) => String(a.lender || a.institution || a.bank_name || 'Account').substring(0, 22));
     const sanctioned = accounts.map((a) => Math.round((a.sanctioned_amount || 0) / 1000));
 
     const filteredLabels = [];
@@ -277,7 +277,7 @@ function outstandingVsSanctionedUrl(accounts, chartLabels) {
     return { url: url(560, Math.max(300, filteredLabels.length * 36 + 80), config), isLifetimeView: true };
   }
 
-  const rawLabels    = relevant.map((a) => a.lender.substring(0, 22));
+  const rawLabels    = relevant.map((a) => String(a.lender || a.institution || a.bank_name || 'Account').substring(0, 22));
   const rawBalances  = relevant.map((a) => Math.round((a.current_balance || 0) / 1000));
   const rawSanctioned = relevant.map((a) => Math.round((a.sanctioned_amount || 0) / 1000));
 
