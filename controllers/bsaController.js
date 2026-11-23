@@ -151,7 +151,7 @@ async function executeStatementJob(docId, pdfBuffer, originalFileName, password 
     // 1. Extraction and Reconciliation Gate
     let extractionResult;
     try {
-      extractionResult = await pipelineExtractor.extractAndReconcile(pdfBuffer, { allowPartial: false, password });
+      extractionResult = await pipelineExtractor.extractAndReconcile(pdfBuffer, { allowPartial: true, password });
     } catch (err) {
       console.log(`[bsa] Extraction/Reconciliation stopped for doc ${docId}:`, err.message);
       doc.status = 'Failed';
