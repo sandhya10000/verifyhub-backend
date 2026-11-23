@@ -73,9 +73,9 @@ async function main() {
       tagline: 'Your Trusted Financial Partner',
       logo: logoObj,
       colors: {
-        primary: '#DC2626',   // Bold Red
-        secondary: '#111827', // Deep Black
-        accent: '#991B1B',    // Dark Crimson Red (satisfies hex validation)
+        primary: '#d8261c',   // Ultimate Red #d8261c
+        secondary: '#0a0a0a', // Deep Pure Black
+        accent: '#d8261c',    // Matching brand red
       },
       email: 'info@ultimatecare.in',
       website: 'http://www.ultimateassociates.net',

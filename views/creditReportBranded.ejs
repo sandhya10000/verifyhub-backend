@@ -26,10 +26,10 @@
   --brand-primary:<%= brand.colors.primary %>;
   --brand-secondary:<%= brand.colors.secondary %>;
   --brand-accent:<%= brand.colors.accent %>;
-  --grad:linear-gradient(135deg,var(--brand-primary) 0%,var(--brand-secondary) 100%);
+  --grad:<%= (brand && (brand.partnerCode || '').toLowerCase() === 'vh744') ? 'var(--brand-primary)' : 'linear-gradient(135deg,var(--brand-primary) 0%,var(--brand-secondary) 100%)' %>;
   --crit:#dc3545;--high:#fd7e14;--med:#ffc107;--low:#28a745;
-  --bg:#f4f6f9;--card:#fff;--ink:#2d3436;--muted:#6b7280;
-  --hero-accent:linear-gradient(90deg,var(--brand-primary) 0%,var(--brand-accent) 60%,var(--brand-secondary) 100%);
+  --bg:#f8fafc;--card:#fff;--ink:#111827;--muted:#4b5563;
+  --hero-accent:<%= (brand && (brand.partnerCode || '').toLowerCase() === 'vh744') ? '#d8261c' : 'linear-gradient(90deg,var(--brand-primary) 0%,var(--brand-accent) 60%,var(--brand-secondary) 100%)' %>;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
@@ -444,7 +444,8 @@ tbody tr:hover{background:#f3f6fb}
 <% } else { %>
 <!-- ═══════════════════════ BRANDED HERO HEADER (Standard Layout) ═══════════════════════ -->
 <div class="container" style="padding-bottom:0;">
- <div class="hero-head" style="background:var(--grad);border-radius:14px 14px 0 0;padding:26px 28px;color:#fff;margin-top:16px;box-shadow:0 4px 6px rgba(0,0,0,.1);box-sizing:border-box;">
+ <% const isVH744 = (brand && (brand.partnerCode || '').toLowerCase() === 'vh744'); %>
+ <div class="hero-head" style="background:<%= isVH744 ? '#000000' : 'var(--grad)' %>;border-radius:14px 14px 0 0;padding:26px 28px;color:#fff;margin-top:16px;box-shadow:0 4px 6px rgba(0,0,0,.1);box-sizing:border-box;<% if (isVH744) { %>border-bottom:3px solid #d8261c;<% } %>">
   <div class="hero-flex" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
    <div class="brand" style="display:flex;flex-direction:column;gap:6px;">
     <div class="brand-wordmark" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -454,8 +455,13 @@ tbody tr:hover{background:#f3f6fb}
      <div style="width:68px;height:68px;min-width:68px;border-radius:16px;overflow:hidden;border:2px solid rgba(255,255,255,0.45);box-shadow:0 8px 20px rgba(0,0,0,0.32), inset 0 1px 1px rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;background:#003fd1;position:relative;">
        <img src="<%= brand.logo.dataUri %>" alt="<%= brand.firmName %>" style="width:100%;height:100%;object-fit:cover;display:block;">
      </div>
+     <% } else if (pCode === 'vh744') { %>
+     <!-- Ultimate Associates (vh744) Website-Style Header Logo on Pure Black -->
+     <div style="display:inline-flex;align-items:center;padding:2px 0;">
+       <img src="<%= brand.logo.dataUri %>" alt="<%= brand.firmName %>" style="max-height:56px;max-width:180px;height:auto;width:auto;object-fit:contain;display:block;">
+     </div>
      <% } else { %>
-     <!-- Standard Logo Container (vh744, etc.) -->
+     <!-- Standard Logo Container -->
      <div style="background:#0f172a;padding:8px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);box-shadow:0 4px 12px rgba(0,0,0,0.3);display:inline-flex;align-items:center;">
        <img src="<%= brand.logo.dataUri %>" alt="<%= brand.firmName %>" style="max-height:50px;max-width:180px;height:auto;width:auto;object-fit:contain;display:block;">
      </div>
@@ -981,8 +987,108 @@ tbody tr:hover{background:#f3f6fb}
 <!-- ═══════════════════════ ABOUT US + FOOTER ═══════════════════════ -->
 <div class="container">
 
-<% if (['vh744', 'vh1243'].includes((brand && (brand.partnerCode || '').toLowerCase())) || brand?.hideAboutUs) { %>
-<!-- About Us hidden for VH744 -->
+<% if ((brand && (brand.partnerCode || '').toLowerCase() === 'vh744')) { %>
+<!-- ═══════════════════════ CUSTOM ABOUT US FOR ULTIMATE ASSOCIATES (VH744) ═══════════════════════ -->
+<div class="card" style="border-top:4px solid var(--brand-primary);margin-top:28px;padding:32px 30px;box-shadow:0 6px 16px rgba(0,0,0,0.06);border-radius:14px;background:#ffffff;">
+  <!-- Section Title -->
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #f1f5f9;padding-bottom:18px;margin-bottom:24px;flex-wrap:wrap;gap:16px;">
+    <div>
+      <div style="font-size:0.85rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--brand-primary);margin-bottom:4px;">07 | Financial Advisory Partner</div>
+      <h2 style="margin:0;font-size:1.55rem;font-weight:900;color:#0a0a0a;letter-spacing:-0.3px;">ULTIMATE ASSOCIATES</h2>
+      <div style="font-size:0.95rem;font-weight:600;color:#555;margin-top:4px;">We listen. We understand. We make it work.</div>
+    </div>
+    <div style="background:#0a0a0a;padding:8px 16px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.18);display:inline-flex;align-items:center;">
+      <img src="<%= brand.logo.dataUri %>" alt="Ultimate Associates" style="max-height:44px;max-width:160px;height:auto;width:auto;object-fit:contain;display:block;">
+    </div>
+  </div>
+
+  <!-- Narrative -->
+  <div style="margin-bottom:24px;">
+    <h3 style="font-size:1.15rem;font-weight:800;color:#0a0a0a;margin-bottom:10px;">About Ultimate Associates Private Limited</h3>
+    <p style="font-size:0.94rem;line-height:1.65;color:#262626;margin:0;">
+      Established in <strong>2008</strong> and headquartered in <strong>Ludhiana</strong>, Ultimate Associates Private Limited assists businesses and individuals in evaluating borrowing needs, preparing credit proposals and navigating lender requirements. Our focus is on suitable financing structures, transparent communication and long-term relationships.
+    </p>
+  </div>
+
+  <!-- Credentials Table -->
+  <div style="margin-bottom:26px;">
+    <h4 style="font-size:1.05rem;font-weight:800;color:#0a0a0a;margin-bottom:12px;">Company-Provided Credentials</h4>
+    <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb;">
+      <table style="width:100%;border-collapse:collapse;margin:0;font-size:0.92rem;">
+        <thead>
+          <tr style="background:#0a0a0a;color:#ffffff;">
+            <th style="padding:12px 16px;text-align:left;font-weight:700;width:35%;border-bottom:none;">Our Experience</th>
+            <th style="padding:12px 16px;text-align:left;font-weight:700;border-bottom:none;">Track Record</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:#ffffff;border-bottom:1px solid #f1f5f9;">
+            <td style="padding:12px 16px;font-weight:700;color:#0a0a0a;">18 years</td>
+            <td style="padding:12px 16px;color:#262626;">Financial-services experience since 2008</td>
+          </tr>
+          <tr style="background:#fafafa;border-bottom:1px solid #f1f5f9;">
+            <td style="padding:12px 16px;font-weight:700;color:#d8261c;">₹10,000 crore+</td>
+            <td style="padding:12px 16px;color:#262626;">Cumulative loan disbursements facilitated</td>
+          </tr>
+          <tr style="background:#ffffff;border-bottom:1px solid #f1f5f9;">
+            <td style="padding:12px 16px;font-weight:700;color:#0a0a0a;">2,000+</td>
+            <td style="padding:12px 16px;color:#262626;">Business houses served</td>
+          </tr>
+          <tr style="background:#fafafa;border-bottom:1px solid #f1f5f9;">
+            <td style="padding:12px 16px;font-weight:700;color:#0a0a0a;">70+</td>
+            <td style="padding:12px 16px;color:#262626;">Professionals across the team</td>
+          </tr>
+          <tr style="background:#ffffff;">
+            <td style="padding:12px 16px;font-weight:700;color:#d8261c;">~95%</td>
+            <td style="padding:12px 16px;color:#262626;">Reported client retention</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- How We Can Assist -->
+  <div style="background:#fafafa;border:1px solid #e5e7eb;border-left:4px solid var(--brand-primary);border-radius:10px;padding:20px 22px;margin-bottom:26px;">
+    <h4 style="font-size:1.05rem;font-weight:800;color:#0a0a0a;margin:0 0 8px;">How We Can Assist</h4>
+    <p style="margin:0;font-size:0.92rem;line-height:1.65;color:#333;">
+      MSME working capital (CC/OD and related facilities), term loans, loan against property, home loans, unsecured business finance, vehicle finance, channel finance, proposal structuring and credit-documentation support. Product suitability and lender terms are assessed case by case.
+    </p>
+  </div>
+
+  <!-- Connect With Us -->
+  <div style="margin-bottom:20px;">
+    <h4 style="font-size:1.05rem;font-weight:800;color:#0a0a0a;margin-bottom:12px;">Connect With Us</h4>
+    <div class="grid2" style="gap:16px;">
+      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;">
+        <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;color:#737373;font-weight:700;margin-bottom:4px;">Website</div>
+        <a href="https://ultimateassociates.net" target="_blank" rel="noopener noreferrer" style="font-size:0.95rem;color:var(--brand-primary);font-weight:700;text-decoration:none;">https://ultimateassociates.net</a>
+      </div>
+      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;">
+        <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;color:#737373;font-weight:700;margin-bottom:4px;">Telephone</div>
+        <a href="tel:+919872857777" style="font-size:0.95rem;color:#0a0a0a;font-weight:700;text-decoration:none;">+91 98728 57777</a>
+      </div>
+      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;">
+        <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;color:#737373;font-weight:700;margin-bottom:4px;">Head Office</div>
+        <div style="font-size:0.92rem;color:#262626;font-weight:600;">Ludhiana, Punjab, India</div>
+      </div>
+      <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;">
+        <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;color:#737373;font-weight:700;margin-bottom:4px;">Support Email</div>
+        <a href="mailto:info@ultimatecare.in" style="font-size:0.92rem;color:var(--brand-primary);font-weight:600;text-decoration:none;">info@ultimatecare.in</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confidentiality & Professional Notice -->
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;margin-top:10px;">
+    <div style="font-size:0.82rem;font-weight:800;color:#0a0a0a;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Confidentiality & Professional Notice</div>
+    <p style="margin:0;font-size:0.8rem;line-height:1.55;color:#525252;">
+      Prepared solely for the intended client from a supplied third-party credit report. Credit bureau information may be incomplete or updated after the report date. All advisory conclusions are independent and not endorsed by the bureau or any lender. Financing is subject to lender assessment, applicable law and eligibility criteria. Company credentials above are supplied by Ultimate Associates and have not been independently audited.
+    </p>
+  </div>
+</div>
+
+<% } else if (['vh1243'].includes((brand && (brand.partnerCode || '').toLowerCase())) || brand?.hideAboutUs) { %>
+<!-- About Us hidden for VH1243 -->
 <% } else { %>
  <div class="card about-card">
   <h3><%- t('about_title', { firmName: brand.firmName }) %></h3>
@@ -1085,12 +1191,12 @@ tbody tr:hover{background:#f3f6fb}
 <% } %>
 
  <!-- ═══════════════════════ BRANDED FOOTER BLOCK ═══════════════════════ -->
- <div style="margin-top:28px;padding:36px 28px;background:linear-gradient(135deg, #111827 0%, #1f2937 100%);color:#ffffff;text-align:center;border-radius:14px 14px 0 0;border-top:4px solid var(--brand-primary);box-shadow:0 -4px 12px rgba(0,0,0,0.1);">
+ <div style="margin-top:28px;padding:36px 28px;background:linear-gradient(135deg, #0a0a0a 0%, #171717 100%);color:#ffffff;text-align:center;border-radius:14px 14px 0 0;border-top:4px solid var(--brand-primary);box-shadow:0 -4px 14px rgba(0,0,0,0.18);">
   <h3 style="margin:0 0 8px;font-size:1.35rem;font-weight:800;letter-spacing:0.5px;color:#ffffff;"><%= brand.firmName %></h3>
   <p style="margin:0 0 14px;font-size:0.92rem;color:#e2e8f0;">
-   <%- t('footer_website_label') %> <a href="<%- brand.website || 'https://card.onlytap.in/sonwanienterprises' %>" target="_blank" rel="noopener noreferrer" style="color:#ef4444;font-weight:600;text-decoration:none;transition:color 0.2s;"><%- (brand.website || 'https://card.onlytap.in/sonwanienterprises').replace(/^https?:\/\//, '') %></a>
+   <%- t('footer_website_label') %> <a href="<%- brand.website || 'https://ultimateassociates.net' %>" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary);font-weight:700;text-decoration:none;transition:color 0.2s;"><%- (brand.website || 'https://ultimateassociates.net').replace(/^https?:\/\//, '') %></a>
    &nbsp;|&nbsp;
-   <%- t('footer_email_label') %> <a href="mailto:<%- brand.email || 'sonwanienterprises@gmail.com' %>" style="color:#ef4444;font-weight:600;text-decoration:none;transition:color 0.2s;"><%- brand.email || 'sonwanienterprises@gmail.com' %></a>
+   <%- t('footer_email_label') %> <a href="mailto:<%- brand.email || 'info@ultimatecare.in' %>" style="color:var(--brand-primary);font-weight:700;text-decoration:none;transition:color 0.2s;"><%- brand.email || 'info@ultimatecare.in' %></a>
    </p>
 
    <% if (brand.socialLinks && (brand.socialLinks.linkedin || brand.socialLinks.instagram || brand.socialLinks.facebook || brand.socialLinks.youtube)) { %>
@@ -1099,19 +1205,19 @@ tbody tr:hover{background:#f3f6fb}
     <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;">
      <% if (brand.socialLinks.linkedin) { %>
      <a href="<%- brand.socialLinks.linkedin %>" target="_blank" rel="noopener noreferrer"
-        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">LinkedIn</a>
+        style="padding:7px 16px;border:1px solid rgba(216,38,28,0.55);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(216,38,28,0.15);letter-spacing:0.3px;">LinkedIn</a>
      <% } %>
      <% if (brand.socialLinks.instagram) { %>
      <a href="<%- brand.socialLinks.instagram %>" target="_blank" rel="noopener noreferrer"
-        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">Instagram</a>
+        style="padding:7px 16px;border:1px solid rgba(216,38,28,0.55);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(216,38,28,0.15);letter-spacing:0.3px;">Instagram</a>
      <% } %>
      <% if (brand.socialLinks.facebook) { %>
      <a href="<%- brand.socialLinks.facebook %>" target="_blank" rel="noopener noreferrer"
-        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">Facebook</a>
+        style="padding:7px 16px;border:1px solid rgba(216,38,28,0.55);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(216,38,28,0.15);letter-spacing:0.3px;">Facebook</a>
      <% } %>
      <% if (brand.socialLinks.youtube) { %>
      <a href="<%- brand.socialLinks.youtube %>" target="_blank" rel="noopener noreferrer"
-        style="padding:7px 16px;border:1px solid rgba(239,68,68,0.5);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(239,68,68,0.12);letter-spacing:0.3px;">YouTube</a>
+        style="padding:7px 16px;border:1px solid rgba(216,38,28,0.55);border-radius:20px;color:#ffffff;text-decoration:none;font-size:.78rem;font-weight:700;background:rgba(216,38,28,0.15);letter-spacing:0.3px;">YouTube</a>
      <% } %>
     </div>
    </div>
